@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "527694804454",
+    "project_id": "fir-6b758",
+    "storage_bucket": "fir-6b758.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:527694804454:android:6a3832d6f44531119c9227",
+        "android_client_info": {
+          "package_name": "com.hadartaizi.repLog"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAtb-NFZHt-CGSIxQ4sNUdyAQhGvzH5Mk4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
