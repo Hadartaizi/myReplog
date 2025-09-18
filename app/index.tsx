@@ -12,23 +12,19 @@ import {
   Keyboard,
   TouchableWithoutFeedback,
   Platform,
+  ScrollView,
 } from 'react-native';
 
 import { Stack, useRouter } from 'expo-router';
 import { useFonts } from 'expo-font';
-
 import { signInWithEmailAndPassword } from "firebase/auth";
-import { auth } from '../database/firebase.js'; // 🔽 רק auth כאן
+import { auth } from '../database/firebase.js';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
 export default function Index() {
   const router = useRouter();
-
-  const [fontsLoaded] = useFonts({
-    'Bilbo': require('../assets/fonts/Bilbo-Regular.ttf'),
-  });
-
+  const [fontsLoaded] = useFonts({ 'Bilbo': require('../assets/fonts/Bilbo-Regular.ttf') });
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -38,12 +34,10 @@ export default function Index() {
 
   const handleLogin = async () => {
     setErrorMessage('');
-
     if (!email.trim() || !password) {
       setErrorMessage('אנא הזן אימייל וסיסמה');
       return;
     }
-
     try {
       await signInWithEmailAndPassword(auth, email.trim(), password);
       router.push('/home');
@@ -67,11 +61,15 @@ export default function Index() {
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 50 : 20} // כאן מווסתים את המרחק מהמקלדת
       >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-          <View style={styles.container}>
+          <ScrollView
+            contentContainerStyle={styles.container}
+            keyboardShouldPersistTaps="handled"
+          >
             <StatusBar backgroundColor="#AEC6CF" barStyle="dark-content" />
             <Image
               source={require('../assets/images/myAppImg/logoBarbells.png')}
@@ -125,7 +123,7 @@ export default function Index() {
             <TouchableOpacity onPress={() => router.push('/register')}>
               <Text style={styles.signupText}>הרשמה</Text>
             </TouchableOpacity>
-          </View>
+          </ScrollView>
         </TouchableWithoutFeedback>
       </KeyboardAvoidingView>
     </>
@@ -134,11 +132,11 @@ export default function Index() {
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    flexGrow: 1,
     backgroundColor: '#AEC6CF',
     justifyContent: 'flex-start',
     alignItems: 'center',
-    paddingTop: screenHeight * 0.2,
+    paddingTop: screenHeight * 0.15,
     paddingHorizontal: screenWidth * 0.05,
   },
   logo: {
@@ -154,10 +152,10 @@ const styles = StyleSheet.create({
   },
   input: {
     width: '90%',
-    height: screenHeight * 0.065,
     backgroundColor: '#D9D9D9',
     borderRadius: screenWidth * 0.02,
     paddingHorizontal: screenWidth * 0.04,
+    paddingVertical: screenHeight * 0.015, // Padding אנכי דינמי
     fontSize: screenWidth * 0.045,
     marginBottom: screenHeight * 0.02,
     textAlign: 'right',
@@ -170,12 +168,12 @@ const styles = StyleSheet.create({
   },
   passwordContainer: {
     width: '90%',
-    height: screenHeight * 0.065,
     backgroundColor: '#D9D9D9',
     borderRadius: screenWidth * 0.02,
     flexDirection: 'row-reverse',
     alignItems: 'center',
     paddingHorizontal: screenWidth * 0.04,
+    paddingVertical: screenHeight * 0.015, // Padding אנכי דינמי
     marginBottom: screenHeight * 0.02,
     shadowColor: '#000',
     shadowOpacity: 0.1,
@@ -188,6 +186,7 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     writingDirection: 'rtl',
     color: '#000',
+    paddingVertical: 0, // נמנע padding כפול
   },
   eyeIcon: {
     width: screenWidth * 0.07,
@@ -223,3 +222,4 @@ const styles = StyleSheet.create({
     writingDirection: 'rtl',
   },
 });
+
