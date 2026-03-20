@@ -9,33 +9,31 @@ import {
   query,
   where,
 } from 'firebase/firestore';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
-  Dimensions,
+  ActivityIndicator,
   Keyboard,
+  KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  ToastAndroid,
   TouchableWithoutFeedback,
   View,
-  ActivityIndicator,
-  ToastAndroid,
-  Modal,
+  useWindowDimensions,
 } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 import { auth, db } from '../database/firebase';
 import AppLayout from './components/AppLayout';
-import { MaterialIcons } from '@expo/vector-icons';
 
-const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+const APP_BG = '#F4F7FB';
 
-// פונקציה לרספונסיביות טקסט
-const normalizeFont = (size) => Math.round(size * (screenWidth / 375));
-
-const normalizeText = (text) =>
+const normalizeText = (text: string) =>
   text
     .toLowerCase()
     .normalize('NFKD')
@@ -51,7 +49,7 @@ const getGreeting = () => {
   return 'ערב טוב';
 };
 
-const showToast = (message) => {
+const showToast = (message: string) => {
   if (Platform.OS === 'android') {
     ToastAndroid.show(message, ToastAndroid.SHORT);
   } else {
@@ -59,7 +57,46 @@ const showToast = (message) => {
   }
 };
 
+type RepsPerSetType = {
+  [key: string]: {
+    reps: string;
+    weight: string;
+  };
+};
+
+type ExerciseType = {
+  name: string;
+  numSets: string;
+  repsPerSet: RepsPerSetType;
+  suggestions: string[];
+  showSuggestions: boolean;
+  error: string;
+};
+
 export default function Home() {
+  const { width, height } = useWindowDimensions();
+  const isSmallScreen = width < 360;
+
+  const dynamic = useMemo(() => {
+    const horizontalPadding = width * 0.05;
+    const cardWidth = Math.min(width * 0.92, 520);
+    const inputHeight = isSmallScreen ? 46 : 50;
+    const titleSize = width < 380 ? 22 : 26;
+    const labelSize = width < 380 ? 14 : 15;
+    const textSize = width < 380 ? 14 : 16;
+    const buttonHeight = isSmallScreen ? 52 : 56;
+
+    return {
+      horizontalPadding,
+      cardWidth,
+      inputHeight,
+      titleSize,
+      labelSize,
+      textSize,
+      buttonHeight,
+    };
+  }, [width, isSmallScreen]);
+
   const [fontsLoaded] = useFonts({
     Bilbo: require('../assets/fonts/Bilbo-Regular.ttf'),
   });
@@ -67,13 +104,13 @@ export default function Home() {
   const [userName, setUserName] = useState('');
   const [date, setDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [existingExercises, setExistingExercises] = useState([]);
+  const [existingExercises, setExistingExercises] = useState<string[]>([]);
   const [addError, setAddError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
-  const [lastExerciseData, setLastExerciseData] = useState({});
-  const [selectedExerciseForModal, setSelectedExerciseForModal] = useState(null);
+  const [lastExerciseData, setLastExerciseData] = useState<any>({});
+  const [selectedExerciseForModal, setSelectedExerciseForModal] = useState<string | null>(null);
 
-  const [exercise, setExercise] = useState({
+  const [exercise, setExercise] = useState<ExerciseType>({
     name: '',
     numSets: '',
     repsPerSet: {},
@@ -84,25 +121,34 @@ export default function Home() {
 
   useEffect(() => {
     const fetchUserData = async () => {
-      const user = auth.currentUser;
-      if (!user) return;
+      try {
+        const user = auth.currentUser;
+        if (!user) return;
 
-      const userRef = doc(db, 'users', user.uid);
-      const userSnap = await getDoc(userRef);
-      if (userSnap.exists()) setUserName(userSnap.data().name || '');
+        const userRef = doc(db, 'users', user.uid);
+        const userSnap = await getDoc(userRef);
 
-      const q = query(collection(db, 'exercises'), where('uid', '==', user.uid));
-      const snapshot = await getDocs(q);
-      const uniqueNames = Array.from(
-        new Set(snapshot.docs.map((doc) => doc.data().exerciseName))
-      );
-      setExistingExercises(uniqueNames);
+        if (userSnap.exists()) {
+          setUserName(userSnap.data().name || '');
+        }
+
+        const q = query(collection(db, 'exercises'), where('uid', '==', user.uid));
+        const snapshot = await getDocs(q);
+
+        const uniqueNames = Array.from(
+          new Set(snapshot.docs.map((item) => item.data().exerciseName))
+        );
+
+        setExistingExercises(uniqueNames);
+      } catch (error) {
+        console.error('שגיאה בשליפת נתוני משתמש:', error);
+      }
     };
 
     fetchUserData();
   }, []);
 
-  const fetchLastExercise = async (exerciseName) => {
+  const fetchLastExercise = async (exerciseName: string) => {
     try {
       const user = auth.currentUser;
       if (!user) return;
@@ -112,48 +158,72 @@ export default function Home() {
         where('uid', '==', user.uid),
         where('exerciseName', '==', exerciseName)
       );
+
       const snapshot = await getDocs(q);
 
       if (!snapshot.empty) {
         const sorted = snapshot.docs
-          .map((doc) => doc.data())
-          .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-        setLastExerciseData({ [exerciseName]: sorted[0] });
+          .map((item) => item.data())
+          .sort(
+            (a, b) =>
+              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          );
+
+        setLastExerciseData((prev: any) => ({
+          ...prev,
+          [exerciseName]: sorted[0],
+        }));
       }
     } catch (error) {
       console.error('שגיאה בשליפת האימון האחרון:', error);
     }
   };
 
-  const onChangeDate = (event, selectedDate) => {
+  const onChangeDate = (_event: any, selectedDate?: Date) => {
     setShowDatePicker(Platform.OS === 'ios');
-    if (selectedDate) setDate(selectedDate);
+    if (selectedDate) {
+      setDate(selectedDate);
+    }
   };
 
-  const handleExerciseChange = (key, value) => {
-    if (addError !== '') setAddError('');
+  const handleExerciseChange = (key: keyof ExerciseType, value: any) => {
+    if (addError) setAddError('');
 
-    const updated = { ...exercise, [key]: value };
+    const updated: ExerciseType = {
+      ...exercise,
+      [key]: value,
+    };
 
     if (key === 'numSets') {
-      const num = parseInt(value);
+      const cleanedValue = String(value).replace(/[^0-9]/g, '');
+      updated.numSets = cleanedValue;
+
+      const num = parseInt(cleanedValue, 10);
+
       if (num > 10) {
         updated.error = 'לא ניתן להזין יותר מ־10 סטים';
       } else {
         updated.error = '';
         updated.repsPerSet = Array.from({ length: num || 0 }, (_, j) =>
-          exercise.repsPerSet[j] ? exercise.repsPerSet[j] : { reps: '', weight: '' }
-        ).reduce((acc, val, j) => ({ ...acc, [j]: val }), {});
+          exercise.repsPerSet[j]
+            ? exercise.repsPerSet[j]
+            : { reps: '', weight: '' }
+        ).reduce((acc: RepsPerSetType, val, j) => {
+          acc[j] = val;
+          return acc;
+        }, {});
       }
     }
 
     if (key === 'name') {
-      const input = normalizeText(value);
+      const input = normalizeText(String(value));
+
       const filtered = input
         ? existingExercises
             .filter((name) => normalizeText(name).includes(input))
             .sort()
         : [];
+
       updated.suggestions = filtered;
       updated.showSuggestions = filtered.length > 0;
     }
@@ -161,48 +231,59 @@ export default function Home() {
     setExercise(updated);
   };
 
-  const handleWeightChange = (setIndex, value) => {
+  const handleWeightChange = (setIndex: string, value: string) => {
+    const cleaned = value.replace(/[^0-9.]/g, '');
+
     setExercise((prev) => ({
       ...prev,
       repsPerSet: {
         ...prev.repsPerSet,
         [setIndex]: {
           ...(prev.repsPerSet[setIndex] || {}),
-          weight: value,
+          weight: cleaned,
         },
       },
     }));
   };
 
-  const handleRepsChange = (setIndex, value) => {
+  const handleRepsChange = (setIndex: string, value: string) => {
+    const cleaned = value.replace(/[^0-9]/g, '');
+
     setExercise((prev) => ({
       ...prev,
       repsPerSet: {
         ...prev.repsPerSet,
         [setIndex]: {
           ...(prev.repsPerSet[setIndex] || {}),
-          reps: value,
+          reps: cleaned,
         },
       },
     }));
   };
 
-  const handleSelectSuggestion = async (suggestion) => {
+  const handleSelectSuggestion = async (suggestion: string) => {
     setExercise((prev) => ({
       ...prev,
       name: suggestion,
       suggestions: [],
       showSuggestions: false,
     }));
+
     await fetchLastExercise(suggestion);
   };
 
-  const isExerciseValid = (ex) => {
-    if (!ex || !ex.name?.trim() || !ex.numSets || parseInt(ex.numSets) <= 0) return false;
-    for (let i = 0; i < parseInt(ex.numSets); i++) {
-      const set = ex.repsPerSet[i];
-      if (!set || !set.reps || !set.weight) return false;
+  const isExerciseValid = (ex: ExerciseType) => {
+    if (!ex.name?.trim() || !ex.numSets || parseInt(ex.numSets, 10) <= 0) {
+      return false;
     }
+
+    for (let i = 0; i < parseInt(ex.numSets, 10); i++) {
+      const set = ex.repsPerSet[i];
+      if (!set || !set.reps || !set.weight) {
+        return false;
+      }
+    }
+
     return true;
   };
 
@@ -210,7 +291,7 @@ export default function Home() {
     if (isSaving) return;
 
     if (!isExerciseValid(exercise)) {
-      showToast('אנא מלא את כל השדות לפני שמירה.');
+      showToast('אנא מלאי את כל השדות לפני שמירה');
       return;
     }
 
@@ -219,29 +300,36 @@ export default function Home() {
     try {
       const user = auth.currentUser;
       if (!user) {
+        showToast('לא נמצא משתמש מחובר');
         setIsSaving(false);
         return;
       }
 
+      const trimmedExerciseName = exercise.name.trim();
+      const dateKey = date.toLocaleDateString('he-IL');
+
       await addDoc(collection(db, 'workouts'), {
         uid: user.uid,
         date: date.toISOString(),
-        exerciseName: exercise.name.trim(),
-        numSets: parseInt(exercise.numSets),
+        dateKey,
+        exerciseName: trimmedExerciseName,
+        numSets: parseInt(exercise.numSets, 10),
         repsPerSet: exercise.repsPerSet,
         createdAt: new Date().toISOString(),
       });
 
       const alreadyExists = existingExercises.some(
-        (name) => normalizeText(name) === normalizeText(exercise.name)
+        (name) => normalizeText(name) === normalizeText(trimmedExerciseName)
       );
+
       if (!alreadyExists) {
         await addDoc(collection(db, 'exercises'), {
           uid: user.uid,
-          exerciseName: exercise.name.trim(),
+          exerciseName: trimmedExerciseName,
           createdAt: new Date().toISOString(),
         });
-        setExistingExercises((prev) => [...new Set([...prev, exercise.name.trim()])]);
+
+        setExistingExercises((prev) => [...new Set([...prev, trimmedExerciseName])]);
       }
 
       setExercise({
@@ -252,184 +340,298 @@ export default function Home() {
         showSuggestions: false,
         error: '',
       });
+
       setDate(new Date());
       setAddError('');
-
       showToast('האימון נשמר בהצלחה!');
     } catch (error) {
       console.error('שגיאה בשמירת האימון:', error);
-      showToast('אירעה שגיאה בשמירה. נסה שוב.');
+      showToast('אירעה שגיאה בשמירה. נסי שוב.');
     } finally {
       setIsSaving(false);
     }
   };
 
-  if (!fontsLoaded) return null;
+  if (!fontsLoaded) {
+    return <View style={{ flex: 1, backgroundColor: APP_BG }} />;
+  }
+
   const greeting = getGreeting();
+  const selectedLastExercise =
+    selectedExerciseForModal && lastExerciseData[selectedExerciseForModal]
+      ? lastExerciseData[selectedExerciseForModal]
+      : null;
 
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-      <View style={{ flex: 1 }}>
+      <View style={styles.screen}>
         <AppLayout>
-          <ScrollView
-            contentContainerStyle={{
-              flexGrow: 1,
-              paddingBottom: screenHeight * 0.04,
-              paddingTop: screenHeight * 0.05,
-              alignItems: 'center',
-            }}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={true}
+          <KeyboardAvoidingView
+            style={styles.screen}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           >
-            <View style={styles.centeredContainer}>
-              <Text style={styles.title}>
-                היי {userName ? `${userName}, ` : ''}
-                {greeting}
-                {'\n'}
-                הגיע הזמן להזין אימון!
-              </Text>
-            </View>
-
-            <View style={styles.formContainer}>
-              <Text style={styles.label}>תאריך</Text>
-              <Pressable onPress={() => setShowDatePicker(true)} style={styles.dateInput}>
-                <Text style={styles.textRight}>{date.toLocaleDateString()}</Text>
-              </Pressable>
-              {showDatePicker && (
-                <DateTimePicker
-                  value={date}
-                  mode="date"
-                  display="default"
-                  onChange={onChangeDate}
-                />
-              )}
-
-              <View style={{ width: '100%', marginBottom: screenHeight * 0.02 }}>
-                <Text style={styles.label}>
-                  {exercise?.name?.trim() !== '' ? exercise.name : `תרגיל`}
-                </Text>
-
-                <View style={{ flexDirection: 'row-reverse', alignItems: 'center' }}>
-                  <TextInput
-                    style={[styles.input, { width: '70%' }]}
-                    placeholder="שם תרגיל"
-                    placeholderTextColor="#888"
-                    value={exercise.name}
-                    onChangeText={(text) => handleExerciseChange('name', text)}
-                    textAlign="right"
-                  />
-                  {exercise.name.trim() !== '' &&
-                    lastExerciseData[exercise.name] && (
-                      <Pressable
-                        style={styles.lastBtn}
-                        onPress={() => setSelectedExerciseForModal(exercise.name)}
-                      >
-                        <MaterialIcons
-                          name="fitness-center"
-                          size={normalizeFont(20)}
-                          color="#fff"
-                          style={{ marginRight: 20 }}
-                        />
-                      </Pressable>
-                    )}
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={[
+                styles.scrollContent,
+                {
+                  paddingTop: height * 0.03,
+                  paddingBottom: height * 0.05,
+                  paddingHorizontal: dynamic.horizontalPadding,
+                },
+              ]}
+              showsVerticalScrollIndicator={false}
+            >
+              <View
+                style={[
+                  styles.card,
+                  {
+                    width: dynamic.cardWidth,
+                    paddingHorizontal: width * 0.05,
+                    paddingVertical: height * 0.03,
+                  },
+                ]}
+              >
+                <View style={styles.header}>
+                  <Text
+                    style={[
+                      styles.title,
+                      {
+                        fontSize: dynamic.titleSize,
+                        lineHeight: dynamic.titleSize * 1.45,
+                      },
+                    ]}
+                  >
+                    היי {userName ? `${userName}, ` : ''}
+                    {greeting}
+                    {'\n'}
+                    הגיע הזמן להזין אימון
+                  </Text>
+                  <Text style={[styles.subtitle, { fontSize: dynamic.textSize - 1 }]}>
+                    שמרי תרגיל חדש בצורה מסודרת, נקייה ונוחה
+                  </Text>
                 </View>
 
-                {exercise.showSuggestions && (
-                  <View style={styles.suggestionsContainer}>
-                    <ScrollView nestedScrollEnabled={true} horizontal={false}>
-                      {exercise.suggestions.map((name, sidx) => (
-                        <Pressable key={sidx} onPress={() => handleSelectSuggestion(name)}>
-                          <Text style={styles.suggestionText}>{name}</Text>
-                        </Pressable>
-                      ))}
-                    </ScrollView>
+                <View style={styles.section}>
+                  <Text style={[styles.label, { fontSize: dynamic.labelSize }]}>תאריך</Text>
+
+                  <Pressable
+                    onPress={() => setShowDatePicker(true)}
+                    style={[styles.inputBox, { minHeight: dynamic.inputHeight }]}
+                  >
+                    <MaterialIcons name="date-range" size={20} color="#5B6470" />
+                    <Text style={[styles.inputText, { fontSize: dynamic.textSize }]}>
+                      {date.toLocaleDateString('he-IL')}
+                    </Text>
+                  </Pressable>
+
+                  {showDatePicker && (
+                    <DateTimePicker
+                      value={date}
+                      mode="date"
+                      display="default"
+                      onChange={onChangeDate}
+                    />
+                  )}
+                </View>
+
+                <View style={styles.section}>
+                  <Text style={[styles.label, { fontSize: dynamic.labelSize }]}>
+                    {exercise.name?.trim() ? exercise.name : 'תרגיל'}
+                  </Text>
+
+                  <View style={styles.exerciseRow}>
+                    <TextInput
+                      style={[
+                        styles.inputBox,
+                        styles.textInput,
+                        styles.flexInput,
+                        { minHeight: dynamic.inputHeight, fontSize: dynamic.textSize },
+                      ]}
+                      placeholder="שם תרגיל"
+                      placeholderTextColor="#8A94A6"
+                      value={exercise.name}
+                      onChangeText={(text) => handleExerciseChange('name', text)}
+                      textAlign="right"
+                    />
+
+                    {exercise.name.trim() !== '' && lastExerciseData[exercise.name] && (
+                      <Pressable
+                        style={[styles.iconButton, { minHeight: dynamic.inputHeight }]}
+                        onPress={() => setSelectedExerciseForModal(exercise.name)}
+                      >
+                        <MaterialIcons name="fitness-center" size={20} color="#FFFFFF" />
+                      </Pressable>
+                    )}
                   </View>
-                )}
 
-                <Text style={styles.label}>מספר סטים</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="מספר"
-                  placeholderTextColor="#888"
-                  keyboardType="numeric"
-                  value={exercise.numSets}
-                  onChangeText={(text) => handleExerciseChange('numSets', text)}
-                  textAlign="right"
-                />
-
-                {exercise.error ? (
-                  <Text style={styles.errorText}>{exercise.error}</Text>
-                ) : (
-                  Object.keys(exercise.repsPerSet || {}).map((setKey) => (
-                    <View key={setKey} style={styles.inlineInputRow}>
-                      <Text style={styles.labelInline}>סט {parseInt(setKey) + 1}</Text>
-                      <TextInput
-                        style={styles.inlineInput}
-                        placeholder="חזרות"
-                        keyboardType="numeric"
-                        placeholderTextColor="#888"
-                        value={exercise.repsPerSet[setKey]?.reps || ''}
-                        onChangeText={(val) => handleRepsChange(setKey, val)}
-                        textAlign="right"
-                      />
-                      <TextInput
-                        style={styles.inlineInput}
-                        placeholder="משקל"
-                        placeholderTextColor="#888"
-                        keyboardType="numeric"
-                        value={exercise.repsPerSet[setKey]?.weight || ''}
-                        onChangeText={(val) => handleWeightChange(setKey, val)}
-                        textAlign="right"
-                      />
+                  {exercise.showSuggestions && (
+                    <View style={styles.suggestionsContainer}>
+                      <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false}>
+                        {exercise.suggestions.map((name, index) => (
+                          <Pressable
+                            key={`${name}-${index}`}
+                            onPress={() => handleSelectSuggestion(name)}
+                            style={styles.suggestionItem}
+                          >
+                            <Text
+                              style={[
+                                styles.suggestionText,
+                                { fontSize: dynamic.textSize - 1 },
+                              ]}
+                            >
+                              {name}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </ScrollView>
                     </View>
-                  ))
-                )}
+                  )}
+                </View>
 
-                {addError !== '' && (
-                  <Text style={[styles.errorText, { marginTop: screenHeight * 0.008 }]}>
+                <View style={styles.section}>
+                  <Text style={[styles.label, { fontSize: dynamic.labelSize }]}>מספר סטים</Text>
+
+                  <TextInput
+                    style={[
+                      styles.inputBox,
+                      styles.textInput,
+                      { minHeight: dynamic.inputHeight, fontSize: dynamic.textSize },
+                    ]}
+                    placeholder="הזיני מספר סטים"
+                    placeholderTextColor="#8A94A6"
+                    keyboardType="numeric"
+                    value={exercise.numSets}
+                    onChangeText={(text) => handleExerciseChange('numSets', text)}
+                    textAlign="right"
+                  />
+
+                  {!!exercise.error && (
+                    <Text style={[styles.errorText, { fontSize: dynamic.textSize - 2 }]}>
+                      {exercise.error}
+                    </Text>
+                  )}
+                </View>
+
+                {!exercise.error &&
+                  Object.keys(exercise.repsPerSet || {}).map((setKey) => (
+                    <View key={setKey} style={styles.setCard}>
+                      <Text style={[styles.setTitle, { fontSize: dynamic.labelSize }]}>
+                        סט {parseInt(setKey, 10) + 1}
+                      </Text>
+
+                      <View
+                        style={[
+                          styles.setInputsRow,
+                          { gap: width < 380 ? 8 : 10, flexWrap: 'wrap' },
+                        ]}
+                      >
+                        <View style={styles.setInputWrapper}>
+                          <Text style={styles.miniLabel}>חזרות</Text>
+                          <TextInput
+                            style={[
+                              styles.inputBox,
+                              styles.textInput,
+                              styles.smallInput,
+                              { minHeight: dynamic.inputHeight, fontSize: dynamic.textSize },
+                            ]}
+                            placeholder="לדוגמה 12"
+                            placeholderTextColor="#8A94A6"
+                            keyboardType="numeric"
+                            value={exercise.repsPerSet[setKey]?.reps || ''}
+                            onChangeText={(val) => handleRepsChange(setKey, val)}
+                            textAlign="right"
+                          />
+                        </View>
+
+                        <View style={styles.setInputWrapper}>
+                          <Text style={styles.miniLabel}>משקל</Text>
+                          <TextInput
+                            style={[
+                              styles.inputBox,
+                              styles.textInput,
+                              styles.smallInput,
+                              { minHeight: dynamic.inputHeight, fontSize: dynamic.textSize },
+                            ]}
+                            placeholder="לדוגמה 20"
+                            placeholderTextColor="#8A94A6"
+                            keyboardType="numeric"
+                            value={exercise.repsPerSet[setKey]?.weight || ''}
+                            onChangeText={(val) => handleWeightChange(setKey, val)}
+                            textAlign="right"
+                          />
+                        </View>
+                      </View>
+                    </View>
+                  ))}
+
+                {!!addError && (
+                  <Text style={[styles.errorText, { fontSize: dynamic.textSize - 2 }]}>
                     {addError}
                   </Text>
                 )}
-              </View>
-            </View>
 
-            <View style={styles.centeredContainer}>
-              <Pressable
-                style={[styles.saveButton, isSaving && { opacity: 0.5 }]}
-                onPress={handleAddPress}
-                disabled={isSaving}
-              >
-                {isSaving ? (
-                  <ActivityIndicator color="#000" />
-                ) : (
-                  <Text style={styles.saveButtonText}>שמור אימון</Text>
-                )}
-              </Pressable>
-            </View>
-          </ScrollView>
+                <Pressable
+                  style={[
+                    styles.saveButton,
+                    { minHeight: dynamic.buttonHeight },
+                    isSaving && styles.disabledButton,
+                  ]}
+                  onPress={handleAddPress}
+                  disabled={isSaving}
+                >
+                  {isSaving ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <>
+                      <MaterialIcons name="save" size={20} color="#FFFFFF" />
+                      <Text style={[styles.saveButtonText, { fontSize: dynamic.textSize }]}>
+                        שמור אימון
+                      </Text>
+                    </>
+                  )}
+                </Pressable>
+              </View>
+            </ScrollView>
+          </KeyboardAvoidingView>
         </AppLayout>
 
-        <Modal visible={!!selectedExerciseForModal} transparent={true} animationType="slide">
-          <View style={styles.modalContainer}>
-            <View style={styles.modalContent}>
-              <Pressable style={styles.closeBtn} onPress={() => setSelectedExerciseForModal(null)}>
-                <Text style={{ fontSize: normalizeFont(18), marginBottom: 16 }}>❌</Text>
+        <Modal
+          visible={!!selectedExerciseForModal}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setSelectedExerciseForModal(null)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalCard, { width: Math.min(width * 0.88, 420) }]}>
+              <Pressable
+                style={styles.modalClose}
+                onPress={() => setSelectedExerciseForModal(null)}
+              >
+                <MaterialIcons name="close" size={24} color="#222" />
               </Pressable>
-              {selectedExerciseForModal && lastExerciseData[selectedExerciseForModal] ? (
+
+              {selectedLastExercise ? (
                 <>
                   <Text style={styles.modalTitle}>
-                    הביצוע האחרון של התרגיל {selectedExerciseForModal}
+                    הביצוע האחרון של{'\n'}
+                    {selectedExerciseForModal}
                   </Text>
-                  {Object.entries(lastExerciseData[selectedExerciseForModal].repsPerSet).map(
-                    ([setKey, val]) => (
-                      <Text key={setKey} style={styles.modalText}>
-                        סט {parseInt(setKey) + 1}: {val.reps} חזרות , {val.weight} ק"ג
-                      </Text>
+
+                  <View style={styles.modalDivider} />
+
+                  {Object.entries(selectedLastExercise.repsPerSet).map(
+                    ([setKey, val]: any) => (
+                      <View key={setKey} style={styles.modalRow}>
+                        <Text style={styles.modalText}>סט {parseInt(setKey, 10) + 1}</Text>
+                        <Text style={styles.modalText}>{val.reps} חזרות</Text>
+                        <Text style={styles.modalText}>{val.weight} ק״ג</Text>
+                      </View>
                     )
                   )}
                 </>
               ) : (
-                <Text>אין מידע זמין</Text>
+                <Text style={styles.modalText}>אין מידע זמין</Text>
               )}
             </View>
           </View>
@@ -440,150 +642,226 @@ export default function Home() {
 }
 
 const styles = StyleSheet.create({
-  centeredContainer: {
-    width: '100%',
+  screen: {
+    flex: 1,
+    backgroundColor: '#F4F7FB',
+  },
+
+  scrollContent: {
+    flexGrow: 1,
     alignItems: 'center',
-    marginBottom: screenHeight * 0.02,
   },
-  formContainer: {
-    width: '90%',
-    alignItems: 'flex-end',
-    marginTop: screenHeight * 0.03,
+
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 6,
   },
+
+  header: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+
   title: {
-    fontSize: normalizeFont(20),
-    fontWeight: 'bold',
-    color: '#333',
+    fontWeight: '800',
+    color: '#1E293B',
     textAlign: 'center',
   },
+
+  subtitle: {
+    color: '#64748B',
+    textAlign: 'center',
+    marginTop: 8,
+  },
+
+  section: {
+    marginBottom: 18,
+  },
+
   label: {
-    marginTop: screenHeight * 0.015,
-    fontWeight: 'bold',
-    fontSize: normalizeFont(16),
+    color: '#334155',
+    fontWeight: '700',
     textAlign: 'right',
-    alignSelf: 'flex-end',
+    marginBottom: 8,
   },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    paddingVertical: screenHeight * 0.012,
-    paddingHorizontal: screenWidth * 0.03,
-    borderRadius: 6,
-    width: '70%',
-    marginTop: screenHeight * 0.005,
-    textAlign: 'right',
-    alignSelf: 'flex-end',
-    fontSize: normalizeFont(14),
-  },
-  dateInput: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    paddingVertical: screenHeight * 0.012,
-    paddingHorizontal: screenWidth * 0.03,
-    borderRadius: 6,
-    width: screenWidth * 0.4,
-    marginTop: screenHeight * 0.005,
-    alignSelf: 'flex-end',
-    fontSize: normalizeFont(14),
-  },
-  textRight: {
-    textAlign: 'right',
+
+  inputBox: {
     width: '100%',
-    alignSelf: 'flex-end',
-  },
-  inlineInputRow: {
+    borderWidth: 1,
+    borderColor: '#D7DFE9',
+    borderRadius: 16,
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 14,
     flexDirection: 'row-reverse',
     alignItems: 'center',
-    marginTop: screenHeight * 0.01,
+    justifyContent: 'space-between',
+  },
+
+  textInput: {
+    color: '#111827',
+  },
+
+  inputText: {
+    color: '#111827',
+    flex: 1,
+    textAlign: 'right',
+    marginRight: 10,
+  },
+
+  exerciseRow: {
+    flexDirection: 'row-reverse',
+    alignItems: 'stretch',
     gap: 10,
   },
-  inlineInput: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    paddingVertical: screenHeight * 0.01,
-    paddingHorizontal: screenWidth * 0.02,
-    borderRadius: 6,
-    minWidth: 40,
-    textAlign: 'right',
-    fontSize: normalizeFont(14),
-  },
-  labelInline: {
-    fontWeight: 'bold',
-    fontSize: normalizeFont(14),
-    textAlign: 'right',
-    marginRight: '20%',
-    alignSelf: 'flex-end',
-  },
-  saveButton: {
-    backgroundColor: '#8A8484',
-    borderRadius: 100,
-    minWidth: screenWidth * 0.35,
-    height: screenHeight * 0.06,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  saveButtonText: {
-    color: '#000',
-    fontSize: normalizeFont(16),
-    fontWeight: 'bold',
-    textAlign: 'center',
-  },
-  suggestionsContainer: {
-    backgroundColor: '#fff',
-    width: '70%',
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#ccc',
-    maxHeight: screenHeight * 0.2,
-    marginTop: screenHeight * 0.005,
-    alignSelf: 'flex-end',
-    zIndex: 10,
-  },
-  suggestionText: {
-    paddingVertical: screenHeight * 0.015,
-    paddingHorizontal: screenWidth * 0.03,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-    textAlign: 'right',
-    fontSize: normalizeFont(14),
-  },
-  errorText: {
-    color: 'red',
-    fontSize: normalizeFont(14),
-    marginTop: screenHeight * 0.005,
-    textAlign: 'right',
-    alignSelf: 'flex-end',
-  },
-  modalContainer: {
+
+  flexInput: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+
+  iconButton: {
+    minWidth: 52,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    backgroundColor: '#556070',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  suggestionsContainer: {
+    marginTop: 8,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#D7DFE9',
+    backgroundColor: '#FFFFFF',
+    maxHeight: 180,
+    overflow: 'hidden',
+  },
+
+  suggestionItem: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEF2F7',
+  },
+
+  suggestionText: {
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    textAlign: 'right',
+    color: '#1F2937',
+  },
+
+  errorText: {
+    color: '#DC2626',
+    marginTop: 8,
+    textAlign: 'right',
+    fontWeight: '500',
+  },
+
+  setCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 14,
+    marginBottom: 12,
+  },
+
+  setTitle: {
+    textAlign: 'right',
+    fontWeight: '700',
+    color: '#1E293B',
+    marginBottom: 10,
+  },
+
+  setInputsRow: {
+    flexDirection: 'row-reverse',
+    justifyContent: 'space-between',
+  },
+
+  setInputWrapper: {
+    flex: 1,
+    minWidth: 120,
+  },
+
+  miniLabel: {
+    textAlign: 'right',
+    color: '#64748B',
+    marginBottom: 6,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+
+  smallInput: {
+    width: '100%',
+  },
+
+  saveButton: {
+    marginTop: 16,
+    borderRadius: 18,
+    backgroundColor: '#0F172A',
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+
+  disabledButton: {
+    opacity: 0.6,
+  },
+
+  saveButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+  },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15,23,42,0.45)',
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: 20,
   },
-  modalContent: {
-    backgroundColor: '#fff',
-    borderRadius: 10,
+
+  modalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
     padding: 20,
-    width: '80%',
   },
-  closeBtn: {
-    alignSelf: 'flex-end',
+
+  modalClose: {
+    alignSelf: 'flex-start',
+    marginBottom: 6,
   },
+
   modalTitle: {
-    fontWeight: 'bold',
-    fontSize: normalizeFont(18),
-    marginBottom: 10,
-    textAlign: 'right',
+    textAlign: 'center',
+    fontWeight: '800',
+    fontSize: 20,
+    color: '#0F172A',
+    marginBottom: 12,
   },
+
+  modalDivider: {
+    height: 1,
+    backgroundColor: '#E2E8F0',
+    marginBottom: 12,
+  },
+
+  modalRow: {
+    flexDirection: 'row-reverse',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    gap: 10,
+  },
+
   modalText: {
-    fontSize: normalizeFont(16),
+    fontSize: 15,
+    color: '#334155',
     textAlign: 'right',
-    marginVertical: 2,
-  },
-  lastBtn: {
-    backgroundColor: '#8A8484',
-    padding: 6,
-    borderRadius: 6,
-    marginLeft: 10,
+    flex: 1,
   },
 });

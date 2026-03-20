@@ -1,70 +1,96 @@
 import React, { useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, Image, StyleSheet, Dimensions,
-  StatusBar, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard
+  View,
+  Text,
+  StatusBar,
+  StyleSheet,
+  Dimensions,
+  TextInput,
+  TouchableOpacity,
+  KeyboardAvoidingView,
+  Platform,
+  TouchableWithoutFeedback,
+  Keyboard,
+  ScrollView,
+  ActivityIndicator,
 } from 'react-native';
-
 import { Stack, useRouter } from 'expo-router';
 import { useFonts } from 'expo-font';
-
-import { createUserWithEmailAndPassword } from "firebase/auth";
+import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { auth, db } from '../database/firebase.js';
-import { doc, setDoc } from "firebase/firestore";
+import { doc, setDoc } from 'firebase/firestore';
+import { MaterialIcons } from '@expo/vector-icons';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+const APP_BG = '#F4F7FB';
+
+// תשני כאן למייל שלך
+const ADMIN_EMAIL = 'hadartaizi2002@gmail.com';
 
 export default function Register() {
   const router = useRouter();
 
   const [fontsLoaded] = useFonts({
-    'Bilbo': require('../assets/fonts/Bilbo-Regular.ttf'),
+    Bilbo: require('../assets/fonts/Bilbo-Regular.ttf'),
   });
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [errors, setErrors] = useState({});
+  const [errors, setErrors] = useState<any>({});
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  if (!fontsLoaded) return null;
+  if (!fontsLoaded) {
+    return <View style={{ flex: 1, backgroundColor: APP_BG }} />;
+  }
 
   const handleRegister = async () => {
-    const newErrors = {};
+    const newErrors: any = {};
 
-    if (!name.trim()) newErrors.name = 'אנא הזן שם';
-    if (!email.trim()) newErrors.email = 'אנא הזן אימייל';
-    if (!password) newErrors.password = 'אנא הזן סיסמה';
-    if (!confirmPassword) newErrors.confirmPassword = 'אנא אשר את הסיסמה';
-    if (password && confirmPassword && password !== confirmPassword)
+    if (!name.trim()) newErrors.name = 'אנא הזיני שם';
+    if (!email.trim()) newErrors.email = 'אנא הזיני אימייל';
+    if (!password) newErrors.password = 'אנא הזיני סיסמה';
+    if (!confirmPassword) newErrors.confirmPassword = 'אנא אשרי את הסיסמה';
+    if (password && confirmPassword && password !== confirmPassword) {
       newErrors.confirmPassword = 'הסיסמאות אינן תואמות';
+    }
 
     setErrors(newErrors);
 
     if (Object.keys(newErrors).length === 0) {
       setLoading(true);
-      try {
-        console.log('שם שהוזן:', name);
 
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      try {
+        const trimmedName = name.trim();
+        const trimmedEmail = email.trim().toLowerCase();
+
+        const userCredential = await createUserWithEmailAndPassword(
+          auth,
+          trimmedEmail,
+          password
+        );
+
         const user = userCredential.user;
 
-        console.log('נשמר ל־Firestore עם שם:', name);
+        const role = trimmedEmail === ADMIN_EMAIL.toLowerCase() ? 'admin' : 'client';
 
         await setDoc(doc(db, 'users', user.uid), {
           uid: user.uid,
-          name: name.trim(),
-          email: email.trim(),
-          createdAt: new Date(),
+          name: trimmedName,
+          email: trimmedEmail,
+          role,
+          createdAt: new Date().toISOString(),
         });
 
         setLoading(false);
         router.push('/');
-      } catch (error) {
+      } catch (error: any) {
         setLoading(false);
         console.error('שגיאה בהרשמה:', error);
+
         if (error.code === 'auth/email-already-in-use') {
           setErrors({ email: 'כתובת המייל כבר רשומה במערכת' });
         } else if (error.code === 'auth/invalid-email') {
@@ -72,7 +98,7 @@ export default function Register() {
         } else if (error.code === 'auth/weak-password') {
           setErrors({ password: 'הסיסמה חלשה מדי' });
         } else {
-          alert('אירעה שגיאה בהרשמה, אנא נסי שוב מאוחר יותר');
+          setErrors({ general: 'אירעה שגיאה בהרשמה, אנא נסי שוב' });
         }
       }
     }
@@ -81,96 +107,134 @@ export default function Register() {
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+      <StatusBar backgroundColor={APP_BG} barStyle="dark-content" />
+
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.screen}
+      >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-          <View style={styles.container}>
-            <StatusBar backgroundColor="#AEC6CF" barStyle="dark-content" />
-            <Text style={styles.title}>הרשמה</Text>
+          <ScrollView
+            contentContainerStyle={styles.container}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.topSection}>
+              <Text style={styles.title}>הרשמה</Text>
+              <Text style={styles.subtitle}>
+                צרי חשבון חדש והתחילי לנהל את האימונים שלך בצורה מסודרת
+              </Text>
+            </View>
 
-            {/* שדה שם */}
-            <TextInput
-              style={styles.input}
-              placeholder="שם"
-              placeholderTextColor="#9DA3AA"
-              value={name}
-              onChangeText={setName}
-              editable={!loading}
-            />
-            {errors.name && <Text style={styles.errorText}>{errors.name}</Text>}
-
-            {/* אימייל */}
-            <TextInput
-              style={styles.input}
-              placeholder="אימייל"
-              placeholderTextColor="#9DA3AA"
-              keyboardType="email-address"
-              autoCapitalize="none"
-              value={email}
-              onChangeText={setEmail}
-              editable={!loading}
-            />
-            {errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
-
-            {/* סיסמה */}
-            <View style={styles.passwordContainer}>
-              <TextInput
-                style={styles.passwordInput}
-                placeholder="סיסמה"
-                placeholderTextColor="#9DA3AA"
-                secureTextEntry={!showPassword}
-                value={password}
-                onChangeText={setPassword}
-                editable={!loading}
-              />
-              <TouchableOpacity onPress={() => setShowPassword(prev => !prev)}>
-                <Image
-                  source={
-                    showPassword
-                      ? require('../assets/images/myAppImg/openEye.png')
-                      : require('../assets/images/myAppImg/closeEye.png')
-                  }
-                  style={styles.eyeIcon}
+            <View style={styles.formSection}>
+              <Text style={styles.label}>שם</Text>
+              <View style={styles.inputBox}>
+                <MaterialIcons name="person-outline" size={20} color="#5B6470" />
+                <TextInput
+                  style={styles.input}
+                  placeholder="הזיני שם"
+                  placeholderTextColor="#8A94A6"
+                  value={name}
+                  onChangeText={setName}
+                  editable={!loading}
+                  textAlign="right"
                 />
+              </View>
+              {errors.name ? <Text style={styles.errorText}>{errors.name}</Text> : null}
+
+              <Text style={styles.label}>אימייל</Text>
+              <View style={styles.inputBox}>
+                <MaterialIcons name="mail-outline" size={20} color="#5B6470" />
+                <TextInput
+                  style={styles.input}
+                  placeholder="הזיני אימייל"
+                  placeholderTextColor="#8A94A6"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  value={email}
+                  onChangeText={setEmail}
+                  editable={!loading}
+                  textAlign="right"
+                />
+              </View>
+              {errors.email ? <Text style={styles.errorText}>{errors.email}</Text> : null}
+
+              <Text style={styles.label}>סיסמה</Text>
+              <View style={styles.inputBox}>
+                <TouchableOpacity
+                  onPress={() => setShowPassword((prev) => !prev)}
+                  style={styles.iconPressable}
+                  disabled={loading}
+                >
+                  <MaterialIcons
+                    name={showPassword ? 'visibility-off' : 'visibility'}
+                    size={20}
+                    color="#5B6470"
+                  />
+                </TouchableOpacity>
+
+                <TextInput
+                  style={styles.input}
+                  placeholder="הזיני סיסמה"
+                  placeholderTextColor="#8A94A6"
+                  secureTextEntry={!showPassword}
+                  value={password}
+                  onChangeText={setPassword}
+                  editable={!loading}
+                  textAlign="right"
+                />
+              </View>
+              {errors.password ? <Text style={styles.errorText}>{errors.password}</Text> : null}
+
+              <Text style={styles.label}>אישור סיסמה</Text>
+              <View style={styles.inputBox}>
+                <TouchableOpacity
+                  onPress={() => setShowConfirmPassword((prev) => !prev)}
+                  style={styles.iconPressable}
+                  disabled={loading}
+                >
+                  <MaterialIcons
+                    name={showConfirmPassword ? 'visibility-off' : 'visibility'}
+                    size={20}
+                    color="#5B6470"
+                  />
+                </TouchableOpacity>
+
+                <TextInput
+                  style={styles.input}
+                  placeholder="הזיני שוב את הסיסמה"
+                  placeholderTextColor="#8A94A6"
+                  secureTextEntry={!showConfirmPassword}
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  editable={!loading}
+                  textAlign="right"
+                />
+              </View>
+              {errors.confirmPassword ? (
+                <Text style={styles.errorText}>{errors.confirmPassword}</Text>
+              ) : null}
+
+              {errors.general ? <Text style={styles.errorText}>{errors.general}</Text> : null}
+
+              <TouchableOpacity
+                style={[styles.button, loading && styles.buttonDisabled]}
+                onPress={handleRegister}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.buttonText}>הרשמה</Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity disabled={loading} onPress={() => router.push('/')}>
+                <Text style={styles.loginLink}>יש לך כבר חשבון? התחברות</Text>
               </TouchableOpacity>
             </View>
-            {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
-
-            {/* אישור סיסמה */}
-            <View style={styles.passwordContainer}>
-              <TextInput
-                style={styles.passwordInput}
-                placeholder="אישור סיסמה"
-                placeholderTextColor="#9DA3AA"
-                secureTextEntry={!showConfirmPassword}
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                editable={!loading}
-              />
-              <TouchableOpacity onPress={() => setShowConfirmPassword(prev => !prev)}>
-                <Image
-                  source={
-                    showConfirmPassword
-                      ? require('../assets/images/myAppImg/openEye.png')
-                      : require('../assets/images/myAppImg/closeEye.png')
-                  }
-                  style={styles.eyeIcon}
-                />
-              </TouchableOpacity>
-            </View>
-            {errors.confirmPassword && <Text style={styles.errorText}>{errors.confirmPassword}</Text>}
-
-            <TouchableOpacity
-              style={[styles.button, loading && { backgroundColor: '#bbb' }]}
-              onPress={handleRegister}
-              disabled={loading}
-            >
-              <Text style={styles.buttonText}>{loading ? 'רק רגע...' : 'הרשמה'}</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity disabled={loading} onPress={() => router.push('/')}>
-              <Text style={styles.loginLink}>יש לך כבר חשבון? התחברות</Text>
-            </TouchableOpacity>
-          </View>
+          </ScrollView>
         </TouchableWithoutFeedback>
       </KeyboardAvoidingView>
     </>
@@ -178,85 +242,122 @@ export default function Register() {
 }
 
 const styles = StyleSheet.create({
-  container: {
+  screen: {
     flex: 1,
-    backgroundColor: '#AEC6CF',
+    backgroundColor: '#aec6cfb7',
+  },
+
+  container: {
+    flexGrow: 1,
     justifyContent: 'center',
+    paddingHorizontal: screenWidth * 0.07,
+    paddingTop: screenHeight * 0.08,
+    paddingBottom: screenHeight * 0.05,
+  },
+
+  topSection: {
     alignItems: 'center',
-    paddingHorizontal: screenWidth * 0.05,
+    marginBottom: screenHeight * 0.045,
   },
+
   title: {
-    fontSize: screenWidth * 0.1,
+    fontSize: screenWidth * 0.12,
     fontFamily: 'Bilbo',
-    marginBottom: screenHeight * 0.04,
+    color: '#1E293B',
+    marginBottom: 10,
   },
-  input: {
-    width: '90%',
-    height: screenHeight * 0.065,
-    backgroundColor: '#D9D9D9',
-    borderRadius: screenWidth * 0.02,
-    paddingHorizontal: screenWidth * 0.04,
-    fontSize: screenWidth * 0.045,
-    marginBottom: screenHeight * 0.01,
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 5,
-    elevation: 3,
+
+  subtitle: {
+    fontSize: screenWidth < 380 ? 14 : 15,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 22,
+    paddingHorizontal: 10,
+  },
+
+  formSection: {
+    width: '100%',
+  },
+
+  label: {
+    color: '#334155',
+    fontWeight: '700',
     textAlign: 'right',
-    writingDirection: 'rtl',
-    color: '#000',
+    marginBottom: 8,
+    marginTop: 4,
+    fontSize: screenWidth < 380 ? 14 : 15,
   },
-  passwordContainer: {
-    width: '90%',
-    height: screenHeight * 0.065,
-    backgroundColor: '#D9D9D9',
-    borderRadius: screenWidth * 0.02,
+
+  inputBox: {
+    width: '100%',
+    minHeight: 54,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#D7DFE9',
+    paddingHorizontal: 14,
     flexDirection: 'row-reverse',
     alignItems: 'center',
-    paddingHorizontal: screenWidth * 0.04,
-    marginBottom: screenHeight * 0.01,
+    justifyContent: 'space-between',
+    marginBottom: 10,
     shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 5,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    elevation: 2,
   },
-  passwordInput: {
+
+  input: {
     flex: 1,
-    fontSize: screenWidth * 0.045,
-    color: '#000',
+    fontSize: screenWidth < 380 ? 14 : 16,
+    color: '#111827',
     textAlign: 'right',
-    writingDirection: 'rtl',
+    marginRight: 10,
   },
-  eyeIcon: {
-    width: screenWidth * 0.07,
-    height: screenWidth * 0.07,
-    resizeMode: 'contain',
-    marginLeft: screenWidth * 0.02,
+
+  iconPressable: {
+    paddingLeft: 4,
   },
+
   button: {
-    width: screenWidth * 0.35,
-    height: screenHeight * 0.06,
-    backgroundColor: '#8A8484',
-    borderRadius: screenWidth * 0.05,
+    width: '100%',
+    minHeight: 54,
+    backgroundColor: '#0F172A',
+    borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: screenHeight * 0.02,
-    marginBottom: screenHeight * 0.02,
+    marginTop: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
   },
+
+  buttonDisabled: {
+    opacity: 0.7,
+  },
+
   buttonText: {
-    color: '#fff',
-    fontSize: screenWidth * 0.045,
+    color: '#FFFFFF',
+    fontSize: screenWidth < 380 ? 15 : 16,
+    fontWeight: '800',
   },
+
   loginLink: {
-    color: 'black',
-    fontSize: screenWidth * 0.04,
-    textDecorationLine: 'underline',
+    color: '#1D4ED8',
+    fontSize: screenWidth < 380 ? 14 : 15,
+    textAlign: 'center',
+    marginTop: 18,
+    fontWeight: '700',
   },
+
   errorText: {
-    color: 'red',
-    fontSize: screenWidth * 0.035,
-    alignSelf: 'flex-end',
-    marginRight: screenWidth * 0.06,
-    marginBottom: screenHeight * 0.005,
+    color: '#DC2626',
+    fontSize: screenWidth < 380 ? 13 : 14,
+    textAlign: 'right',
+    fontWeight: '500',
+    marginBottom: 4,
+    marginTop: -2,
   },
 });

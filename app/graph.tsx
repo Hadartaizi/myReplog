@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import {
   Text,
   StyleSheet,
@@ -8,15 +8,17 @@ import {
   ScrollView,
   Pressable,
   Alert,
+  useWindowDimensions,
 } from 'react-native';
 import { useFonts } from 'expo-font';
+import { MaterialIcons } from '@expo/vector-icons';
 import AppLayout from './components/AppLayout';
 import { auth, db } from '../database/firebase';
 import { collection, query, where, getDocs, deleteDoc, doc } from 'firebase/firestore';
 import { LineChart, BarChart } from 'react-native-chart-kit';
 import ModalSelector from 'react-native-modal-selector';
 
-const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+const { height: screenHeight } = Dimensions.get('window');
 
 const timeOptions = {
   'כל הזמנים (יומי)': 'all',
@@ -28,6 +30,27 @@ const timeOptions = {
 };
 
 export default function GraphScreen() {
+  const { width, height } = useWindowDimensions();
+  const isSmallScreen = width < 360;
+
+  const dynamic = useMemo(() => {
+    const horizontalPadding = width * 0.05;
+    const cardWidth = Math.min(width * 0.92, 520);
+    const inputHeight = isSmallScreen ? 46 : 50;
+    const titleSize = width < 380 ? 22 : 26;
+    const labelSize = width < 380 ? 14 : 15;
+    const textSize = width < 380 ? 14 : 16;
+
+    return {
+      horizontalPadding,
+      cardWidth,
+      inputHeight,
+      titleSize,
+      labelSize,
+      textSize,
+    };
+  }, [width, isSmallScreen]);
+
   const [fontsLoaded] = useFonts({
     Bilbo: require('../assets/fonts/Bilbo-Regular.ttf'),
   });
@@ -40,19 +63,79 @@ export default function GraphScreen() {
   const [workouts, setWorkouts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [chartData, setChartData] = useState({ labels: [], datasets: [{ data: [] }] });
-  const [yMax, setYMax] = useState(0);
 
   const scrollRef = useRef(null);
+
+  const chartConfig = useMemo(
+    () => ({
+      backgroundGradientFrom: '#F8FAFC',
+      backgroundGradientTo: '#F8FAFC',
+      decimalPlaces: 1,
+      color: (opacity = 1) => `rgba(15, 23, 42, ${opacity})`,
+      labelColor: () => '#334155',
+      propsForBackgroundLines: {
+        strokeDasharray: '',
+        stroke: '#E2E8F0',
+      },
+      propsForDots: {
+        r: '4',
+        strokeWidth: '2',
+        stroke: '#0F172A',
+      },
+      strokeWidth: 2,
+      barPercentage: 0.7,
+    }),
+    []
+  );
+
+  const textAlignByLanguage = (text) => (/[a-zA-Z]/.test(text) ? 'left' : 'right');
+
+  const parseWorkoutDate = (dateValue) => {
+    if (!dateValue) return null;
+
+    if (dateValue?.toDate) {
+      return dateValue.toDate();
+    }
+
+    if (dateValue instanceof Date) {
+      return dateValue;
+    }
+
+    if (typeof dateValue === 'string') {
+      const simpleDateMatch = dateValue.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (simpleDateMatch) {
+        const [, year, month, day] = simpleDateMatch;
+        return new Date(Number(year), Number(month) - 1, Number(day));
+      }
+
+      const parsed = new Date(dateValue);
+      if (!isNaN(parsed.getTime())) {
+        return parsed;
+      }
+    }
+
+    return null;
+  };
+
+  const startOfDay = (date) => {
+    const d = new Date(date);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  };
 
   useEffect(() => {
     const fetchExercises = async () => {
       const user = auth.currentUser;
       if (!user) return;
 
-      const q = query(collection(db, 'exercises'), where('uid', '==', user.uid));
-      const snapshot = await getDocs(q);
-      const names = snapshot.docs.map(doc => doc.data().exerciseName);
-      setAvailableExercises([...new Set(names)]);
+      try {
+        const q = query(collection(db, 'exercises'), where('uid', '==', user.uid));
+        const snapshot = await getDocs(q);
+        const names = snapshot.docs.map((doc) => doc.data().exerciseName).filter(Boolean);
+        setAvailableExercises([...new Set(names)]);
+      } catch (error) {
+        console.error('Error fetching exercises:', error);
+      }
     };
 
     fetchExercises();
@@ -61,6 +144,7 @@ export default function GraphScreen() {
   useEffect(() => {
     const fetchWorkoutData = async () => {
       setLoading(true);
+
       const user = auth.currentUser;
       if (!user || !selectedExercise || !selectedPeriod) {
         setChartData({ labels: [], datasets: [{ data: [] }] });
@@ -68,61 +152,148 @@ export default function GraphScreen() {
         return;
       }
 
-      const q = query(collection(db, 'workouts'), where('uid', '==', user.uid));
-      const snapshot = await getDocs(q);
-      let filteredWorkouts = snapshot.docs.map(doc => doc.data());
+      try {
+        const q = query(collection(db, 'workouts'), where('uid', '==', user.uid));
+        const snapshot = await getDocs(q);
+        let filteredWorkouts = snapshot.docs.map((doc) => doc.data());
 
-      const daysBack = timeOptions[selectedPeriod];
-      if (daysBack !== 'all') {
-        const sinceDate = new Date();
-        sinceDate.setDate(sinceDate.getDate() - daysBack);
-        filteredWorkouts = filteredWorkouts.filter(workout => new Date(workout.date) >= sinceDate);
+        const daysBack = timeOptions[selectedPeriod];
+        if (daysBack !== 'all') {
+          const sinceDate = startOfDay(new Date());
+          sinceDate.setDate(sinceDate.getDate() - daysBack);
+
+          filteredWorkouts = filteredWorkouts.filter((workout) => {
+            const workoutDate = parseWorkoutDate(workout.date);
+            if (!workoutDate) return false;
+            return startOfDay(workoutDate) >= sinceDate;
+          });
+        }
+
+        setWorkouts(filteredWorkouts);
+        generateChartData(filteredWorkouts);
+      } catch (error) {
+        console.error('Error fetching workout data:', error);
+        setChartData({ labels: [], datasets: [{ data: [] }] });
+      } finally {
+        setLoading(false);
       }
-
-      setWorkouts(filteredWorkouts);
-      generateChartData(filteredWorkouts);
-      setLoading(false);
     };
 
     fetchWorkoutData();
   }, [selectedPeriod, selectedExercise, dataType]);
 
   const generateChartData = (filteredWorkouts) => {
-    const dateMap = {};
+    const groupedMap = {};
 
-    const groupDateKey = (date) => {
-      const d = new Date(date);
+    const getBucketData = (date) => {
+      const d = startOfDay(date);
+
       switch (selectedPeriod) {
         case 'כל הזמנים (יומי)':
-        case 'יומי':
-          return d.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit' });
+        case 'יומי': {
+          const label = d.toLocaleDateString('he-IL', {
+            day: '2-digit',
+            month: '2-digit',
+          });
+          return {
+            key: `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`,
+            label,
+            sortValue: d.getTime(),
+          };
+        }
+
         case 'דו שבועי': {
           const start = new Date(d);
-          start.setDate(d.getDate() - (d.getDate() % 14));
-          return start.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit' });
+          start.setDate(d.getDate() - ((d.getDate() - 1) % 14));
+          start.setHours(0, 0, 0, 0);
+
+          const label = start.toLocaleDateString('he-IL', {
+            day: '2-digit',
+            month: '2-digit',
+          });
+
+          return {
+            key: `biweekly-${start.getFullYear()}-${start.getMonth() + 1}-${start.getDate()}`,
+            label,
+            sortValue: start.getTime(),
+          };
         }
-        case 'חודשי':
-          return d.toLocaleDateString('he-IL', { month: 'short', year: '2-digit' });
-        case 'רבעוני':
+
+        case 'חודשי': {
+          const start = new Date(d.getFullYear(), d.getMonth(), 1);
+          const label = start.toLocaleDateString('he-IL', {
+            month: 'short',
+            year: '2-digit',
+          });
+
+          return {
+            key: `month-${start.getFullYear()}-${start.getMonth() + 1}`,
+            label,
+            sortValue: start.getTime(),
+          };
+        }
+
+        case 'רבעוני': {
+          const quarterStartMonth = Math.floor(d.getMonth() / 3) * 3;
+          const start = new Date(d.getFullYear(), quarterStartMonth, 1);
+          const quarter = Math.floor(d.getMonth() / 3) + 1;
+
+          return {
+            key: `quarter-${d.getFullYear()}-${quarter}`,
+            label: `${d.getFullYear()} Q${quarter}`,
+            sortValue: start.getTime(),
+          };
+        }
+
         case 'חצי שנתי': {
-          const quarter = Math.floor(d.getMonth() / (selectedPeriod === 'רבעוני' ? 3 : 6)) + 1;
-          return `${d.getFullYear()} Q${quarter}`;
+          const halfIndex = d.getMonth() < 6 ? 1 : 2;
+          const startMonth = halfIndex === 1 ? 0 : 6;
+          const start = new Date(d.getFullYear(), startMonth, 1);
+
+          return {
+            key: `half-${d.getFullYear()}-${halfIndex}`,
+            label: `${d.getFullYear()} H${halfIndex}`,
+            sortValue: start.getTime(),
+          };
         }
-        case 'שנתי':
-          return d.getFullYear().toString();
-        default:
-          return d.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit' });
+
+        case 'שנתי': {
+          const start = new Date(d.getFullYear(), 0, 1);
+
+          return {
+            key: `year-${d.getFullYear()}`,
+            label: d.getFullYear().toString(),
+            sortValue: start.getTime(),
+          };
+        }
+
+        default: {
+          const label = d.toLocaleDateString('he-IL', {
+            day: '2-digit',
+            month: '2-digit',
+          });
+
+          return {
+            key: `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`,
+            label,
+            sortValue: d.getTime(),
+          };
+        }
       }
     };
 
     filteredWorkouts.forEach((w) => {
       if (w.exerciseName !== selectedExercise) return;
 
-      const key = groupDateKey(w.date);
+      const workoutDate = parseWorkoutDate(w.date);
+      if (!workoutDate) return;
+
+      const bucket = getBucketData(workoutDate);
       const sets = Object.values(w.repsPerSet || {});
       if (sets.length === 0) return;
 
       let value = 0;
+
       if (dataType === 'חזרות') {
         const totalReps = sets.reduce((sum, s) => sum + (parseInt(s.reps) || 0), 0);
         value = totalReps / sets.length;
@@ -133,26 +304,24 @@ export default function GraphScreen() {
         value = totalWeight / sets.length;
       }
 
-      if (!dateMap[key]) dateMap[key] = [];
-      dateMap[key].push(value);
-    });
-
-    const labels = Object.keys(dateMap).sort((a, b) => {
-      if (selectedPeriod.includes('יומי') || selectedPeriod === 'דו שבועי') {
-        const [da, ma] = a.split('.');
-        const [db, mb] = b.split('.');
-        return new Date(2023, parseInt(ma) - 1, parseInt(da)) - new Date(2023, parseInt(mb) - 1, parseInt(db));
+      if (!groupedMap[bucket.key]) {
+        groupedMap[bucket.key] = {
+          label: bucket.label,
+          sortValue: bucket.sortValue,
+          values: [],
+        };
       }
-      return a.localeCompare(b);
+
+      groupedMap[bucket.key].values.push(value);
     });
 
-    const data = labels.map(label => {
-      const values = dateMap[label];
+    const sortedBuckets = Object.values(groupedMap).sort((a, b) => a.sortValue - b.sortValue);
+
+    const labels = sortedBuckets.map((item) => item.label);
+    const data = sortedBuckets.map((item) => {
+      const values = item.values;
       return values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0;
     });
-
-    const maxVal = Math.max(...data, 1);
-    setYMax(Math.ceil(maxVal * 1.1));
 
     setChartData({
       labels,
@@ -174,7 +343,7 @@ export default function GraphScreen() {
               const user = auth.currentUser;
               if (!user) return;
 
-              setAvailableExercises(prev => prev.filter(e => e !== exerciseName));
+              setAvailableExercises((prev) => prev.filter((e) => e !== exerciseName));
               setSelectedExercise('');
 
               const q = query(
@@ -182,7 +351,9 @@ export default function GraphScreen() {
                 where('uid', '==', user.uid),
                 where('exerciseName', '==', exerciseName)
               );
+
               const snapshot = await getDocs(q);
+
               snapshot.forEach(async (docSnap) => {
                 await deleteDoc(doc(db, 'exercises', docSnap.id));
               });
@@ -198,223 +369,497 @@ export default function GraphScreen() {
   if (!fontsLoaded) return null;
 
   const renderChart = () => {
-    const chartWidth = Math.max(screenWidth * 0.9, chartData.labels.length * 60);
+    const chartWidth = Math.max(width * 0.82, chartData.labels.length * 68);
 
     const commonProps = {
       data: chartData,
       width: chartWidth,
-      height: 220,
+      height: 250,
       fromZero: true,
       yAxisLabel: '',
       yAxisSuffix: dataType === 'משקל' ? ' ק"ג' : '',
-      chartConfig: {
-        backgroundGradientFrom: '#ffffff',
-        backgroundGradientTo: '#ffffff',
-        color: (opacity = 1) => `rgba(26, 26, 255, ${opacity})`,
-        labelColor: () => '#000',
-        propsForBackgroundLines: {
-          strokeDasharray: '',
-          stroke: '#ccc',
-        },
-        strokeWidth: 2,
-      },
+      chartConfig,
       verticalLabelRotation: 0,
-      style: { borderRadius: 16, marginTop: 20, marginBottom: 40 },
+      style: styles.chart,
+      withInnerLines: true,
+      withOuterLines: false,
+      segments: 5,
     };
 
-    return chartType === 'קווי' ? <LineChart {...commonProps} bezier /> : <BarChart {...commonProps} />;
+    return chartType === 'קווי' ? (
+      <LineChart {...commonProps} bezier />
+    ) : (
+      <BarChart {...commonProps} />
+    );
   };
 
-  const textAlignByLanguage = (text) => (/[a-zA-Z]/.test(text) ? 'left' : 'right');
+  const selectorBoxStyle = {
+    width: width * 0.9,
+    maxHeight: screenHeight * 0.6,
+    alignSelf: 'center',
+    borderRadius: 16,
+  };
+
+  const selectorRow = ({ value, placeholder, fontSize }) => (
+    <View style={styles.selectorInnerRow}>
+      <MaterialIcons name="keyboard-arrow-down" size={22} color="#5B6470" />
+      <Text
+        style={[
+          value ? styles.selectorText : styles.selectorPlaceholderText,
+          { fontSize },
+        ]}
+        numberOfLines={1}
+      >
+        {value || placeholder}
+      </Text>
+    </View>
+  );
 
   return (
     <AppLayout>
-      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>מסך הגרפים</Text>
+      <View style={styles.screen}>
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={[
+            styles.scrollContent,
+            {
+              paddingTop: height * 0.03,
+              paddingBottom: height * 0.05,
+              paddingHorizontal: dynamic.horizontalPadding,
+            },
+          ]}
+          showsVerticalScrollIndicator={false}
+        >
+          <View
+            style={[
+              styles.card,
+              {
+                width: dynamic.cardWidth,
+                paddingHorizontal: width * 0.05,
+                paddingVertical: height * 0.03,
+              },
+            ]}
+          >
+            <View style={styles.header}>
+              <Text
+                style={[
+                  styles.title,
+                  {
+                    fontSize: dynamic.titleSize,
+                    lineHeight: dynamic.titleSize * 1.45,
+                  },
+                ]}
+              >
+                מסך גרפים
+              </Text>
 
-        {/* בחר תקופה */}
-        <View style={styles.selectorContainer}>
-          <Text style={styles.label}>בחר תקופה:</Text>
-          <ModalSelector
-            data={Object.keys(timeOptions).map((label, index) => ({ key: index, label, value: label }))}
-            initValue={selectedPeriod || 'בחר'}
-            onChange={(option) => setSelectedPeriod(option.value)}
-            style={styles.selector}
-            initValueTextStyle={styles.initText}
-            selectTextStyle={styles.selectText}
-            optionTextStyle={(text) => ({ fontSize: 18, textAlign: textAlignByLanguage(text) })}
-            cancelText="ביטול"
-            optionContainerStyle={{
-              width: screenWidth * 0.90,
-              maxHeight: screenHeight * 0.6, // ✅ דינמי
-              alignSelf: 'center',
-            }}
-          />
-        </View>
+              <Text style={[styles.subtitle, { fontSize: dynamic.textSize - 1 }]}>
+                צפייה במגמות התקדמות לפי תרגיל, תקופה ונתוני אימון
+              </Text>
+            </View>
 
-        {/* בחר תרגיל */}
-        {selectedPeriod !== '' && (
-          <View style={styles.selectorContainer}>
-            <Text style={styles.label}>בחר תרגיל:</Text>
-            <ModalSelector
-              data={availableExercises
-                .sort((a, b) => a.localeCompare(b))
-                .map((label, index) => ({ key: index, label, value: label }))}
-              initValue={selectedExercise || 'בחר'}
-              onChange={(option) => setSelectedExercise(option.value)}
-              style={styles.selector}
-              initValueTextStyle={styles.initText}
-              selectTextStyle={styles.selectText}
-              optionTextStyle={(text) => ({ fontSize: 18, textAlign: textAlignByLanguage(text) })}
-              cancelText="ביטול"
-              optionContainerStyle={{
-                width: screenWidth * 0.90,
-                maxHeight: screenHeight * 0.6, // ✅ דינמי
-                alignSelf: 'center',
-              }}
-            />
+            <View style={styles.section}>
+              <Text style={[styles.label, { fontSize: dynamic.labelSize }]}>תקופה</Text>
+              <ModalSelector
+                data={Object.keys(timeOptions).map((label, index) => ({
+                  key: index,
+                  label,
+                  value: label,
+                }))}
+                onChange={(option) => setSelectedPeriod(option.value)}
+                cancelText="ביטול"
+                optionContainerStyle={selectorBoxStyle}
+                optionTextStyle={(text) => ({
+                  fontSize: 18,
+                  textAlign: textAlignByLanguage(text),
+                })}
+                overlayStyle={styles.modalOverlay}
+                cancelStyle={styles.modalCancelButton}
+                cancelTextStyle={styles.modalCancelText}
+              >
+                <View style={[styles.inputBox, { minHeight: dynamic.inputHeight }]}>
+                  {selectorRow({
+                    value: selectedPeriod,
+                    placeholder: 'בחרי תקופה',
+                    fontSize: dynamic.textSize,
+                  })}
+                </View>
+              </ModalSelector>
+            </View>
+
+            {selectedPeriod !== '' && (
+              <View style={styles.section}>
+                <Text style={[styles.label, { fontSize: dynamic.labelSize }]}>תרגיל</Text>
+                <ModalSelector
+                  data={availableExercises
+                    .sort((a, b) => a.localeCompare(b))
+                    .map((label, index) => ({ key: index, label, value: label }))}
+                  onChange={(option) => setSelectedExercise(option.value)}
+                  cancelText="ביטול"
+                  optionContainerStyle={selectorBoxStyle}
+                  optionTextStyle={(text) => ({
+                    fontSize: 18,
+                    textAlign: textAlignByLanguage(text),
+                  })}
+                  overlayStyle={styles.modalOverlay}
+                  cancelStyle={styles.modalCancelButton}
+                  cancelTextStyle={styles.modalCancelText}
+                >
+                  <View style={[styles.inputBox, { minHeight: dynamic.inputHeight }]}>
+                    {selectorRow({
+                      value: selectedExercise,
+                      placeholder: 'בחרי תרגיל',
+                      fontSize: dynamic.textSize,
+                    })}
+                  </View>
+                </ModalSelector>
+
+                {selectedExercise !== '' && (
+                  <View style={styles.deleteWrapper}>
+                    <Pressable
+                      onPress={() => handleDeleteExercise(selectedExercise)}
+                      style={({ pressed }) => [
+                        styles.deleteButton,
+                        pressed && { opacity: 0.7 },
+                      ]}
+                    >
+                      <MaterialIcons name="delete-outline" size={18} color="#DC2626" />
+                      <Text style={styles.deleteButtonText}>מחקי תרגיל</Text>
+                    </Pressable>
+                  </View>
+                )}
+              </View>
+            )}
 
             {selectedExercise !== '' && (
-              <View style={{ width: screenWidth * 0.70, marginTop: 5 }}>
-                <Pressable onPress={() => handleDeleteExercise(selectedExercise)}>
-                  <Text style={{ color: 'red', fontWeight: 'bold', textAlign: 'right' }}>מחק תרגיל</Text>
-                </Pressable>
+              <View style={styles.section}>
+                <Text style={[styles.label, { fontSize: dynamic.labelSize }]}>מה להציג</Text>
+                <ModalSelector
+                  data={[
+                    { key: 0, label: 'חזרות', value: 'חזרות' },
+                    { key: 1, label: 'סטים', value: 'סטים' },
+                    { key: 2, label: 'משקל', value: 'משקל' },
+                  ]}
+                  onChange={(option) => setDataType(option.value)}
+                  cancelText="ביטול"
+                  optionContainerStyle={selectorBoxStyle}
+                  optionTextStyle={(text) => ({
+                    fontSize: 18,
+                    textAlign: textAlignByLanguage(text),
+                  })}
+                  overlayStyle={styles.modalOverlay}
+                  cancelStyle={styles.modalCancelButton}
+                  cancelTextStyle={styles.modalCancelText}
+                >
+                  <View style={[styles.inputBox, { minHeight: dynamic.inputHeight }]}>
+                    {selectorRow({
+                      value: dataType,
+                      placeholder: 'בחרי נתון',
+                      fontSize: dynamic.textSize,
+                    })}
+                  </View>
+                </ModalSelector>
+              </View>
+            )}
+
+            {dataType !== '' && (
+              <View style={styles.section}>
+                <Text style={[styles.label, { fontSize: dynamic.labelSize }]}>סוג גרף</Text>
+                <ModalSelector
+                  data={[
+                    { key: 0, label: 'גרף קווי', value: 'קווי' },
+                    { key: 1, label: 'גרף עמודות', value: 'עמודות' },
+                  ]}
+                  onChange={(option) => setChartType(option.value)}
+                  cancelText="ביטול"
+                  optionContainerStyle={selectorBoxStyle}
+                  optionTextStyle={(text) => ({
+                    fontSize: 18,
+                    textAlign: textAlignByLanguage(text),
+                  })}
+                  overlayStyle={styles.modalOverlay}
+                  cancelStyle={styles.modalCancelButton}
+                  cancelTextStyle={styles.modalCancelText}
+                >
+                  <View style={[styles.inputBox, { minHeight: dynamic.inputHeight }]}>
+                    {selectorRow({
+                      value: chartType,
+                      placeholder: 'בחרי סוג גרף',
+                      fontSize: dynamic.textSize,
+                    })}
+                  </View>
+                </ModalSelector>
+              </View>
+            )}
+
+            {loading && (
+              <View style={styles.loaderWrapper}>
+                <ActivityIndicator size="large" color="#0F172A" />
+                <Text style={[styles.loaderText, { fontSize: dynamic.textSize - 1 }]}>
+                  טוען נתונים...
+                </Text>
+              </View>
+            )}
+
+            {!loading && selectedExercise && dataType && chartType && chartData.labels.length > 0 && (
+              <View style={styles.graphSection}>
+                <Text style={[styles.graphTitle, { fontSize: dynamic.labelSize + 2 }]}>
+                  גרף התקדמות
+                </Text>
+
+                <Text style={[styles.graphSubTitle, { fontSize: dynamic.textSize - 1 }]}>
+                  מגמה לפי: {dataType}
+                </Text>
+
+                <View style={styles.metricTag}>
+                  <Text style={styles.metricTagText}>
+                    {dataType === 'חזרות'
+                      ? 'ממוצע חזרות'
+                      : dataType === 'סטים'
+                      ? 'כמות סטים'
+                      : 'ממוצע משקל'}
+                  </Text>
+                </View>
+
+                <View style={styles.graphCard}>
+                  <Text style={styles.yAxisTitle}>
+                    {dataType === 'חזרות'
+                      ? 'סה"כ חזרות'
+                      : dataType === 'סטים'
+                      ? 'מספר סטים'
+                      : 'משקל (ק"ג)'}
+                  </Text>
+
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    ref={scrollRef}
+                    style={{ transform: [{ scaleX: -1 }] }}
+                  >
+                    <View style={{ transform: [{ scaleX: -1 }] }}>{renderChart()}</View>
+                  </ScrollView>
+                </View>
+              </View>
+            )}
+
+            {!loading && chartData.labels.length === 0 && selectedExercise && (
+              <View style={styles.emptyState}>
+                <MaterialIcons name="insert-chart-outlined" size={28} color="#64748B" />
+                <Text style={[styles.noData, { fontSize: dynamic.textSize - 1 }]}>
+                  אין נתונים להצגה עבור הבחירה הנוכחית
+                </Text>
               </View>
             )}
           </View>
-        )}
-
-        {/* מה להציג */}
-        {selectedExercise !== '' && (
-          <View style={styles.selectorContainer}>
-            <Text style={styles.label}>מה להציג?</Text>
-            <ModalSelector
-              data={[
-                { key: 0, label: 'חזרות', value: 'חזרות' },
-                { key: 1, label: 'סטים', value: 'סטים' },
-                { key: 2, label: 'משקל', value: 'משקל' },
-              ]}
-              initValue={dataType || 'בחר'}
-              onChange={(option) => setDataType(option.value)}
-              style={styles.selector}
-              initValueTextStyle={styles.initText}
-              selectTextStyle={styles.selectText}
-              optionTextStyle={(text) => ({ fontSize: 18, textAlign: textAlignByLanguage(text) })}
-              cancelText="ביטול"
-              optionContainerStyle={{
-                width: screenWidth * 0.90,
-                maxHeight: screenHeight * 0.6, // ✅ דינמי
-                alignSelf: 'center',
-              }}
-            />
-          </View>
-        )}
-
-        {/* סוג גרף */}
-        {dataType !== '' && (
-          <View style={styles.selectorContainer}>
-            <Text style={styles.label}>סוג גרף:</Text>
-            <ModalSelector
-              data={[
-                { key: 0, label: 'גרף קווי', value: 'קווי' },
-                { key: 1, label: 'גרף עמודות', value: 'עמודות' },
-              ]}
-              initValue={chartType || 'בחר'}
-              onChange={(option) => setChartType(option.value)}
-              style={styles.selector}
-              initValueTextStyle={styles.initText}
-              selectTextStyle={styles.selectText}
-              optionTextStyle={(text) => ({ fontSize: 18, textAlign: textAlignByLanguage(text) })}
-              cancelText="ביטול"
-              optionContainerStyle={{
-                width: screenWidth * 0.90,
-                maxHeight: screenHeight * 0.6, // ✅ דינמי
-                alignSelf: 'center',
-              }}
-            />
-          </View>
-        )}
-
-        {/* הצגת הגרף */}
-        {selectedExercise && dataType && chartType && !loading && chartData.labels.length > 0 && (
-          <>
-            <Text style={styles.subTitle}>מגמה לפי: {dataType}</Text>
-            <View style={styles.graphWrapper}>
-              <Text style={styles.yAxisTitle}>
-                {dataType === 'חזרות' ? 'סה"כ חזרות' : dataType === 'סטים' ? 'מספר סטים' : 'משקל (ק"ג)'}
-              </Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator ref={scrollRef} style={{ transform: [{ scaleX: -1 }] }}>
-                <View style={{ transform: [{ scaleX: -1 }] }}>{renderChart()}</View>
-              </ScrollView>
-            </View>
-          </>
-        )}
-
-        {loading && <ActivityIndicator size="large" color="#000" style={{ marginTop: 20 }} />}
-        {!loading && chartData.labels.length === 0 && selectedExercise && <Text style={styles.noData}>אין נתונים להצגה</Text>}
-      </ScrollView>
+        </ScrollView>
+      </View>
     </AppLayout>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    alignItems: 'center',
-    padding: 20,
+  screen: {
+    flex: 1,
+    backgroundColor: '#F4F7FB',
   },
+
+  scrollContent: {
+    flexGrow: 1,
+    alignItems: 'center',
+  },
+
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 6,
+  },
+
+  header: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+
   title: {
-    fontSize: screenWidth * 0.06,
-    fontWeight: 'bold',
-    color: '#333',
+    fontWeight: '800',
+    color: '#1E293B',
     textAlign: 'center',
-    marginBottom: 20,
   },
-  selectorContainer: {
-    width: '100%',
-    marginBottom: 20,
-    alignItems: 'center',
+
+  subtitle: {
+    color: '#64748B',
+    textAlign: 'center',
+    marginTop: 8,
   },
+
+  section: {
+    marginBottom: 18,
+  },
+
   label: {
-    fontSize: 16,
-    fontWeight: 'bold',
+    color: '#334155',
+    fontWeight: '700',
     textAlign: 'right',
-    marginBottom: 5,
+    marginBottom: 8,
   },
-  selector: {
-    borderWidth: 0,
-    borderColor: 'transparent',
-    backgroundColor: '#fff',
+
+  inputBox: {
+    width: '100%',
+    borderWidth: 1,
+    borderColor: '#D7DFE9',
+    borderRadius: 16,
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 14,
     justifyContent: 'center',
-    height: 40,
-    width: screenWidth * 0.70,
   },
-  initText: {
-    fontSize: 18,
-    color: '#999',
+
+  selectorInnerRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+
+  selectorText: {
+    flex: 1,
+    color: '#111827',
     textAlign: 'right',
+    marginRight: 8,
   },
-  selectText: {
-    fontSize: 18,
-    color: '#000',
+
+  selectorPlaceholderText: {
+    flex: 1,
+    color: '#8A94A6',
     textAlign: 'right',
+    marginRight: 8,
   },
-  subTitle: {
-    fontSize: 18,
-    fontWeight: '600',
+
+  deleteWrapper: {
+    marginTop: 10,
+    alignItems: 'flex-end',
+  },
+
+  deleteButton: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+  },
+
+  deleteButtonText: {
+    color: '#DC2626',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+
+  loaderWrapper: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 26,
+  },
+
+  loaderText: {
+    marginTop: 10,
+    color: '#64748B',
     textAlign: 'center',
-    marginBottom: 20,
   },
-  noData: {
-    fontSize: 16,
-    color: 'gray',
-    marginTop: 20,
+
+  graphSection: {
+    marginTop: 6,
   },
-  graphWrapper: {
+
+  graphTitle: {
+    textAlign: 'right',
+    fontWeight: '800',
+    color: '#1E293B',
+    marginBottom: 6,
+  },
+
+  graphSubTitle: {
+    textAlign: 'center',
+    color: '#64748B',
+    marginBottom: 12,
+  },
+
+  metricTag: {
+    alignSelf: 'center',
+    backgroundColor: '#EEF2F7',
+    borderRadius: 999,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    marginBottom: 14,
+  },
+
+  metricTagText: {
+    color: '#334155',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+
+  graphCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 14,
     alignItems: 'center',
   },
+
   yAxisTitle: {
-    fontSize: 14,
-    fontWeight: 'bold',
+    textAlign: 'center',
+    fontWeight: '700',
+    color: '#1E293B',
     marginBottom: 10,
+    fontSize: 14,
+  },
+
+  chart: {
+    borderRadius: 18,
+    marginTop: 8,
+    marginBottom: 8,
+  },
+
+  emptyState: {
+    marginTop: 12,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingVertical: 24,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+
+  noData: {
+    color: '#64748B',
+    textAlign: 'center',
+    fontWeight: '500',
+    marginTop: 8,
+  },
+
+  modalOverlay: {
+    backgroundColor: 'rgba(15,23,42,0.35)',
+  },
+
+  modalCancelButton: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    marginTop: 10,
+  },
+
+  modalCancelText: {
+    color: '#0F172A',
+    fontWeight: '700',
+    textAlign: 'center',
   },
 });
