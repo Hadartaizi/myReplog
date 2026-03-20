@@ -9,8 +9,6 @@ import {
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
-  TouchableWithoutFeedback,
-  Keyboard,
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
@@ -24,7 +22,6 @@ import { MaterialIcons } from '@expo/vector-icons';
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 const APP_BG = '#F4F7FB';
 
-// תשני כאן למייל שלך
 const ADMIN_EMAIL = 'hadartaizi2002@gmail.com';
 
 export default function Register() {
@@ -74,8 +71,8 @@ export default function Register() {
         );
 
         const user = userCredential.user;
-
-        const role = trimmedEmail === ADMIN_EMAIL.toLowerCase() ? 'admin' : 'client';
+        const role =
+          trimmedEmail === ADMIN_EMAIL.toLowerCase() ? 'admin' : 'client';
 
         await setDoc(doc(db, 'users', user.uid), {
           uid: user.uid,
@@ -109,14 +106,14 @@ export default function Register() {
       <Stack.Screen options={{ headerShown: false }} />
       <StatusBar backgroundColor={APP_BG} barStyle="dark-content" />
 
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.screen}
-      >
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      <View style={styles.screen}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.screen}
+        >
           <ScrollView
             contentContainerStyle={styles.container}
-            keyboardShouldPersistTaps="handled"
+            keyboardShouldPersistTaps="always"
             showsVerticalScrollIndicator={false}
           >
             <View style={styles.topSection}>
@@ -166,6 +163,7 @@ export default function Register() {
                   onPress={() => setShowPassword((prev) => !prev)}
                   style={styles.iconPressable}
                   disabled={loading}
+                  activeOpacity={0.7}
                 >
                   <MaterialIcons
                     name={showPassword ? 'visibility-off' : 'visibility'}
@@ -183,6 +181,8 @@ export default function Register() {
                   onChangeText={setPassword}
                   editable={!loading}
                   textAlign="right"
+                  autoCapitalize="none"
+                  autoCorrect={false}
                 />
               </View>
               {errors.password ? <Text style={styles.errorText}>{errors.password}</Text> : null}
@@ -193,6 +193,7 @@ export default function Register() {
                   onPress={() => setShowConfirmPassword((prev) => !prev)}
                   style={styles.iconPressable}
                   disabled={loading}
+                  activeOpacity={0.7}
                 >
                   <MaterialIcons
                     name={showConfirmPassword ? 'visibility-off' : 'visibility'}
@@ -210,6 +211,8 @@ export default function Register() {
                   onChangeText={setConfirmPassword}
                   editable={!loading}
                   textAlign="right"
+                  autoCapitalize="none"
+                  autoCorrect={false}
                 />
               </View>
               {errors.confirmPassword ? (
@@ -222,6 +225,7 @@ export default function Register() {
                 style={[styles.button, loading && styles.buttonDisabled]}
                 onPress={handleRegister}
                 disabled={loading}
+                activeOpacity={0.85}
               >
                 {loading ? (
                   <ActivityIndicator color="#FFFFFF" />
@@ -235,8 +239,8 @@ export default function Register() {
               </TouchableOpacity>
             </View>
           </ScrollView>
-        </TouchableWithoutFeedback>
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      </View>
     </>
   );
 }
@@ -313,10 +317,12 @@ const styles = StyleSheet.create({
     color: '#111827',
     textAlign: 'right',
     marginRight: 10,
+    minHeight: 44,
   },
 
   iconPressable: {
     paddingLeft: 4,
+    paddingVertical: 4,
   },
 
   button: {

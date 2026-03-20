@@ -16,6 +16,7 @@ import {
   Alert,
   Linking,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -29,9 +30,9 @@ import AppLayout from "./components/AppLayout";
 const APP_BG = "#F4F7FB";
 
 // ===== החליפי כאן לפרטים שלך =====
-const INSTAGRAM_URL = "https://www.instagram.com/your_username/";
-const WHATSAPP_PHONE = "972501234567";
-const PHONE_NUMBER = "0501234567";
+const INSTAGRAM_URL = "https://www.instagram.com/hadar_taizi/";
+const WHATSAPP_PHONE = "972502507437";
+const PHONE_NUMBER = "0502507437";
 // =================================
 
 export default function Menu() {
@@ -67,6 +68,8 @@ export default function Menu() {
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [clients, setClients] = useState<any[]>([]);
+  const [adminActionsOpen, setAdminActionsOpen] = useState(false);
+  const [clientsSectionOpen, setClientsSectionOpen] = useState(false);
 
   useEffect(() => {
     const fetchMenuData = async () => {
@@ -92,7 +95,7 @@ export default function Menu() {
         if (adminMode) {
           const q = query(
             collection(db, "users"),
-            where("role", "==", "client"),
+            where("role", "==", "client")
           );
           const snapshot = await getDocs(q);
 
@@ -102,7 +105,7 @@ export default function Menu() {
           }));
 
           clientsList.sort((a: any, b: any) =>
-            (a.name || "").localeCompare(b.name || "", "he"),
+            (a.name || "").localeCompare(b.name || "", "he")
           );
 
           setClients(clientsList);
@@ -121,14 +124,29 @@ export default function Menu() {
     return <View style={{ flex: 1, backgroundColor: APP_BG }} />;
   }
 
+  const confirmAction = async (title: string, message: string) => {
+    if (Platform.OS === "web") {
+      return window.confirm(`${title}\n\n${message}`);
+    }
+
+    return new Promise<boolean>((resolve) => {
+      Alert.alert(title, message, [
+        {
+          text: "ביטול",
+          style: "cancel",
+          onPress: () => resolve(false),
+        },
+        {
+          text: "אישור",
+          onPress: () => resolve(true),
+        },
+      ]);
+    });
+  };
+
   const openInstagram = async () => {
     try {
-      const supported = await Linking.canOpenURL(INSTAGRAM_URL);
-      if (supported) {
-        await Linking.openURL(INSTAGRAM_URL);
-      } else {
-        Alert.alert("שגיאה", "לא ניתן לפתוח את אינסטגרם כרגע");
-      }
+      await Linking.openURL(INSTAGRAM_URL);
     } catch (error) {
       Alert.alert("שגיאה", "אירעה בעיה בפתיחת אינסטגרם");
     }
@@ -139,12 +157,7 @@ export default function Menu() {
     const url = `https://wa.me/${WHATSAPP_PHONE}?text=${message}`;
 
     try {
-      const supported = await Linking.canOpenURL(url);
-      if (supported) {
-        await Linking.openURL(url);
-      } else {
-        Alert.alert("שגיאה", "לא ניתן לפתוח את וואטסאפ כרגע");
-      }
+      await Linking.openURL(url);
     } catch (error) {
       Alert.alert("שגיאה", "אירעה בעיה בפתיחת וואטסאפ");
     }
@@ -154,12 +167,7 @@ export default function Menu() {
     const url = `tel:${PHONE_NUMBER}`;
 
     try {
-      const supported = await Linking.canOpenURL(url);
-      if (supported) {
-        await Linking.openURL(url);
-      } else {
-        Alert.alert("שגיאה", "לא ניתן לבצע שיחה מהמכשיר הזה");
-      }
+      await Linking.openURL(url);
     } catch (error) {
       Alert.alert("שגיאה", "אירעה בעיה בפתיחת השיחה");
     }
@@ -168,74 +176,77 @@ export default function Menu() {
   const handleLogout = async () => {
     if (loggingOut) return;
 
-    Alert.alert("התנתקות", "האם את בטוחה שברצונך להתנתק?", [
-      { text: "ביטול", style: "cancel" },
-      {
-        text: "התנתקות",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            setLoggingOut(true);
-            await auth.signOut();
-            router.replace("/");
-          } catch (error) {
-            Alert.alert("שגיאה", "אירעה בעיה בהתנתקות");
-          } finally {
-            setLoggingOut(false);
-          }
-        },
-      },
-    ]);
+    const confirmed = await confirmAction(
+      "התנתקות",
+      "האם את בטוחה שברצונך להתנתק?"
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setLoggingOut(true);
+      await auth.signOut();
+      router.replace("/");
+    } catch (error) {
+      console.error("שגיאה בהתנתקות:", error);
+
+      if (Platform.OS === "web") {
+        window.alert("אירעה בעיה בהתנתקות");
+      } else {
+        Alert.alert("שגיאה", "אירעה בעיה בהתנתקות");
+      }
+    } finally {
+      setLoggingOut(false);
+    }
   };
 
-  const handleDeleteClient = (targetUid: string) => {
-    Alert.alert(
+  const handleDeleteClient = async (targetUid: string) => {
+    const confirmed = await confirmAction(
       "מחיקת לקוח",
-      "האם את בטוחה שברצונך למחוק את הלקוח? הנתונים שלו יימחקו מהמערכת.",
-      [
-        { text: "ביטול", style: "cancel" },
-        {
-          text: "מחק",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              // מחיקת המשתמש מהקולקציה users
-              await deleteDoc(doc(db, "users", targetUid));
-
-              // מחיקת כל האימונים של המשתמש
-              const workoutsQuery = query(
-                collection(db, "workouts"),
-                where("uid", "==", targetUid),
-              );
-              const workoutsSnap = await getDocs(workoutsQuery);
-              const workoutDeletes = workoutsSnap.docs.map((docSnap) =>
-                deleteDoc(doc(db, "workouts", docSnap.id)),
-              );
-
-              // מחיקת כל התרגילים של המשתמש
-              const exercisesQuery = query(
-                collection(db, "exercises"),
-                where("uid", "==", targetUid),
-              );
-              const exercisesSnap = await getDocs(exercisesQuery);
-              const exerciseDeletes = exercisesSnap.docs.map((docSnap) =>
-                deleteDoc(doc(db, "exercises", docSnap.id)),
-              );
-
-              await Promise.all([...workoutDeletes, ...exerciseDeletes]);
-
-              // עדכון מקומי של הרשימה
-              setClients((prev) => prev.filter((c) => c.uid !== targetUid));
-
-              Alert.alert("הצלחה", "הלקוח נמחק מהמערכת");
-            } catch (error) {
-              console.error("שגיאה במחיקת לקוח:", error);
-              Alert.alert("שגיאה", "לא ניתן למחוק את הלקוח");
-            }
-          },
-        },
-      ],
+      "האם את בטוחה שברצונך למחוק את הלקוח? הנתונים שלו יימחקו מהמערכת."
     );
+
+    if (!confirmed) return;
+
+    try {
+      await deleteDoc(doc(db, "users", targetUid));
+
+      const workoutsQuery = query(
+        collection(db, "workouts"),
+        where("uid", "==", targetUid)
+      );
+      const workoutsSnap = await getDocs(workoutsQuery);
+      const workoutDeletes = workoutsSnap.docs.map((docSnap) =>
+        deleteDoc(doc(db, "workouts", docSnap.id))
+      );
+
+      const exercisesQuery = query(
+        collection(db, "exercises"),
+        where("uid", "==", targetUid)
+      );
+      const exercisesSnap = await getDocs(exercisesQuery);
+      const exerciseDeletes = exercisesSnap.docs.map((docSnap) =>
+        deleteDoc(doc(db, "exercises", docSnap.id))
+      );
+
+      await Promise.all([...workoutDeletes, ...exerciseDeletes]);
+
+      setClients((prev) => prev.filter((c) => (c.uid || c.id) !== targetUid));
+
+      if (Platform.OS === "web") {
+        window.alert("הלקוח נמחק מהמערכת");
+      } else {
+        Alert.alert("הצלחה", "הלקוח נמחק מהמערכת");
+      }
+    } catch (error) {
+      console.error("שגיאה במחיקת לקוח:", error);
+
+      if (Platform.OS === "web") {
+        window.alert("לא ניתן למחוק את הלקוח");
+      } else {
+        Alert.alert("שגיאה", "לא ניתן למחוק את הלקוח");
+      }
+    }
   };
 
   return (
@@ -251,6 +262,7 @@ export default function Menu() {
             },
           ]}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
         >
           <View
             style={[
@@ -279,7 +291,7 @@ export default function Menu() {
                 style={[styles.subtitle, { fontSize: dynamic.subtitleSize }]}
               >
                 {isAdmin
-                  ? "גישה לניהול לקוחות, יצירת קשר והתנתקות"
+                  ? "כאן אפשר ליצור קשר, להתנתק ולצפות בפעולות ניהול"
                   : "כאן אפשר ליצור קשר או להתנתק מהחשבון"}
               </Text>
             </View>
@@ -290,102 +302,180 @@ export default function Menu() {
                 <Text style={styles.loaderText}>טוען נתונים...</Text>
               </View>
             ) : (
-              <>
-                <View style={styles.actionsContainer}>
-                  <Pressable
+              <View style={styles.actionsContainer}>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.primaryButton,
+                    { minHeight: dynamic.buttonHeight },
+                    pressed && styles.pressed,
+                  ]}
+                  onPress={() => setContactVisible(true)}
+                >
+                  <MaterialIcons
+                    name="support-agent"
+                    size={dynamic.iconSize}
+                    color="#FFFFFF"
+                  />
+                  <Text
                     style={[
-                      styles.primaryButton,
-                      { minHeight: dynamic.buttonHeight },
+                      styles.primaryButtonText,
+                      { fontSize: dynamic.textSize },
                     ]}
-                    onPress={() => setContactVisible(true)}
                   >
-                    <MaterialIcons
-                      name="support-agent"
-                      size={dynamic.iconSize}
-                      color="#FFFFFF"
-                    />
-                    <Text
-                      style={[
-                        styles.primaryButtonText,
-                        { fontSize: dynamic.textSize },
-                      ]}
-                    >
-                      צור קשר
-                    </Text>
-                  </Pressable>
+                    צור קשר
+                  </Text>
+                </Pressable>
 
-                  <Pressable
-                    style={[
-                      styles.logoutButton,
-                      { minHeight: dynamic.buttonHeight },
-                    ]}
-                    onPress={handleLogout}
-                    disabled={loggingOut}
-                  >
-                    {loggingOut ? (
-                      <ActivityIndicator color="#DC2626" />
-                    ) : (
-                      <>
+                {isAdmin && (
+                  <View style={styles.adminWrapper}>
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.adminMainButton,
+                        { minHeight: dynamic.buttonHeight },
+                        pressed && styles.pressedLight,
+                      ]}
+                      onPress={() => setAdminActionsOpen((prev) => !prev)}
+                    >
+                      <View style={styles.adminMainButtonContent}>
                         <MaterialIcons
-                          name="logout"
-                          size={dynamic.iconSize}
-                          color="#DC2626"
+                          name={
+                            adminActionsOpen
+                              ? "keyboard-arrow-up"
+                              : "keyboard-arrow-down"
+                          }
+                          size={24}
+                          color="#1E293B"
                         />
                         <Text
                           style={[
-                            styles.logoutButtonText,
+                            styles.adminMainButtonText,
                             { fontSize: dynamic.textSize },
                           ]}
                         >
-                          התנתקות
+                          פעולות למנהל
                         </Text>
-                      </>
-                    )}
-                  </Pressable>
-                </View>
-
-                {isAdmin && (
-                  <View style={styles.adminSection}>
-                    <Text style={styles.adminSectionTitle}>
-                      לקוחות מחוברים למערכת
-                    </Text>
-
-                    {clients.length === 0 ? (
-                      <View style={styles.emptyClientsBox}>
-                        <Text style={styles.emptyClientsText}>
-                          אין לקוחות להצגה
-                        </Text>
+                        <MaterialIcons
+                          name="admin-panel-settings"
+                          size={dynamic.iconSize}
+                          color="#1E293B"
+                        />
                       </View>
-                    ) : (
-                      clients.map((client) => (
-                        <View key={client.id} style={styles.clientRow}>
-                          <View style={styles.clientActions}>
-                            <Pressable
-                              onPress={() => handleDeleteClient(client.uid)}
-                              style={styles.deleteClientButton}
-                            >
-                              <MaterialIcons
-                                name="delete"
-                                size={20}
-                                color="#DC2626"
-                              />
-                            </Pressable>
-                          </View>
+                    </Pressable>
 
-                          <View style={styles.clientInfo}>
-                            <Text style={styles.clientName}>
-                              {client.name || "ללא שם"}
+                    {adminActionsOpen && (
+                      <View style={styles.adminDropdown}>
+                        <Pressable
+                          style={({ pressed }) => [
+                            styles.adminSubButton,
+                            pressed && styles.pressedLight,
+                          ]}
+                          onPress={() => setClientsSectionOpen((prev) => !prev)}
+                        >
+                          <View style={styles.adminSubButtonContent}>
+                            <MaterialIcons
+                              name={
+                                clientsSectionOpen
+                                  ? "expand-less"
+                                  : "expand-more"
+                              }
+                              size={22}
+                              color="#0F172A"
+                            />
+                            <Text style={styles.adminSubButtonText}>
+                              לקוחות מחוברים למערכת
                             </Text>
-                            <Text style={styles.clientEmail}>
-                              {client.email || "ללא אימייל"}
-                            </Text>
+                            <MaterialIcons
+                              name="groups"
+                              size={20}
+                              color="#0F172A"
+                            />
                           </View>
-                        </View>
-                      ))
+                        </Pressable>
+
+                        {clientsSectionOpen && (
+                          <View style={styles.clientsBox}>
+                            {clients.length === 0 ? (
+                              <View style={styles.emptyClientsBox}>
+                                <Text style={styles.emptyClientsText}>
+                                  אין לקוחות להצגה
+                                </Text>
+                              </View>
+                            ) : (
+                              clients.map((client) => {
+                                const targetUid = client.uid || client.id;
+
+                                return (
+                                  <View key={client.id} style={styles.clientRow}>
+                                    <View style={styles.clientActions}>
+                                      <Pressable
+                                        style={({ pressed }) => [
+                                          styles.deleteClientButton,
+                                          pressed && styles.deletePressed,
+                                        ]}
+                                        onPress={() =>
+                                          handleDeleteClient(targetUid)
+                                        }
+                                        hitSlop={10}
+                                      >
+                                        <MaterialIcons
+                                          name="delete"
+                                          size={20}
+                                          color="#DC2626"
+                                        />
+                                      </Pressable>
+                                    </View>
+
+                                    <View style={styles.clientInfo}>
+                                      <Text style={styles.clientName}>
+                                        {client.name || "ללא שם"}
+                                      </Text>
+                                      <Text style={styles.clientEmail}>
+                                        {client.email || "ללא אימייל"}
+                                      </Text>
+                                    </View>
+                                  </View>
+                                );
+                              })
+                            )}
+                          </View>
+                        )}
+                      </View>
                     )}
                   </View>
                 )}
-              </>
+
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.logoutButton,
+                    { minHeight: dynamic.buttonHeight },
+                    pressed && styles.logoutPressed,
+                    loggingOut && styles.disabledButton,
+                  ]}
+                  onPress={handleLogout}
+                  disabled={loggingOut}
+                  hitSlop={6}
+                >
+                  {loggingOut ? (
+                    <ActivityIndicator color="#DC2626" />
+                  ) : (
+                    <>
+                      <MaterialIcons
+                        name="logout"
+                        size={dynamic.iconSize}
+                        color="#DC2626"
+                      />
+                      <Text
+                        style={[
+                          styles.logoutButtonText,
+                          { fontSize: dynamic.textSize },
+                        ]}
+                      >
+                        התנתקות
+                      </Text>
+                    </>
+                  )}
+                </Pressable>
+              </View>
             )}
           </View>
         </ScrollView>
@@ -403,6 +493,7 @@ export default function Menu() {
               <Pressable
                 style={styles.modalClose}
                 onPress={() => setContactVisible(false)}
+                hitSlop={10}
               >
                 <MaterialIcons name="close" size={24} color="#222" />
               </Pressable>
@@ -412,24 +503,45 @@ export default function Menu() {
                 בחרי איך נוח לך ליצור קשר
               </Text>
 
-              <Pressable style={styles.contactButton} onPress={openInstagram}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.contactButton,
+                  pressed && styles.pressedLight,
+                ]}
+                onPress={openInstagram}
+              >
                 <MaterialIcons name="photo-camera" size={20} color="#1E293B" />
                 <Text style={styles.contactButtonText}>אינסטגרם</Text>
               </Pressable>
 
-              <Pressable style={styles.contactButton} onPress={openWhatsApp}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.contactButton,
+                  pressed && styles.pressedLight,
+                ]}
+                onPress={openWhatsApp}
+              >
                 <MaterialIcons name="chat" size={20} color="#1E293B" />
                 <Text style={styles.contactButtonText}>וואטסאפ</Text>
               </Pressable>
 
-              <Pressable style={styles.contactButton} onPress={makePhoneCall}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.contactButton,
+                  pressed && styles.pressedLight,
+                ]}
+                onPress={makePhoneCall}
+              >
                 <MaterialIcons name="phone" size={20} color="#1E293B" />
                 <Text style={styles.contactButtonText}>שיחת טלפון</Text>
               </Pressable>
 
               <Pressable
                 onPress={() => setContactVisible(false)}
-                style={styles.closeButton}
+                style={({ pressed }) => [
+                  styles.closeButton,
+                  pressed && styles.pressedLight,
+                ]}
               >
                 <Text style={styles.closeButtonText}>סגור</Text>
               </Pressable>
@@ -444,7 +556,7 @@ export default function Menu() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#F4F7FB",
+    backgroundColor: APP_BG,
   },
 
   scrollContent: {
@@ -493,6 +605,7 @@ const styles = StyleSheet.create({
 
   actionsContainer: {
     gap: 14,
+    width: "100%",
   },
 
   primaryButton: {
@@ -502,6 +615,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    width: "100%",
   },
 
   primaryButtonText: {
@@ -509,36 +625,75 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
 
-  logoutButton: {
+  adminWrapper: {
+    width: "100%",
+    gap: 10,
+  },
+
+  adminMainButton: {
     borderRadius: 18,
-    backgroundColor: "#FEF2F2",
+    backgroundColor: "#EEF2FF",
     borderWidth: 1,
-    borderColor: "#FECACA",
+    borderColor: "#C7D2FE",
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    justifyContent: "center",
+    width: "100%",
+  },
+
+  adminMainButtonContent: {
     flexDirection: "row-reverse",
     alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
+    justifyContent: "space-between",
   },
 
-  logoutButtonText: {
-    color: "#DC2626",
-    fontWeight: "800",
-  },
-
-  adminSection: {
-    marginTop: 24,
-  },
-
-  adminSectionTitle: {
-    fontSize: 18,
-    fontWeight: "800",
+  adminMainButtonText: {
     color: "#1E293B",
+    fontWeight: "800",
+    flex: 1,
     textAlign: "right",
-    marginBottom: 12,
+    marginHorizontal: 10,
+  },
+
+  adminDropdown: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    padding: 12,
+    width: "100%",
+  },
+
+  adminSubButton: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+  },
+
+  adminSubButtonContent: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+
+  adminSubButtonText: {
+    color: "#0F172A",
+    fontWeight: "700",
+    fontSize: 15,
+    flex: 1,
+    textAlign: "right",
+    marginHorizontal: 10,
+  },
+
+  clientsBox: {
+    marginTop: 12,
   },
 
   emptyClientsBox: {
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#FFFFFF",
     borderRadius: 16,
     borderWidth: 1,
     borderColor: "#E2E8F0",
@@ -554,7 +709,7 @@ const styles = StyleSheet.create({
   },
 
   clientRow: {
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#FFFFFF",
     borderRadius: 16,
     borderWidth: 1,
     borderColor: "#E2E8F0",
@@ -597,6 +752,25 @@ const styles = StyleSheet.create({
     padding: 6,
     borderWidth: 1,
     borderColor: "#FECACA",
+  },
+
+  logoutButton: {
+    borderRadius: 18,
+    backgroundColor: "#FEF2F2",
+    borderWidth: 1,
+    borderColor: "#FECACA",
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    width: "100%",
+  },
+
+  logoutButtonText: {
+    color: "#DC2626",
+    fontWeight: "800",
   },
 
   modalOverlay: {
@@ -666,5 +840,25 @@ const styles = StyleSheet.create({
     color: "#1E293B",
     fontWeight: "800",
     fontSize: 16,
+  },
+
+  pressed: {
+    opacity: 0.85,
+  },
+
+  pressedLight: {
+    opacity: 0.75,
+  },
+
+  logoutPressed: {
+    opacity: 0.8,
+  },
+
+  deletePressed: {
+    opacity: 0.7,
+  },
+
+  disabledButton: {
+    opacity: 0.6,
   },
 });

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   Text,
   StyleSheet,
@@ -12,8 +12,9 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { MaterialIcons } from '@expo/vector-icons';
+import Icon from 'react-native-vector-icons/MaterialIcons';
 import AppLayout from './components/AppLayout';
+import { useFonts } from 'expo-font';
 import { auth, db } from '../database/firebase';
 import {
   collection,
@@ -26,6 +27,13 @@ import {
 } from 'firebase/firestore';
 
 const APP_BG = '#F4F7FB';
+
+const formatDateForInput = (value: Date) => {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
 export default function Steps() {
   const { width, height } = useWindowDimensions();
@@ -51,86 +59,176 @@ export default function Steps() {
     };
   }, [width, isSmallScreen]);
 
-  const [loading, setLoading] = useState(false);
-  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
-  const [filteredWorkouts, setFilteredWorkouts] = useState([]);
+  const [fontsLoaded] = useFonts({
+    Bilbo: require('../assets/fonts/Bilbo-Regular.ttf'),
+  });
+
+  const [loading, setLoading] = useState(true);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [allWorkouts, setAllWorkouts] = useState<any[]>([]);
+  const [filteredWorkouts, setFilteredWorkouts] = useState<any[]>([]);
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const [tempDate, setTempDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [editingId, setEditingId] = useState(null);
-  const [originalWorkout, setOriginalWorkout] = useState(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [originalWorkout, setOriginalWorkout] = useState<any>(null);
   const [errorMessage, setErrorMessage] = useState('');
-  const [collapsedCards, setCollapsedCards] = useState({});
+  const [collapsedCards, setCollapsedCards] = useState<Record<string, boolean>>({});
 
-  const getDateKey = (date) => date.toLocaleDateString('he-IL');
+  const parseWorkoutDate = (dateValue: any) => {
+    if (!dateValue) return null;
 
-  const buildCollapsedState = (workouts) => {
-    const initialCollapsed = {};
-    workouts.forEach((workout) => {
-      initialCollapsed[workout.id] = true;
-    });
-    setCollapsedCards(initialCollapsed);
-  };
-
-  const fetchWorkoutsByDate = useCallback(async (date, options = { silent: false }) => {
-    const user = auth.currentUser;
-    if (!user) {
-      setLoading(false);
-      setHasLoadedOnce(true);
-      return;
+    if (dateValue?.toDate) {
+      return dateValue.toDate();
     }
 
-    try {
-      if (!options.silent) {
-        setLoading(true);
+    if (dateValue instanceof Date) {
+      return dateValue;
+    }
+
+    if (typeof dateValue === 'string') {
+      const simpleDateMatch = dateValue.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (simpleDateMatch) {
+        const [, year, month, day] = simpleDateMatch;
+        return new Date(Number(year), Number(month) - 1, Number(day));
       }
 
-      const selectedDateKey = getDateKey(date);
+      const parsed = new Date(dateValue);
+      if (!isNaN(parsed.getTime())) {
+        return parsed;
+      }
+    }
 
-      const q = query(
-        collection(db, 'workouts'),
-        where('uid', '==', user.uid),
-        where('dateKey', '==', selectedDateKey)
-      );
+    return null;
+  };
 
-      const snapshot = await getDocs(q);
+  const buildCollapsedState = (workouts: any[]) => {
+    const updatedCollapsed: Record<string, boolean> = {};
+    workouts.forEach((workout) => {
+      updatedCollapsed[workout.id] = true;
+    });
+    setCollapsedCards(updatedCollapsed);
+  };
 
-      const workouts = snapshot.docs
-        .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
-        .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+  const filterByDate = (workouts: any[], date: Date) => {
+    const selectedStr = date.toLocaleDateString('he-IL');
 
-      setFilteredWorkouts(workouts);
-      buildCollapsedState(workouts);
+    const filtered = workouts.filter((w) => {
+      const parsedDate = parseWorkoutDate(w.date);
+      if (!parsedDate) return false;
+      return parsedDate.toLocaleDateString('he-IL') === selectedStr;
+    });
+
+    setFilteredWorkouts(filtered);
+    buildCollapsedState(filtered);
+  };
+
+  useEffect(() => {
+    const fetchWorkouts = async () => {
+      const user = auth.currentUser;
+      if (!user) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const q = query(collection(db, 'workouts'), where('uid', '==', user.uid));
+        const snapshot = await getDocs(q);
+
+        const workouts = snapshot.docs
+          .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
+          .sort(
+            (a: any, b: any) =>
+              new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime()
+          );
+
+        setAllWorkouts(workouts);
+        filterByDate(workouts, selectedDate);
+      } catch (error) {
+        console.error('Error fetching workouts:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchWorkouts();
+  }, []);
+
+  const openDatePicker = () => {
+    if (Platform.OS === 'web') return;
+    setTempDate(selectedDate);
+    setShowDatePicker(true);
+  };
+
+  const closeDatePicker = () => {
+    setShowDatePicker(false);
+  };
+
+  const onDateChange = (_event: any, date?: Date) => {
+    if (!date || isNaN(date.getTime())) return;
+
+    if (Platform.OS === 'ios') {
+      setTempDate(date);
+    } else {
+      setSelectedDate(date);
+      setTempDate(date);
+      filterByDate(allWorkouts, date);
       setEditingId(null);
       setOriginalWorkout(null);
       setErrorMessage('');
-    } catch (error) {
-      console.error('Error fetching workouts by date:', error);
-      setFilteredWorkouts([]);
-    } finally {
-      setLoading(false);
-      setHasLoadedOnce(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchWorkoutsByDate(selectedDate);
-  }, [selectedDate, fetchWorkoutsByDate]);
-
-  const onDateChange = (_event, date) => {
-    setShowDatePicker(Platform.OS === 'ios');
-    if (date) {
-      setSelectedDate(date);
+      setShowDatePicker(false);
     }
   };
 
-  const toggleCollapse = (id) => {
+  const confirmIosDate = () => {
+    setSelectedDate(tempDate);
+    filterByDate(allWorkouts, tempDate);
+    setEditingId(null);
+    setOriginalWorkout(null);
+    setErrorMessage('');
+    setShowDatePicker(false);
+  };
+
+  const handleWebDateChange = (value: string) => {
+    if (!value) {
+      const today = new Date();
+      setSelectedDate(today);
+      setTempDate(today);
+      filterByDate(allWorkouts, today);
+      setEditingId(null);
+      setOriginalWorkout(null);
+      setErrorMessage('');
+      return;
+    }
+
+    const newDate = new Date(`${value}T12:00:00`);
+    if (isNaN(newDate.getTime())) return;
+
+    setSelectedDate(newDate);
+    setTempDate(newDate);
+    filterByDate(allWorkouts, newDate);
+    setEditingId(null);
+    setOriginalWorkout(null);
+    setErrorMessage('');
+  };
+
+  const startEditingWorkout = (workout: any) => {
+    if (editingId !== workout.id) {
+      setEditingId(workout.id);
+      setOriginalWorkout(JSON.parse(JSON.stringify(workout)));
+      setErrorMessage('');
+    }
+  };
+
+  const toggleCollapse = (id: string) => {
     setCollapsedCards((prev) => ({
       ...prev,
       [id]: !prev[id],
     }));
   };
 
-  const handleFieldChange = (workoutId, field, value) => {
+  const handleFieldChange = (workoutId: string, field: string, value: string) => {
     setFilteredWorkouts((prev) =>
       prev.map((w) => {
         if (w.id !== workoutId) return w;
@@ -139,9 +237,15 @@ export default function Steps() {
 
         if (field === 'numSets') {
           const cleanedValue = String(value).replace(/[^0-9]/g, '');
-          const newCount = parseInt(cleanedValue, 10);
-
           updated.numSets = cleanedValue;
+
+          if (cleanedValue === '') {
+            updated.repsPerSet = {};
+            setErrorMessage('');
+            return updated;
+          }
+
+          const newCount = parseInt(cleanedValue, 10);
 
           if (isNaN(newCount) || newCount < 0) return w;
 
@@ -153,7 +257,7 @@ export default function Steps() {
           setErrorMessage('');
 
           const currentSets = w.repsPerSet || {};
-          const updatedSets = {};
+          const updatedSets: Record<string, { reps: string; weight: string }> = {};
 
           for (let i = 0; i < newCount; i++) {
             updatedSets[i] = currentSets[i] || { reps: '', weight: '' };
@@ -167,7 +271,12 @@ export default function Steps() {
     );
   };
 
-  const handleRepsWeightChange = (workoutId, setIndex, field, value) => {
+  const handleRepsWeightChange = (
+    workoutId: string,
+    setIndex: string,
+    field: 'reps' | 'weight',
+    value: string
+  ) => {
     const cleanedValue =
       field === 'reps'
         ? value.replace(/[^0-9]/g, '')
@@ -191,52 +300,102 @@ export default function Steps() {
     );
   };
 
-  const saveWorkout = (workout) => {
-    Alert.alert('אישור שמירה', 'האם אתה בטוח שברצונך לשמור את השינויים?', [
-      { text: 'ביטול', style: 'cancel' },
-      {
-        text: 'שמור',
-        onPress: async () => {
-          try {
-            const docRef = doc(db, 'workouts', workout.id);
-            const { id, ...dataToSave } = workout;
+  const confirmAction = async (title: string, message: string) => {
+    if (Platform.OS === 'web') {
+      return window.confirm(`${title}\n\n${message}`);
+    }
 
-            await updateDoc(docRef, dataToSave);
-
-            setEditingId(null);
-            setOriginalWorkout(null);
-            fetchWorkoutsByDate(selectedDate, { silent: true });
-          } catch (error) {
-            console.error('Error saving workout:', error);
-          }
-        },
-      },
-    ]);
+    return new Promise<boolean>((resolve) => {
+      Alert.alert(title, message, [
+        { text: 'ביטול', style: 'cancel', onPress: () => resolve(false) },
+        { text: 'אישור', onPress: () => resolve(true) },
+      ]);
+    });
   };
 
-  const deleteWorkout = (workoutId) => {
-    Alert.alert('אישור מחיקה', 'האם אתה בטוח שברצונך למחוק את התרגיל?', [
-      { text: 'ביטול', style: 'cancel' },
-      {
-        text: 'מחק',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await deleteDoc(doc(db, 'workouts', workoutId));
-            setFilteredWorkouts((prev) => prev.filter((w) => w.id !== workoutId));
-          } catch (error) {
-            console.error('Error deleting workout:', error);
-          }
-        },
-      },
-    ]);
+  const saveWorkout = async (workout: any) => {
+    const confirmed = await confirmAction(
+      'אישור שמירה',
+      'האם אתה בטוח שברצונך לשמור את השינויים?'
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setSavingId(workout.id);
+
+      const docRef = doc(db, 'workouts', workout.id);
+      const { id, ...dataToSave } = workout;
+
+      await updateDoc(docRef, dataToSave);
+
+      setEditingId(null);
+      setOriginalWorkout(null);
+      setErrorMessage('');
+
+      const updated = allWorkouts.map((w) =>
+        w.id === workout.id ? { ...w, ...dataToSave } : w
+      );
+
+      setAllWorkouts(updated);
+      filterByDate(updated, selectedDate);
+    } catch (error) {
+      console.error('Error saving workout:', error);
+      Alert.alert('שגיאה', 'שמירת האימון נכשלה');
+    } finally {
+      setSavingId(null);
+    }
   };
+
+  const deleteWorkout = async (workoutId: string) => {
+    const confirmed = await confirmAction(
+      'אישור מחיקה',
+      'האם אתה בטוח שברצונך למחוק את התרגיל?'
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setDeletingId(workoutId);
+
+      await deleteDoc(doc(db, 'workouts', workoutId));
+
+      const updated = allWorkouts.filter((w) => w.id !== workoutId);
+      setAllWorkouts(updated);
+      filterByDate(updated, selectedDate);
+
+      if (editingId === workoutId) {
+        setEditingId(null);
+        setOriginalWorkout(null);
+        setErrorMessage('');
+      }
+    } catch (error) {
+      console.error('Error deleting workout:', error);
+      Alert.alert('שגיאה', 'מחיקת האימון נכשלה');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  if (!fontsLoaded || loading) {
+    return (
+      <View style={styles.root}>
+        <AppLayout>
+          <View style={styles.loaderScreen}>
+            <ActivityIndicator size="large" color="#0F172A" />
+            <Text style={styles.loaderText}>טוען אימונים...</Text>
+          </View>
+        </AppLayout>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.root}>
       <AppLayout>
         <View style={styles.screen}>
           <ScrollView
+            keyboardShouldPersistTaps="always"
             contentContainerStyle={[
               styles.scrollContent,
               {
@@ -269,7 +428,6 @@ export default function Steps() {
                 >
                   מעקב אחר אימונים
                 </Text>
-
                 <Text style={[styles.subtitle, { fontSize: dynamic.textSize - 1 }]}>
                   צפייה, עריכה ומחיקה של אימונים לפי תאריך
                 </Text>
@@ -278,40 +436,49 @@ export default function Steps() {
               <View style={styles.section}>
                 <Text style={[styles.label, { fontSize: dynamic.labelSize }]}>בחר תאריך</Text>
 
-                <Pressable
-                  style={[styles.inputBox, { minHeight: dynamic.inputHeight }]}
-                  onPress={() => setShowDatePicker(true)}
-                >
-                  <Icon name="calendar-today" size={20} color="#5B6470" />
-                  <Text style={[styles.inputText, { fontSize: dynamic.textSize }]}>
-                    {selectedDate.toLocaleDateString('he-IL')}
-                  </Text>
-                </Pressable>
+                {Platform.OS === 'web' ? (
+                  <View style={[styles.inputBox, { minHeight: dynamic.inputHeight }]}>
+                    <input
+                      type="date"
+                      value={formatDateForInput(selectedDate)}
+                      onChange={(e) => handleWebDateChange(e.target.value)}
+                      style={{
+                        width: '100%',
+                        height: 44,
+                        border: 'none',
+                        outline: 'none',
+                        background: 'transparent',
+                        fontSize: dynamic.textSize,
+                        color: '#111827',
+                        direction: 'rtl',
+                        textAlign: 'right',
+                      }}
+                    />
+                  </View>
+                ) : (
+                  <Pressable
+                    onPress={openDatePicker}
+                    style={({ pressed }) => [
+                      styles.dateField,
+                      { minHeight: dynamic.inputHeight },
+                      pressed && styles.dateFieldPressed,
+                    ]}
+                  >
+                    <View style={styles.dateFieldRight}>
+                      <Text style={[styles.dateValue, { fontSize: dynamic.textSize }]}>
+                        {selectedDate.toLocaleDateString('he-IL')}
+                      </Text>
+                      <Text style={styles.dateHint}>לחצי כדי לשנות תאריך</Text>
+                    </View>
 
-                {showDatePicker && (
-                  <DateTimePicker
-                    value={selectedDate}
-                    mode="date"
-                    display="default"
-                    onChange={onDateChange}
-                  />
+                    <Icon name="calendar-today" size={20} color="#5B6470" />
+                  </Pressable>
                 )}
               </View>
 
-              {loading && (
-                <View style={styles.inlineLoader}>
-                  <ActivityIndicator size="small" color="#0F172A" />
-                  <Text style={styles.inlineLoaderText}>טוען אימונים...</Text>
-                </View>
-              )}
-
-              {!hasLoadedOnce ? (
-                <View style={styles.inlineLoaderFirst}>
-                  <ActivityIndicator size="large" color="#0F172A" />
-                </View>
-              ) : filteredWorkouts.length === 0 ? (
+              {filteredWorkouts.length === 0 ? (
                 <View style={styles.emptyState}>
-                  <MaterialIcons  name="event-busy" size={28} color="#64748B" />
+                  <Icon name="event-busy" size={28} color="#64748B" />
                   <Text style={[styles.noWorkoutText, { fontSize: dynamic.textSize - 1 }]}>
                     לא בוצע אימון ביום זה
                   </Text>
@@ -320,13 +487,13 @@ export default function Steps() {
                 filteredWorkouts.map((workout) => {
                   const isCollapsed = collapsedCards[workout.id];
                   const isEditing = editingId === workout.id;
+                  const canEditFields = isEditing || Platform.OS === 'web';
+                  const isSavingThis = savingId === workout.id;
+                  const isDeletingThis = deletingId === workout.id;
 
                   return (
                     <View key={workout.id} style={styles.workoutCard}>
-                      <Pressable
-                        onPress={() => toggleCollapse(workout.id)}
-                        style={styles.cardHeader}
-                      >
+                      <Pressable onPress={() => toggleCollapse(workout.id)} style={styles.cardHeader}>
                         <View style={styles.cardHeaderLeft}>
                           <Icon
                             name={isCollapsed ? 'expand-more' : 'expand-less'}
@@ -357,14 +524,15 @@ export default function Steps() {
                               ]}
                               value={String(workout.numSets ?? '')}
                               keyboardType="numeric"
+                              onFocus={() => startEditingWorkout(workout)}
                               onChangeText={(val) => handleFieldChange(workout.id, 'numSets', val)}
-                              editable={isEditing}
+                              editable={canEditFields && !isSavingThis && !isDeletingThis}
                               textAlign="right"
                               placeholder="מספר סטים"
                               placeholderTextColor="#8A94A6"
                             />
 
-                            {isEditing && errorMessage ? (
+                            {errorMessage ? (
                               <Text style={[styles.errorText, { fontSize: dynamic.textSize - 2 }]}>
                                 {errorMessage}
                               </Text>
@@ -395,10 +563,11 @@ export default function Steps() {
                                       placeholder="לדוגמה 12"
                                       placeholderTextColor="#8A94A6"
                                       keyboardType="numeric"
+                                      onFocus={() => startEditingWorkout(workout)}
                                       onChangeText={(val) =>
                                         handleRepsWeightChange(workout.id, setIdx, 'reps', val)
                                       }
-                                      editable={isEditing}
+                                      editable={canEditFields && !isSavingThis && !isDeletingThis}
                                       textAlign="right"
                                     />
                                   </View>
@@ -419,10 +588,11 @@ export default function Steps() {
                                       placeholder="לדוגמה 20"
                                       placeholderTextColor="#8A94A6"
                                       keyboardType="numeric"
+                                      onFocus={() => startEditingWorkout(workout)}
                                       onChangeText={(val) =>
                                         handleRepsWeightChange(workout.id, setIdx, 'weight', val)
                                       }
-                                      editable={isEditing}
+                                      editable={canEditFields && !isSavingThis && !isDeletingThis}
                                       textAlign="right"
                                     />
                                   </View>
@@ -438,17 +608,23 @@ export default function Steps() {
                                     styles.actionButton,
                                     styles.saveButton,
                                     { minHeight: dynamic.buttonHeight },
+                                    (isSavingThis || isDeletingThis) && styles.disabledButton,
                                   ]}
                                   onPress={() => saveWorkout(workout)}
+                                  disabled={isSavingThis || isDeletingThis}
                                 >
-                                  <Text
-                                    style={[
-                                      styles.saveButtonText,
-                                      { fontSize: dynamic.textSize - 1 },
-                                    ]}
-                                  >
-                                    שמור
-                                  </Text>
+                                  {isSavingThis ? (
+                                    <ActivityIndicator size="small" color="#166534" />
+                                  ) : (
+                                    <Text
+                                      style={[
+                                        styles.saveButtonText,
+                                        { fontSize: dynamic.textSize - 1 },
+                                      ]}
+                                    >
+                                      שמור
+                                    </Text>
+                                  )}
                                 </Pressable>
 
                                 <Pressable
@@ -456,17 +632,17 @@ export default function Steps() {
                                     styles.actionButton,
                                     styles.cancelButton,
                                     { minHeight: dynamic.buttonHeight },
+                                    (isSavingThis || isDeletingThis) && styles.disabledButton,
                                   ]}
                                   onPress={() => {
                                     setFilteredWorkouts((prev) =>
-                                      prev.map((w) =>
-                                        w.id === workout.id ? originalWorkout || w : w
-                                      )
+                                      prev.map((w) => (w.id === workout.id ? originalWorkout || w : w))
                                     );
                                     setEditingId(null);
                                     setOriginalWorkout(null);
                                     setErrorMessage('');
                                   }}
+                                  disabled={isSavingThis || isDeletingThis}
                                 >
                                   <Text
                                     style={[
@@ -489,6 +665,7 @@ export default function Steps() {
                                 onPress={() => {
                                   setEditingId(workout.id);
                                   setOriginalWorkout(JSON.parse(JSON.stringify(workout)));
+                                  setErrorMessage('');
                                 }}
                               >
                                 <Text
@@ -504,17 +681,26 @@ export default function Steps() {
                           </View>
 
                           <Pressable
-                            style={[styles.deleteButton, { minHeight: dynamic.buttonHeight }]}
+                            style={[
+                              styles.deleteButton,
+                              { minHeight: dynamic.buttonHeight },
+                              (isSavingThis || isDeletingThis) && styles.disabledButton,
+                            ]}
                             onPress={() => deleteWorkout(workout.id)}
+                            disabled={isSavingThis || isDeletingThis}
                           >
-                            <Text
-                              style={[
-                                styles.deleteButtonText,
-                                { fontSize: dynamic.textSize - 1 },
-                              ]}
-                            >
-                              מחק
-                            </Text>
+                            {isDeletingThis ? (
+                              <ActivityIndicator size="small" color="#DC2626" />
+                            ) : (
+                              <Text
+                                style={[
+                                  styles.deleteButtonText,
+                                  { fontSize: dynamic.textSize - 1 },
+                                ]}
+                              >
+                                מחק
+                              </Text>
+                            )}
                           </Pressable>
                         </>
                       )}
@@ -526,6 +712,48 @@ export default function Steps() {
           </ScrollView>
         </View>
       </AppLayout>
+
+      {showDatePicker && Platform.OS === 'android' && (
+        <View style={styles.datePickerInlineWrapper}>
+          <DateTimePicker
+            value={selectedDate}
+            mode="date"
+            display="calendar"
+            onChange={onDateChange}
+          />
+        </View>
+      )}
+
+      {showDatePicker && Platform.OS === 'ios' && (
+        <View style={styles.datePickerInlineWrapper}>
+          <View style={styles.iosPickerCard}>
+            <Text style={styles.dateModalTitle}>בחרי תאריך</Text>
+
+            <DateTimePicker
+              value={tempDate}
+              mode="date"
+              display="spinner"
+              onChange={onDateChange}
+            />
+
+            <View style={styles.iosButtonsRow}>
+              <Pressable
+                style={[styles.dateModalButton, styles.iosHalfButton]}
+                onPress={closeDatePicker}
+              >
+                <Text style={styles.dateModalButtonText}>ביטול</Text>
+              </Pressable>
+
+              <Pressable
+                style={[styles.dateModalButton, styles.iosHalfButton]}
+                onPress={confirmIosDate}
+              >
+                <Text style={styles.dateModalButtonText}>אישור</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -539,6 +767,19 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: APP_BG,
+  },
+
+  loaderScreen: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: APP_BG,
+  },
+
+  loaderText: {
+    marginTop: 10,
+    color: '#64748B',
+    fontSize: 15,
   },
 
   scrollContent: {
@@ -603,32 +844,44 @@ const styles = StyleSheet.create({
 
   textInput: {
     color: '#111827',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+    paddingVertical: 0,
   },
 
-  inputText: {
-    color: '#111827',
+  dateField: {
+    width: '100%',
+    borderWidth: 1,
+    borderColor: '#D7DFE9',
+    borderRadius: 16,
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 14,
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+
+  dateFieldPressed: {
+    opacity: 0.9,
+  },
+
+  dateFieldRight: {
     flex: 1,
-    textAlign: 'right',
+    alignItems: 'flex-end',
     marginRight: 10,
   },
 
-  inlineLoader: {
-    flexDirection: 'row-reverse',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    marginBottom: 14,
+  dateValue: {
+    color: '#111827',
+    fontWeight: '700',
+    textAlign: 'right',
   },
 
-  inlineLoaderText: {
+  dateHint: {
+    marginTop: 2,
+    fontSize: 12,
     color: '#64748B',
-    fontSize: 14,
-  },
-
-  inlineLoaderFirst: {
-    paddingVertical: 30,
-    alignItems: 'center',
-    justifyContent: 'center',
+    textAlign: 'right',
   },
 
   emptyState: {
@@ -685,11 +938,11 @@ const styles = StyleSheet.create({
 
   setCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    padding: 12,
-    marginBottom: 10,
+    padding: 14,
+    marginBottom: 12,
   },
 
   setTitle: {
@@ -793,5 +1046,56 @@ const styles = StyleSheet.create({
   deleteButtonText: {
     color: '#DC2626',
     fontWeight: '800',
+  },
+
+  disabledButton: {
+    opacity: 0.6,
+  },
+
+  datePickerInlineWrapper: {
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    backgroundColor: APP_BG,
+  },
+
+  iosPickerCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 20,
+  },
+
+  dateModalTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+
+  dateModalButton: {
+    marginTop: 16,
+    backgroundColor: '#0F172A',
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  dateModalButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 15,
+  },
+
+  iosButtonsRow: {
+    flexDirection: 'row-reverse',
+    gap: 10,
+    marginTop: 8,
+    width: '100%',
+  },
+
+  iosHalfButton: {
+    flex: 1,
   },
 });

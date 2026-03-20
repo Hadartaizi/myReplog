@@ -59,12 +59,14 @@ export default function GraphScreen() {
   const [selectedExercise, setSelectedExercise] = useState('');
   const [dataType, setDataType] = useState('');
   const [chartType, setChartType] = useState('');
-  const [availableExercises, setAvailableExercises] = useState([]);
-  const [workouts, setWorkouts] = useState([]);
+  const [availableExercises, setAvailableExercises] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
-  const [chartData, setChartData] = useState({ labels: [], datasets: [{ data: [] }] });
+  const [chartData, setChartData] = useState<{ labels: string[]; datasets: { data: number[] }[] }>({
+    labels: [],
+    datasets: [{ data: [] }],
+  });
 
-  const scrollRef = useRef(null);
+  const scrollRef = useRef<ScrollView | null>(null);
 
   const chartConfig = useMemo(
     () => ({
@@ -84,13 +86,15 @@ export default function GraphScreen() {
       },
       strokeWidth: 2,
       barPercentage: 0.7,
+      fillShadowGradient: '#0F172A',
+      fillShadowGradientOpacity: 0.18,
     }),
     []
   );
 
-  const textAlignByLanguage = (text) => (/[a-zA-Z]/.test(text) ? 'left' : 'right');
+  const textAlignByLanguage = (text: string) => (/[a-zA-Z]/.test(text) ? 'left' : 'right');
 
-  const parseWorkoutDate = (dateValue) => {
+  const parseWorkoutDate = (dateValue: any) => {
     if (!dateValue) return null;
 
     if (dateValue?.toDate) {
@@ -117,10 +121,18 @@ export default function GraphScreen() {
     return null;
   };
 
-  const startOfDay = (date) => {
+  const startOfDay = (date: Date) => {
     const d = new Date(date);
     d.setHours(0, 0, 0, 0);
     return d;
+  };
+
+  const getFormattedDateLabel = (date: Date) => {
+    return date.toLocaleDateString('he-IL', {
+      day: '2-digit',
+      month: '2-digit',
+      year: '2-digit',
+    });
   };
 
   useEffect(() => {
@@ -131,7 +143,7 @@ export default function GraphScreen() {
       try {
         const q = query(collection(db, 'exercises'), where('uid', '==', user.uid));
         const snapshot = await getDocs(q);
-        const names = snapshot.docs.map((doc) => doc.data().exerciseName).filter(Boolean);
+        const names = snapshot.docs.map((docItem) => docItem.data().exerciseName).filter(Boolean);
         setAvailableExercises([...new Set(names)]);
       } catch (error) {
         console.error('Error fetching exercises:', error);
@@ -146,7 +158,7 @@ export default function GraphScreen() {
       setLoading(true);
 
       const user = auth.currentUser;
-      if (!user || !selectedExercise || !selectedPeriod) {
+      if (!user || !selectedExercise || !selectedPeriod || !dataType) {
         setChartData({ labels: [], datasets: [{ data: [] }] });
         setLoading(false);
         return;
@@ -155,21 +167,20 @@ export default function GraphScreen() {
       try {
         const q = query(collection(db, 'workouts'), where('uid', '==', user.uid));
         const snapshot = await getDocs(q);
-        let filteredWorkouts = snapshot.docs.map((doc) => doc.data());
+        let filteredWorkouts = snapshot.docs.map((docItem) => docItem.data());
 
-        const daysBack = timeOptions[selectedPeriod];
+        const daysBack = timeOptions[selectedPeriod as keyof typeof timeOptions];
         if (daysBack !== 'all') {
           const sinceDate = startOfDay(new Date());
-          sinceDate.setDate(sinceDate.getDate() - daysBack);
+          sinceDate.setDate(sinceDate.getDate() - Number(daysBack));
 
-          filteredWorkouts = filteredWorkouts.filter((workout) => {
+          filteredWorkouts = filteredWorkouts.filter((workout: any) => {
             const workoutDate = parseWorkoutDate(workout.date);
             if (!workoutDate) return false;
             return startOfDay(workoutDate) >= sinceDate;
           });
         }
 
-        setWorkouts(filteredWorkouts);
         generateChartData(filteredWorkouts);
       } catch (error) {
         console.error('Error fetching workout data:', error);
@@ -182,22 +193,20 @@ export default function GraphScreen() {
     fetchWorkoutData();
   }, [selectedPeriod, selectedExercise, dataType]);
 
-  const generateChartData = (filteredWorkouts) => {
-    const groupedMap = {};
+  const generateChartData = (filteredWorkouts: any[]) => {
+    const groupedMap: Record<
+      string,
+      { label: string; sortValue: number; values: number[] }
+    > = {};
 
-    const getBucketData = (date) => {
+    const getBucketData = (date: Date) => {
       const d = startOfDay(date);
 
       switch (selectedPeriod) {
-        case 'כל הזמנים (יומי)':
-        case 'יומי': {
-          const label = d.toLocaleDateString('he-IL', {
-            day: '2-digit',
-            month: '2-digit',
-          });
+        case 'כל הזמנים (יומי)': {
           return {
             key: `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`,
-            label,
+            label: getFormattedDateLabel(d),
             sortValue: d.getTime(),
           };
         }
@@ -207,28 +216,19 @@ export default function GraphScreen() {
           start.setDate(d.getDate() - ((d.getDate() - 1) % 14));
           start.setHours(0, 0, 0, 0);
 
-          const label = start.toLocaleDateString('he-IL', {
-            day: '2-digit',
-            month: '2-digit',
-          });
-
           return {
             key: `biweekly-${start.getFullYear()}-${start.getMonth() + 1}-${start.getDate()}`,
-            label,
+            label: getFormattedDateLabel(start),
             sortValue: start.getTime(),
           };
         }
 
         case 'חודשי': {
           const start = new Date(d.getFullYear(), d.getMonth(), 1);
-          const label = start.toLocaleDateString('he-IL', {
-            month: 'short',
-            year: '2-digit',
-          });
 
           return {
             key: `month-${start.getFullYear()}-${start.getMonth() + 1}`,
-            label,
+            label: getFormattedDateLabel(start),
             sortValue: start.getTime(),
           };
         }
@@ -236,23 +236,21 @@ export default function GraphScreen() {
         case 'רבעוני': {
           const quarterStartMonth = Math.floor(d.getMonth() / 3) * 3;
           const start = new Date(d.getFullYear(), quarterStartMonth, 1);
-          const quarter = Math.floor(d.getMonth() / 3) + 1;
 
           return {
-            key: `quarter-${d.getFullYear()}-${quarter}`,
-            label: `${d.getFullYear()} Q${quarter}`,
+            key: `quarter-${d.getFullYear()}-${quarterStartMonth}`,
+            label: getFormattedDateLabel(start),
             sortValue: start.getTime(),
           };
         }
 
         case 'חצי שנתי': {
-          const halfIndex = d.getMonth() < 6 ? 1 : 2;
-          const startMonth = halfIndex === 1 ? 0 : 6;
+          const startMonth = d.getMonth() < 6 ? 0 : 6;
           const start = new Date(d.getFullYear(), startMonth, 1);
 
           return {
-            key: `half-${d.getFullYear()}-${halfIndex}`,
-            label: `${d.getFullYear()} H${halfIndex}`,
+            key: `half-${d.getFullYear()}-${startMonth}`,
+            label: getFormattedDateLabel(start),
             sortValue: start.getTime(),
           };
         }
@@ -262,45 +260,40 @@ export default function GraphScreen() {
 
           return {
             key: `year-${d.getFullYear()}`,
-            label: d.getFullYear().toString(),
+            label: getFormattedDateLabel(start),
             sortValue: start.getTime(),
           };
         }
 
         default: {
-          const label = d.toLocaleDateString('he-IL', {
-            day: '2-digit',
-            month: '2-digit',
-          });
-
           return {
             key: `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`,
-            label,
+            label: getFormattedDateLabel(d),
             sortValue: d.getTime(),
           };
         }
       }
     };
 
-    filteredWorkouts.forEach((w) => {
+    filteredWorkouts.forEach((w: any) => {
       if (w.exerciseName !== selectedExercise) return;
 
       const workoutDate = parseWorkoutDate(w.date);
       if (!workoutDate) return;
 
       const bucket = getBucketData(workoutDate);
-      const sets = Object.values(w.repsPerSet || {});
+      const sets = Object.values(w.repsPerSet || {}) as { reps?: string; weight?: string }[];
       if (sets.length === 0) return;
 
       let value = 0;
 
       if (dataType === 'חזרות') {
-        const totalReps = sets.reduce((sum, s) => sum + (parseInt(s.reps) || 0), 0);
+        const totalReps = sets.reduce((sum, s) => sum + (parseInt(s.reps || '0', 10) || 0), 0);
         value = totalReps / sets.length;
       } else if (dataType === 'סטים') {
-        value = parseInt(w.numSets) || 0;
+        value = parseInt(String(w.numSets || '0'), 10) || 0;
       } else if (dataType === 'משקל') {
-        const totalWeight = sets.reduce((sum, s) => sum + (parseFloat(s.weight) || 0), 0);
+        const totalWeight = sets.reduce((sum, s) => sum + (parseFloat(s.weight || '0') || 0), 0);
         value = totalWeight / sets.length;
       }
 
@@ -329,7 +322,7 @@ export default function GraphScreen() {
     });
   };
 
-  const handleDeleteExercise = async (exerciseName) => {
+  const handleDeleteExercise = async (exerciseName: string) => {
     Alert.alert(
       'אישור מחיקה',
       'מחיקת תרגיל מהרשימה תגרום למחיקה לצמיתות. האם אתה בטוח?',
@@ -345,6 +338,9 @@ export default function GraphScreen() {
 
               setAvailableExercises((prev) => prev.filter((e) => e !== exerciseName));
               setSelectedExercise('');
+              setDataType('');
+              setChartType('');
+              setChartData({ labels: [], datasets: [{ data: [] }] });
 
               const q = query(
                 collection(db, 'exercises'),
@@ -354,9 +350,9 @@ export default function GraphScreen() {
 
               const snapshot = await getDocs(q);
 
-              snapshot.forEach(async (docSnap) => {
+              for (const docSnap of snapshot.docs) {
                 await deleteDoc(doc(db, 'exercises', docSnap.id));
-              });
+              }
             } catch (error) {
               console.error('Error deleting exercise:', error);
             }
@@ -368,9 +364,10 @@ export default function GraphScreen() {
 
   if (!fontsLoaded) return null;
 
-  const renderChart = () => {
-    const chartWidth = Math.max(width * 0.82, chartData.labels.length * 68);
+  const chartViewportWidth = Math.max(dynamic.cardWidth - 28, 260);
+  const chartWidth = Math.max(chartViewportWidth, chartData.labels.length * 86);
 
+  const renderChart = () => {
     const commonProps = {
       data: chartData,
       width: chartWidth,
@@ -396,11 +393,19 @@ export default function GraphScreen() {
   const selectorBoxStyle = {
     width: width * 0.9,
     maxHeight: screenHeight * 0.6,
-    alignSelf: 'center',
+    alignSelf: 'center' as const,
     borderRadius: 16,
   };
 
-  const selectorRow = ({ value, placeholder, fontSize }) => (
+  const selectorRow = ({
+    value,
+    placeholder,
+    fontSize,
+  }: {
+    value: string;
+    placeholder: string;
+    fontSize: number;
+  }) => (
     <View style={styles.selectorInnerRow}>
       <MaterialIcons name="keyboard-arrow-down" size={22} color="#5B6470" />
       <Text
@@ -466,10 +471,16 @@ export default function GraphScreen() {
                   label,
                   value: label,
                 }))}
-                onChange={(option) => setSelectedPeriod(option.value)}
+                onChange={(option) => {
+                  setSelectedPeriod(option.value);
+                  setSelectedExercise('');
+                  setDataType('');
+                  setChartType('');
+                  setChartData({ labels: [], datasets: [{ data: [] }] });
+                }}
                 cancelText="ביטול"
                 optionContainerStyle={selectorBoxStyle}
-                optionTextStyle={(text) => ({
+                optionTextStyle={(text: string) => ({
                   fontSize: 18,
                   textAlign: textAlignByLanguage(text),
                 })}
@@ -494,10 +505,15 @@ export default function GraphScreen() {
                   data={availableExercises
                     .sort((a, b) => a.localeCompare(b))
                     .map((label, index) => ({ key: index, label, value: label }))}
-                  onChange={(option) => setSelectedExercise(option.value)}
+                  onChange={(option) => {
+                    setSelectedExercise(option.value);
+                    setDataType('');
+                    setChartType('');
+                    setChartData({ labels: [], datasets: [{ data: [] }] });
+                  }}
                   cancelText="ביטול"
                   optionContainerStyle={selectorBoxStyle}
-                  optionTextStyle={(text) => ({
+                  optionTextStyle={(text: string) => ({
                     fontSize: 18,
                     textAlign: textAlignByLanguage(text),
                   })}
@@ -540,10 +556,14 @@ export default function GraphScreen() {
                     { key: 1, label: 'סטים', value: 'סטים' },
                     { key: 2, label: 'משקל', value: 'משקל' },
                   ]}
-                  onChange={(option) => setDataType(option.value)}
+                  onChange={(option) => {
+                    setDataType(option.value);
+                    setChartType('');
+                    setChartData({ labels: [], datasets: [{ data: [] }] });
+                  }}
                   cancelText="ביטול"
                   optionContainerStyle={selectorBoxStyle}
-                  optionTextStyle={(text) => ({
+                  optionTextStyle={(text: string) => ({
                     fontSize: 18,
                     textAlign: textAlignByLanguage(text),
                   })}
@@ -573,7 +593,7 @@ export default function GraphScreen() {
                   onChange={(option) => setChartType(option.value)}
                   cancelText="ביטול"
                   optionContainerStyle={selectorBoxStyle}
-                  optionTextStyle={(text) => ({
+                  optionTextStyle={(text: string) => ({
                     fontSize: 18,
                     textAlign: textAlignByLanguage(text),
                   })}
@@ -624,20 +644,24 @@ export default function GraphScreen() {
                 <View style={styles.graphCard}>
                   <Text style={styles.yAxisTitle}>
                     {dataType === 'חזרות'
-                      ? 'סה"כ חזרות'
+                      ? 'ממוצע חזרות'
                       : dataType === 'סטים'
                       ? 'מספר סטים'
                       : 'משקל (ק"ג)'}
                   </Text>
 
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    ref={scrollRef}
-                    style={{ transform: [{ scaleX: -1 }] }}
-                  >
-                    <View style={{ transform: [{ scaleX: -1 }] }}>{renderChart()}</View>
-                  </ScrollView>
+                  <View style={styles.chartViewport}>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator
+                      ref={scrollRef}
+                      contentContainerStyle={styles.chartScrollContent}
+                    >
+                      {renderChart()}
+                    </ScrollView>
+                  </View>
+
+                  <Text style={styles.scrollHint}>גללי הצידה כדי לראות תאריכים נוספים</Text>
                 </View>
               </View>
             )}
@@ -811,6 +835,7 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
     padding: 14,
     alignItems: 'center',
+    overflow: 'hidden',
   },
 
   yAxisTitle: {
@@ -821,10 +846,27 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 
+  chartViewport: {
+    width: '100%',
+    overflow: 'hidden',
+    alignSelf: 'stretch',
+  },
+
+  chartScrollContent: {
+    paddingHorizontal: 4,
+  },
+
   chart: {
     borderRadius: 18,
     marginTop: 8,
     marginBottom: 8,
+  },
+
+  scrollHint: {
+    marginTop: 6,
+    fontSize: 12,
+    color: '#64748B',
+    textAlign: 'center',
   },
 
   emptyState: {
