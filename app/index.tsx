@@ -5,15 +5,15 @@ import {
   Image,
   StatusBar,
   StyleSheet,
-  Dimensions,
   TextInput,
   TouchableOpacity,
   KeyboardAvoidingView,
   Keyboard,
-  TouchableWithoutFeedback,
   Platform,
   ScrollView,
   ActivityIndicator,
+  useWindowDimensions,
+  Pressable,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { useFonts } from 'expo-font';
@@ -21,11 +21,12 @@ import { signInWithEmailAndPassword } from 'firebase/auth';
 import { MaterialIcons } from '@expo/vector-icons';
 import { auth } from '../database/firebase.js';
 
-const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 const APP_BG = '#F4F7FB';
 
 export default function Index() {
   const router = useRouter();
+  const { width, height } = useWindowDimensions();
+
   const [fontsLoaded] = useFonts({
     Bilbo: require('../assets/fonts/Bilbo-Regular.ttf'),
   });
@@ -72,97 +73,136 @@ export default function Index() {
     }
   };
 
+  const isSmallScreen = width < 380;
+
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <StatusBar backgroundColor={APP_BG} barStyle="dark-content" />
 
-      <KeyboardAvoidingView
-        style={styles.screen}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      <Pressable style={styles.screen} onPress={Keyboard.dismiss}>
+        <KeyboardAvoidingView
+          style={styles.screen}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
           <ScrollView
-            contentContainerStyle={styles.container}
+            contentContainerStyle={[
+              styles.container,
+              {
+                paddingHorizontal: width * 0.07,
+                paddingTop: height * 0.08,
+                paddingBottom: height * 0.05,
+              },
+            ]}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
-            <View style={styles.topSection}>
-              <Image
-                source={require('../assets/images/myAppImg/logoBarbells.png')}
-                style={styles.logo}
-              />
-
-              <Text style={styles.titleReplog}>REPLOG</Text>
-
-              <Text style={styles.welcomeTitle}>ברוכה הבאה</Text>
-              <Text style={styles.subtitle}>
-                התחבר/י כדי להמשיך לנהל ולעקוב אחרי האימונים שלך
-              </Text>
-            </View>
-
-            <View style={styles.formSection}>
-              <Text style={styles.label}>אימייל</Text>
-              <View style={styles.inputBox}>
-                <MaterialIcons name="mail-outline" size={20} color="#5B6470" />
-                <TextInput
-                  style={styles.input}
-                  placeholder="הזיני אימייל"
-                  placeholderTextColor="#8A94A6"
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  value={email}
-                  onChangeText={setEmail}
-                  textAlign="right"
+            <View style={[styles.card, { maxWidth: 430 }]}>
+              <View style={[styles.topSection, { marginBottom: height * 0.04 }]}>
+                <Image
+                  source={require('../assets/images/myAppImg/logoBarbells.png')}
+                  style={[
+                    styles.logo,
+                    {
+                      width: Math.min(width * 0.72, 280),
+                      height: isSmallScreen ? 70 : 90,
+                    },
+                  ]}
                 />
+
+                <Text style={[styles.titleReplog, { fontSize: isSmallScreen ? 42 : 52 }]}>
+                  REPLOG
+                </Text>
+
+                <Text style={[styles.welcomeTitle, { fontSize: isSmallScreen ? 24 : 28 }]}>
+                  ברוכה הבאה
+                </Text>
+
+                <Text style={[styles.subtitle, { fontSize: isSmallScreen ? 14 : 15 }]}>
+                  התחבר/י כדי להמשיך לנהל ולעקוב אחרי האימונים שלך
+                </Text>
               </View>
 
-              <Text style={styles.label}>סיסמה</Text>
-              <View style={styles.inputBox}>
-                <TouchableOpacity
-                  onPress={() => setShowPassword((prev) => !prev)}
-                  style={styles.iconPressable}
-                >
-                  <MaterialIcons
-                    name={showPassword ? 'visibility-off' : 'visibility'}
-                    size={20}
-                    color="#5B6470"
+              <View style={styles.formSection}>
+                <Text style={[styles.label, { fontSize: isSmallScreen ? 14 : 15 }]}>
+                  אימייל
+                </Text>
+
+                <View style={styles.inputBox}>
+                  <MaterialIcons name="mail-outline" size={20} color="#5B6470" />
+                  <TextInput
+                    style={[styles.input, { fontSize: isSmallScreen ? 14 : 16 }]}
+                    placeholder="הזיני אימייל"
+                    placeholderTextColor="#8A94A6"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    value={email}
+                    onChangeText={setEmail}
+                    textAlign="right"
                   />
+                </View>
+
+                <Text style={[styles.label, { fontSize: isSmallScreen ? 14 : 15 }]}>
+                  סיסמה
+                </Text>
+
+                <View style={styles.inputBox}>
+                  <TouchableOpacity
+                    onPress={() => setShowPassword((prev) => !prev)}
+                    style={styles.iconPressable}
+                    activeOpacity={0.7}
+                  >
+                    <MaterialIcons
+                      name={showPassword ? 'visibility-off' : 'visibility'}
+                      size={20}
+                      color="#5B6470"
+                    />
+                  </TouchableOpacity>
+
+                  <TextInput
+                    style={[styles.input, { fontSize: isSmallScreen ? 14 : 16 }]}
+                    placeholder="הזיני סיסמה"
+                    placeholderTextColor="#8A94A6"
+                    secureTextEntry={!showPassword}
+                    value={password}
+                    onChangeText={setPassword}
+                    textAlign="right"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                </View>
+
+                {errorMessage ? (
+                  <Text style={[styles.errorText, { fontSize: isSmallScreen ? 13 : 14 }]}>
+                    {errorMessage}
+                  </Text>
+                ) : null}
+
+                <TouchableOpacity
+                  style={[styles.button, isLoading && styles.buttonDisabled]}
+                  onPress={handleLogin}
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <Text style={[styles.buttonText, { fontSize: isSmallScreen ? 15 : 16 }]}>
+                      התחברות
+                    </Text>
+                  )}
                 </TouchableOpacity>
 
-                <TextInput
-                  style={styles.input}
-                  placeholder="הזיני סיסמה"
-                  placeholderTextColor="#8A94A6"
-                  secureTextEntry={!showPassword}
-                  value={password}
-                  onChangeText={setPassword}
-                  textAlign="right"
-                />
+                <TouchableOpacity onPress={() => router.push('/register')}>
+                  <Text style={[styles.signupText, { fontSize: isSmallScreen ? 14 : 15 }]}>
+                    אין לך חשבון? להרשמה
+                  </Text>
+                </TouchableOpacity>
               </View>
-
-              {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
-
-              <TouchableOpacity
-                style={[styles.button, isLoading && styles.buttonDisabled]}
-                onPress={handleLogin}
-                disabled={isLoading}
-              >
-                {isLoading ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <Text style={styles.buttonText}>התחברות</Text>
-                )}
-              </TouchableOpacity>
-
-              <TouchableOpacity onPress={() => router.push('/register')}>
-                <Text style={styles.signupText}>אין לך חשבון? להרשמה</Text>
-              </TouchableOpacity>
             </View>
           </ScrollView>
-        </TouchableWithoutFeedback>
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      </Pressable>
     </>
   );
 }
@@ -176,32 +216,29 @@ const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
     justifyContent: 'center',
-    paddingHorizontal: screenWidth * 0.07,
-    paddingTop: screenHeight * 0.08,
-    paddingBottom: screenHeight * 0.05,
+    alignItems: 'center',
+  },
+
+  card: {
+    width: '100%',
   },
 
   topSection: {
     alignItems: 'center',
-    marginBottom: screenHeight * 0.05,
   },
 
   logo: {
-    width: screenWidth * 0.72,
-    height: screenHeight * 0.12,
     resizeMode: 'contain',
     marginBottom: 6,
   },
 
   titleReplog: {
-    fontSize: screenWidth * 0.12,
     fontFamily: 'Bilbo',
     color: '#1E293B',
     marginBottom: 12,
   },
 
   welcomeTitle: {
-    fontSize: screenWidth < 380 ? 24 : 28,
     fontWeight: '800',
     color: '#1E293B',
     textAlign: 'center',
@@ -209,7 +246,6 @@ const styles = StyleSheet.create({
   },
 
   subtitle: {
-    fontSize: screenWidth < 380 ? 14 : 15,
     color: '#64748B',
     textAlign: 'center',
     lineHeight: 22,
@@ -226,7 +262,6 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     marginBottom: 8,
     marginTop: 4,
-    fontSize: screenWidth < 380 ? 14 : 15,
   },
 
   inputBox: {
@@ -251,13 +286,13 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     color: '#111827',
-    fontSize: screenWidth < 380 ? 14 : 16,
     textAlign: 'right',
     marginRight: 10,
   },
 
   iconPressable: {
     paddingLeft: 4,
+    paddingVertical: 4,
   },
 
   button: {
@@ -281,13 +316,11 @@ const styles = StyleSheet.create({
 
   buttonText: {
     color: '#FFFFFF',
-    fontSize: screenWidth < 380 ? 15 : 16,
     fontWeight: '800',
   },
 
   signupText: {
     color: '#1D4ED8',
-    fontSize: screenWidth < 380 ? 14 : 15,
     textAlign: 'center',
     marginTop: 18,
     fontWeight: '700',
@@ -295,7 +328,6 @@ const styles = StyleSheet.create({
 
   errorText: {
     color: '#DC2626',
-    fontSize: screenWidth < 380 ? 13 : 14,
     marginTop: -2,
     marginBottom: 6,
     textAlign: 'right',
