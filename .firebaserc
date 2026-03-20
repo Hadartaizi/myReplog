@@ -1,5 +1,8 @@
 {
   "projects": {
-    "default": "database-e330b"
-  }
+    "default": "database-e330b",
+    "prod": "fir-6b758"
+  },
+  "targets": {},
+  "etags": {}
 }

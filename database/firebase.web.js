@@ -1,11 +1,11 @@
-import Constants from "expo-constants";
 import { initializeApp } from "firebase/app";
 import {
-    browserLocalPersistence,
-    getAuth,
-    setPersistence,
+  getAuth,
+  setPersistence,
+  browserLocalPersistence,
 } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
+import Constants from "expo-constants";
 
 const extra =
   (Constants.expoConfig?.extra?.firebaseConfig && Constants.expoConfig.extra) ||
@@ -15,7 +15,7 @@ const firebaseConfig = extra?.firebaseConfig;
 
 if (!firebaseConfig) {
   throw new Error(
-    "Missing Firebase config. Make sure app.json/app.config.js has extra.firebaseConfig",
+    "Missing Firebase config. Make sure app.json/app.config.js has extra.firebaseConfig"
   );
 }
 
@@ -29,4 +29,3 @@ setPersistence(auth, browserLocalPersistence).catch((error) => {
 const db = getFirestore(app);
 
 export { app, auth, db };
-

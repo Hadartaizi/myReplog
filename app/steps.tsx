@@ -12,7 +12,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import Icon from 'react-native-vector-icons/MaterialIcons';
+import { MaterialIcons } from '@expo/vector-icons';
 import AppLayout from './components/AppLayout';
 import { auth, db } from '../database/firebase';
 import {
@@ -311,7 +311,7 @@ export default function Steps() {
                 </View>
               ) : filteredWorkouts.length === 0 ? (
                 <View style={styles.emptyState}>
-                  <Icon name="event-busy" size={28} color="#64748B" />
+                  <MaterialIcons  name="event-busy" size={28} color="#64748B" />
                   <Text style={[styles.noWorkoutText, { fontSize: dynamic.textSize - 1 }]}>
                     לא בוצע אימון ביום זה
                   </Text>
