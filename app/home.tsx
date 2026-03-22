@@ -17,6 +17,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -25,7 +26,7 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
+import Svg, { Path, Rect, Line } from 'react-native-svg';
 import { auth, db } from '../database/firebase';
 import AppLayout from './components/AppLayout';
 
@@ -78,18 +79,81 @@ type ExerciseType = {
   error: string;
 };
 
+type WorkoutDocType = {
+  uid: string;
+  date: string;
+  dateKey: string;
+  exerciseName: string;
+  numSets: number;
+  repsPerSet: RepsPerSetType;
+  createdAt: string;
+};
+
+function SaveIcon({ size = 20, color = '#FFFFFF' }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M5 3h11l3 3v15H5z"
+        stroke={color}
+        strokeWidth={2}
+        fill="none"
+        strokeLinejoin="round"
+      />
+      <Rect x="8" y="3" width="8" height="5" stroke={color} strokeWidth={2} fill="none" />
+      <Rect x="8" y="13" width="8" height="6" stroke={color} strokeWidth={2} fill="none" />
+    </Svg>
+  );
+}
+
+function DumbbellIcon({ size = 20, color = '#FFFFFF' }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Line x1="7" y1="12" x2="17" y2="12" stroke={color} strokeWidth={2.2} strokeLinecap="round" />
+      <Line x1="5" y1="9" x2="5" y2="15" stroke={color} strokeWidth={2.2} strokeLinecap="round" />
+      <Line x1="8" y1="9.5" x2="8" y2="14.5" stroke={color} strokeWidth={2.2} strokeLinecap="round" />
+      <Line x1="16" y1="9.5" x2="16" y2="14.5" stroke={color} strokeWidth={2.2} strokeLinecap="round" />
+      <Line x1="19" y1="9" x2="19" y2="15" stroke={color} strokeWidth={2.2} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+function CalendarIcon({ size = 22, color = '#556070' }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Rect x="3" y="5" width="18" height="16" rx="3" stroke={color} strokeWidth={2} fill="none" />
+      <Line x1="3" y1="9" x2="21" y2="9" stroke={color} strokeWidth={2} />
+      <Line x1="8" y1="3" x2="8" y2="7" stroke={color} strokeWidth={2} strokeLinecap="round" />
+      <Line x1="16" y1="3" x2="16" y2="7" stroke={color} strokeWidth={2} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+function CloseIcon({ size = 24, color = '#222222' }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Line x1="6" y1="6" x2="18" y2="18" stroke={color} strokeWidth={2.4} strokeLinecap="round" />
+      <Line x1="18" y1="6" x2="6" y2="18" stroke={color} strokeWidth={2.4} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
 export default function Home() {
   const { width, height } = useWindowDimensions();
-  const isSmallScreen = width < 360;
+
+  const isVerySmall = width < 340;
+  const isSmallScreen = width < 380;
+  const isTablet = width >= 768;
 
   const dynamic = useMemo(() => {
-    const horizontalPadding = width * 0.05;
-    const cardWidth = Math.min(width * 0.92, 520);
-    const inputHeight = isSmallScreen ? 46 : 50;
-    const titleSize = width < 380 ? 22 : 26;
-    const labelSize = width < 380 ? 14 : 15;
-    const textSize = width < 380 ? 14 : 16;
-    const buttonHeight = isSmallScreen ? 52 : 56;
+    const horizontalPadding = isTablet ? width * 0.04 : width * 0.05;
+    const cardWidth = Math.min(width * 0.94, 560);
+    const inputHeight = isVerySmall ? 44 : isSmallScreen ? 48 : 52;
+    const titleSize = isVerySmall ? 21 : isSmallScreen ? 24 : 28;
+    const labelSize = isVerySmall ? 13 : 15;
+    const textSize = isVerySmall ? 13 : isSmallScreen ? 14 : 16;
+    const buttonHeight = isVerySmall ? 50 : 56;
+    const cardPaddingHorizontal = isVerySmall ? 14 : isSmallScreen ? 18 : 22;
+    const cardPaddingVertical = isVerySmall ? 18 : 24;
 
     return {
       horizontalPadding,
@@ -99,8 +163,10 @@ export default function Home() {
       labelSize,
       textSize,
       buttonHeight,
+      cardPaddingHorizontal,
+      cardPaddingVertical,
     };
-  }, [width, isSmallScreen]);
+  }, [width, isVerySmall, isSmallScreen, isTablet]);
 
   const [fontsLoaded] = useFonts({
     Bilbo: require('../assets/fonts/Bilbo-Regular.ttf'),
@@ -113,7 +179,7 @@ export default function Home() {
   const [existingExercises, setExistingExercises] = useState<string[]>([]);
   const [addError, setAddError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
-  const [lastExerciseData, setLastExerciseData] = useState<any>({});
+  const [lastExerciseData, setLastExerciseData] = useState<Record<string, WorkoutDocType>>({});
   const [selectedExerciseForModal, setSelectedExerciseForModal] = useState<string | null>(null);
 
   const [exercise, setExercise] = useState<ExerciseType>({
@@ -142,7 +208,11 @@ export default function Home() {
         const snapshot = await getDocs(q);
 
         const uniqueNames = Array.from(
-          new Set(snapshot.docs.map((item) => item.data().exerciseName))
+          new Set(
+            snapshot.docs
+              .map((item) => item.data().exerciseName)
+              .filter(Boolean)
+          )
         );
 
         setExistingExercises(uniqueNames);
@@ -169,13 +239,13 @@ export default function Home() {
 
       if (!snapshot.empty) {
         const sorted = snapshot.docs
-          .map((item) => item.data())
+          .map((item) => item.data() as WorkoutDocType)
           .sort(
             (a, b) =>
               new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
           );
 
-        setLastExerciseData((prev: any) => ({
+        setLastExerciseData((prev) => ({
           ...prev,
           [exerciseName]: sorted[0],
         }));
@@ -400,385 +470,403 @@ export default function Home() {
   }
 
   const greeting = getGreeting();
+
   const selectedLastExercise =
     selectedExerciseForModal && lastExerciseData[selectedExerciseForModal]
       ? lastExerciseData[selectedExerciseForModal]
       : null;
 
   return (
-    <View style={styles.screen}>
-      <AppLayout>
-        <KeyboardAvoidingView
-          style={styles.screen}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
-          <ScrollView
-            keyboardShouldPersistTaps="always"
-            contentContainerStyle={[
-              styles.scrollContent,
-              {
-                paddingTop: height * 0.03,
-                paddingBottom: height * 0.05,
-                paddingHorizontal: dynamic.horizontalPadding,
-              },
-            ]}
-            showsVerticalScrollIndicator={false}
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.screen}>
+        <AppLayout>
+          <KeyboardAvoidingView
+            style={styles.screen}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           >
-            <View
-              style={[
-                styles.card,
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={[
+                styles.scrollContent,
                 {
-                  width: dynamic.cardWidth,
-                  paddingHorizontal: width * 0.05,
-                  paddingVertical: height * 0.03,
+                  paddingTop: Math.max(height * 0.025, 18),
+                  paddingBottom: Math.max(height * 0.05, 32),
+                  paddingHorizontal: dynamic.horizontalPadding,
                 },
               ]}
+              showsVerticalScrollIndicator={false}
             >
-              <View style={styles.header}>
-                <Text
-                  style={[
-                    styles.title,
-                    {
-                      fontSize: dynamic.titleSize,
-                      lineHeight: dynamic.titleSize * 1.45,
-                    },
-                  ]}
-                >
-                  היי {userName ? `${userName}, ` : ''}
-                  {greeting}
-                  {'\n'}
-                  הגיע הזמן להזין אימון
-                </Text>
-
-                <Text style={[styles.subtitle, { fontSize: dynamic.textSize - 1 }]}>
-                  שמרי תרגיל חדש בצורה מסודרת, נקייה ונוחה
-                </Text>
-              </View>
-
-              <View style={styles.section}>
-                <Text style={[styles.label, { fontSize: dynamic.labelSize }]}>
-                  תאריך האימון
-                </Text>
-
-                {Platform.OS === 'web' ? (
-                  <View style={[styles.inputBox, { minHeight: dynamic.inputHeight }]}>
-                    <input
-                      type="date"
-                      value={formatDateForInput(date)}
-                      onChange={(e) => handleWebDateChange(e.target.value)}
-                      style={{
-                        width: '100%',
-                        height: 44,
-                        border: 'none',
-                        outline: 'none',
-                        background: 'transparent',
-                        fontSize: dynamic.textSize,
-                        color: '#111827',
-                        direction: 'rtl',
-                        textAlign: 'right',
-                      }}
-                    />
-                  </View>
-                ) : (
-                  <Pressable
-                    onPress={openDatePicker}
-                    style={({ pressed }) => [
-                      styles.dateField,
-                      { minHeight: dynamic.inputHeight },
-                      pressed && styles.dateFieldPressed,
+              <View
+                style={[
+                  styles.card,
+                  {
+                    width: dynamic.cardWidth,
+                    paddingHorizontal: dynamic.cardPaddingHorizontal,
+                    paddingVertical: dynamic.cardPaddingVertical,
+                  },
+                ]}
+              >
+                <View style={styles.header}>
+                  <Text
+                    style={[
+                      styles.title,
+                      {
+                        fontSize: dynamic.titleSize,
+                        lineHeight: dynamic.titleSize * 1.4,
+                      },
                     ]}
                   >
-                    <View style={styles.dateFieldRight}>
-                      <Text style={[styles.dateValue, { fontSize: dynamic.textSize }]}>
-                        {date.toLocaleDateString('he-IL')}
-                      </Text>
-                      <Text style={styles.dateHint}>לחצי כדי לשנות תאריך</Text>
+                    היי {userName ? `${userName}, ` : ''}
+                    {greeting}
+                    {'\n'}
+                    הגיע הזמן להזין אימון
+                  </Text>
+
+                  <Text style={[styles.subtitle, { fontSize: dynamic.textSize - 1 }]}>
+                    שמרי תרגיל חדש בצורה מסודרת, נקייה ונוחה
+                  </Text>
+                </View>
+
+                <View style={styles.section}>
+                  <Text style={[styles.label, { fontSize: dynamic.labelSize }]}>
+                    תאריך האימון
+                  </Text>
+
+                  {Platform.OS === 'web' ? (
+                    <View style={[styles.inputBox, { minHeight: dynamic.inputHeight }]}>
+                      <input
+                        type="date"
+                        value={formatDateForInput(date)}
+                        onChange={(e) => handleWebDateChange(e.target.value)}
+                        style={{
+                          width: '100%',
+                          height: 44,
+                          border: 'none',
+                          outline: 'none',
+                          background: 'transparent',
+                          fontSize: dynamic.textSize,
+                          color: '#111827',
+                          direction: 'rtl',
+                          textAlign: 'right',
+                        }}
+                      />
                     </View>
-
-                    <MaterialIcons name="calendar-month" size={22} color="#556070" />
-                  </Pressable>
-                )}
-              </View>
-
-              <View style={styles.section}>
-                <Text style={[styles.label, { fontSize: dynamic.labelSize }]}>
-                  תרגיל
-                </Text>
-
-                <View style={styles.exerciseRow}>
-                  <TextInput
-                    style={[
-                      styles.inputBox,
-                      styles.textInput,
-                      styles.flexInput,
-                      { minHeight: dynamic.inputHeight, fontSize: dynamic.textSize },
-                    ]}
-                    placeholder="שם תרגיל"
-                    placeholderTextColor="#8A94A6"
-                    value={exercise.name}
-                    onChangeText={(text) => handleExerciseChange('name', text)}
-                    textAlign="right"
-                    editable={!isSaving}
-                  />
-
-                  {exercise.name.trim() !== '' && lastExerciseData[exercise.name] && (
+                  ) : (
                     <Pressable
-                      style={[styles.iconButton, { minHeight: dynamic.inputHeight }]}
-                      onPress={() => setSelectedExerciseForModal(exercise.name)}
+                      onPress={openDatePicker}
+                      style={({ pressed }) => [
+                        styles.dateField,
+                        { minHeight: dynamic.inputHeight },
+                        pressed && styles.dateFieldPressed,
+                      ]}
                     >
-                      <MaterialIcons name="fitness-center" size={20} color="#FFFFFF" />
+                      <View style={styles.dateFieldRight}>
+                        <Text style={[styles.dateValue, { fontSize: dynamic.textSize }]}>
+                          {date.toLocaleDateString('he-IL')}
+                        </Text>
+                        <Text style={styles.dateHint}>לחצי כדי לשנות תאריך</Text>
+                      </View>
+
+                      <CalendarIcon size={22} color="#556070" />
                     </Pressable>
                   )}
                 </View>
 
-                {exercise.showSuggestions && (
-                  <View style={styles.suggestionsContainer}>
-                    <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false}>
-                      {exercise.suggestions.map((name, index) => (
-                        <Pressable
-                          key={`${name}-${index}`}
-                          onPress={() => handleSelectSuggestion(name)}
-                          style={styles.suggestionItem}
-                        >
-                          <Text
-                            style={[
-                              styles.suggestionText,
-                              { fontSize: dynamic.textSize - 1 },
-                            ]}
-                          >
-                            {name}
-                          </Text>
-                        </Pressable>
-                      ))}
-                    </ScrollView>
+                <View style={styles.section}>
+                  <Text style={[styles.label, { fontSize: dynamic.labelSize }]}>
+                    תרגיל
+                  </Text>
+
+                  <View
+                    style={[
+                      styles.exerciseRow,
+                      isVerySmall && styles.exerciseRowStack,
+                    ]}
+                  >
+                    <TextInput
+                      style={[
+                        styles.inputBox,
+                        styles.textInput,
+                        styles.flexInput,
+                        isVerySmall && styles.fullWidthOnSmall,
+                        { minHeight: dynamic.inputHeight, fontSize: dynamic.textSize },
+                      ]}
+                      placeholder="שם תרגיל"
+                      placeholderTextColor="#8A94A6"
+                      value={exercise.name}
+                      onChangeText={(text) => handleExerciseChange('name', text)}
+                      textAlign="right"
+                      editable={!isSaving}
+                    />
+
+                    {exercise.name.trim() !== '' && lastExerciseData[exercise.name] && (
+                      <Pressable
+                        style={[
+                          styles.iconButton,
+                          { minHeight: dynamic.inputHeight },
+                          isVerySmall && styles.fullWidthButtonOnSmall,
+                        ]}
+                        onPress={() => setSelectedExerciseForModal(exercise.name)}
+                      >
+                        <DumbbellIcon size={26} color="#FFFFFF" />
+                      </Pressable>
+                    )}
                   </View>
-                )}
-              </View>
 
-              <View style={styles.section}>
-                <Text style={[styles.label, { fontSize: dynamic.labelSize }]}>
-                  מספר סטים
-                </Text>
+                  {exercise.showSuggestions && (
+                    <View style={styles.suggestionsContainer}>
+                      <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false}>
+                        {exercise.suggestions.map((name, index) => (
+                          <Pressable
+                            key={`${name}-${index}`}
+                            onPress={() => handleSelectSuggestion(name)}
+                            style={styles.suggestionItem}
+                          >
+                            <Text
+                              style={[
+                                styles.suggestionText,
+                                { fontSize: dynamic.textSize - 1 },
+                              ]}
+                            >
+                              {name}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </ScrollView>
+                    </View>
+                  )}
+                </View>
 
-                <TextInput
-                  style={[
-                    styles.inputBox,
-                    styles.textInput,
-                    { minHeight: dynamic.inputHeight, fontSize: dynamic.textSize },
-                  ]}
-                  placeholder="הזיני מספר סטים"
-                  placeholderTextColor="#8A94A6"
-                  keyboardType="numeric"
-                  value={exercise.numSets}
-                  onChangeText={(text) => handleExerciseChange('numSets', text)}
-                  textAlign="right"
-                  editable={!isSaving}
-                />
+                <View style={styles.section}>
+                  <Text style={[styles.label, { fontSize: dynamic.labelSize }]}>
+                    מספר סטים
+                  </Text>
 
-                {!!exercise.error && (
+                  <TextInput
+                    style={[
+                      styles.inputBox,
+                      styles.textInput,
+                      { minHeight: dynamic.inputHeight, fontSize: dynamic.textSize },
+                    ]}
+                    placeholder="הזיני מספר סטים"
+                    placeholderTextColor="#8A94A6"
+                    keyboardType="numeric"
+                    value={exercise.numSets}
+                    onChangeText={(text) => handleExerciseChange('numSets', text)}
+                    textAlign="right"
+                    editable={!isSaving}
+                  />
+
+                  {!!exercise.error && (
+                    <Text style={[styles.errorText, { fontSize: dynamic.textSize - 2 }]}>
+                      {exercise.error}
+                    </Text>
+                  )}
+                </View>
+
+                {!exercise.error &&
+                  Object.keys(exercise.repsPerSet || {}).map((setKey) => (
+                    <View key={setKey} style={styles.setCard}>
+                      <Text style={[styles.setTitle, { fontSize: dynamic.labelSize }]}>
+                        סט {parseInt(setKey, 10) + 1}
+                      </Text>
+
+                      <View
+                        style={[
+                          styles.setInputsRow,
+                          isSmallScreen && styles.setInputsColumn,
+                        ]}
+                      >
+                        <View style={styles.setInputWrapper}>
+                          <Text style={styles.miniLabel}>חזרות</Text>
+                          <TextInput
+                            style={[
+                              styles.inputBox,
+                              styles.textInput,
+                              styles.smallInput,
+                              { minHeight: dynamic.inputHeight, fontSize: dynamic.textSize },
+                            ]}
+                            placeholder="לדוגמה 12"
+                            placeholderTextColor="#8A94A6"
+                            keyboardType="numeric"
+                            value={exercise.repsPerSet[setKey]?.reps || ''}
+                            onChangeText={(val) => handleRepsChange(setKey, val)}
+                            textAlign="right"
+                            editable={!isSaving}
+                          />
+                        </View>
+
+                        <View style={styles.setInputWrapper}>
+                          <Text style={styles.miniLabel}>משקל</Text>
+                          <TextInput
+                            style={[
+                              styles.inputBox,
+                              styles.textInput,
+                              styles.smallInput,
+                              { minHeight: dynamic.inputHeight, fontSize: dynamic.textSize },
+                            ]}
+                            placeholder="לדוגמה 20"
+                            placeholderTextColor="#8A94A6"
+                            keyboardType="numeric"
+                            value={exercise.repsPerSet[setKey]?.weight || ''}
+                            onChangeText={(val) => handleWeightChange(setKey, val)}
+                            textAlign="right"
+                            editable={!isSaving}
+                          />
+                        </View>
+                      </View>
+                    </View>
+                  ))}
+
+                {!!addError && (
                   <Text style={[styles.errorText, { fontSize: dynamic.textSize - 2 }]}>
-                    {exercise.error}
+                    {addError}
                   </Text>
                 )}
+
+                <Pressable
+                  style={[
+                    styles.saveButton,
+                    { minHeight: dynamic.buttonHeight },
+                    isSaving && styles.disabledButton,
+                  ]}
+                  onPress={handleAddPress}
+                  disabled={isSaving}
+                >
+                  {isSaving ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <>
+                      <SaveIcon size={20} color="#FFFFFF" />
+                      <Text style={[styles.saveButtonText, { fontSize: dynamic.textSize }]}>
+                        שמור אימון
+                      </Text>
+                    </>
+                  )}
+                </Pressable>
               </View>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </AppLayout>
 
-              {!exercise.error &&
-                Object.keys(exercise.repsPerSet || {}).map((setKey) => (
-                  <View key={setKey} style={styles.setCard}>
-                    <Text style={[styles.setTitle, { fontSize: dynamic.labelSize }]}>
-                      סט {parseInt(setKey, 10) + 1}
-                    </Text>
+        {showDatePicker && Platform.OS === 'android' && (
+          <Modal
+            transparent
+            animationType="fade"
+            visible={showDatePicker}
+            onRequestClose={closeDatePicker}
+          >
+            <View style={styles.dateModalOverlay}>
+              <View style={styles.dateModalCard}>
+                <Text style={styles.dateModalTitle}>בחרי תאריך</Text>
 
-                    <View
-                      style={[
-                        styles.setInputsRow,
-                        { gap: width < 380 ? 8 : 10, flexWrap: 'wrap' },
-                      ]}
-                    >
-                      <View style={styles.setInputWrapper}>
-                        <Text style={styles.miniLabel}>חזרות</Text>
-                        <TextInput
-                          style={[
-                            styles.inputBox,
-                            styles.textInput,
-                            styles.smallInput,
-                            { minHeight: dynamic.inputHeight, fontSize: dynamic.textSize },
-                          ]}
-                          placeholder="לדוגמה 12"
-                          placeholderTextColor="#8A94A6"
-                          keyboardType="numeric"
-                          value={exercise.repsPerSet[setKey]?.reps || ''}
-                          onChangeText={(val) => handleRepsChange(setKey, val)}
-                          textAlign="right"
-                          editable={!isSaving}
-                        />
-                      </View>
+                <DateTimePicker
+                  value={date}
+                  mode="date"
+                  display="calendar"
+                  onChange={onChangeDate}
+                />
 
-                      <View style={styles.setInputWrapper}>
-                        <Text style={styles.miniLabel}>משקל</Text>
-                        <TextInput
-                          style={[
-                            styles.inputBox,
-                            styles.textInput,
-                            styles.smallInput,
-                            { minHeight: dynamic.inputHeight, fontSize: dynamic.textSize },
-                          ]}
-                          placeholder="לדוגמה 20"
-                          placeholderTextColor="#8A94A6"
-                          keyboardType="numeric"
-                          value={exercise.repsPerSet[setKey]?.weight || ''}
-                          onChangeText={(val) => handleWeightChange(setKey, val)}
-                          textAlign="right"
-                          editable={!isSaving}
-                        />
-                      </View>
-                    </View>
-                  </View>
-                ))}
-
-              {!!addError && (
-                <Text style={[styles.errorText, { fontSize: dynamic.textSize - 2 }]}>
-                  {addError}
-                </Text>
-              )}
-
-              <Pressable
-                style={[
-                  styles.saveButton,
-                  { minHeight: dynamic.buttonHeight },
-                  isSaving && styles.disabledButton,
-                ]}
-                onPress={handleAddPress}
-                disabled={isSaving}
-              >
-                {isSaving ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <>
-                    <MaterialIcons name="save" size={20} color="#FFFFFF" />
-                    <Text style={[styles.saveButtonText, { fontSize: dynamic.textSize }]}>
-                      שמור אימון
-                    </Text>
-                  </>
-                )}
-              </Pressable>
+                <Pressable style={styles.dateModalButton} onPress={closeDatePicker}>
+                  <Text style={styles.dateModalButtonText}>סגור</Text>
+                </Pressable>
+              </View>
             </View>
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </AppLayout>
+          </Modal>
+        )}
 
-      {showDatePicker && Platform.OS === 'android' && (
+        {showDatePicker && Platform.OS === 'ios' && (
+          <Modal
+            transparent
+            animationType="slide"
+            visible={showDatePicker}
+            onRequestClose={closeDatePicker}
+          >
+            <View style={styles.dateModalOverlay}>
+              <View style={styles.dateModalCard}>
+                <Text style={styles.dateModalTitle}>בחרי תאריך</Text>
+
+                <DateTimePicker
+                  value={tempDate}
+                  mode="date"
+                  display="spinner"
+                  onChange={onChangeDate}
+                />
+
+                <View style={styles.iosButtonsRow}>
+                  <Pressable
+                    style={[styles.dateModalButton, styles.iosHalfButton]}
+                    onPress={closeDatePicker}
+                  >
+                    <Text style={styles.dateModalButtonText}>ביטול</Text>
+                  </Pressable>
+
+                  <Pressable
+                    style={[styles.dateModalButton, styles.iosHalfButton]}
+                    onPress={confirmIosDate}
+                  >
+                    <Text style={styles.dateModalButtonText}>אישור</Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          </Modal>
+        )}
+
         <Modal
+          visible={!!selectedExerciseForModal}
           transparent
           animationType="fade"
-          visible={showDatePicker}
-          onRequestClose={closeDatePicker}
+          onRequestClose={() => setSelectedExerciseForModal(null)}
         >
-          <View style={styles.dateModalOverlay}>
-            <View style={styles.dateModalCard}>
-              <Text style={styles.dateModalTitle}>בחרי תאריך</Text>
-
-              <DateTimePicker
-                value={date}
-                mode="date"
-                display="calendar"
-                onChange={onChangeDate}
-              />
-
-              <Pressable style={styles.dateModalButton} onPress={closeDatePicker}>
-                <Text style={styles.dateModalButtonText}>סגור</Text>
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalCard, { width: Math.min(width * 0.9, 420) }]}>
+              <Pressable
+                style={styles.modalClose}
+                onPress={() => setSelectedExerciseForModal(null)}
+              >
+                <CloseIcon size={24} color="#222222" />
               </Pressable>
+
+              {selectedLastExercise ? (
+                <>
+                  <Text style={styles.modalTitle}>
+                    הביצוע האחרון של{'\n'}
+                    {selectedExerciseForModal}
+                  </Text>
+
+                  <View style={styles.modalDivider} />
+
+                  {Object.entries(selectedLastExercise.repsPerSet).map(
+                    ([setKey, val]) => (
+                      <View key={setKey} style={styles.modalRow}>
+                        <Text style={styles.modalText}>סט {parseInt(setKey, 10) + 1}</Text>
+                        <Text style={styles.modalText}>{val.reps} חזרות</Text>
+                        <Text style={styles.modalText}>{val.weight} ק״ג</Text>
+                      </View>
+                    )
+                  )}
+                </>
+              ) : (
+                <Text style={styles.modalText}>אין מידע זמין</Text>
+              )}
             </View>
           </View>
         </Modal>
-      )}
-
-      {showDatePicker && Platform.OS === 'ios' && (
-        <Modal
-          transparent
-          animationType="slide"
-          visible={showDatePicker}
-          onRequestClose={closeDatePicker}
-        >
-          <View style={styles.dateModalOverlay}>
-            <View style={styles.dateModalCard}>
-              <Text style={styles.dateModalTitle}>בחרי תאריך</Text>
-
-              <DateTimePicker
-                value={tempDate}
-                mode="date"
-                display="spinner"
-                onChange={onChangeDate}
-              />
-
-              <View style={styles.iosButtonsRow}>
-                <Pressable
-                  style={[styles.dateModalButton, styles.iosHalfButton]}
-                  onPress={closeDatePicker}
-                >
-                  <Text style={styles.dateModalButtonText}>ביטול</Text>
-                </Pressable>
-
-                <Pressable
-                  style={[styles.dateModalButton, styles.iosHalfButton]}
-                  onPress={confirmIosDate}
-                >
-                  <Text style={styles.dateModalButtonText}>אישור</Text>
-                </Pressable>
-              </View>
-            </View>
-          </View>
-        </Modal>
-      )}
-
-      <Modal
-        visible={!!selectedExerciseForModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setSelectedExerciseForModal(null)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { width: Math.min(width * 0.88, 420) }]}>
-            <Pressable
-              style={styles.modalClose}
-              onPress={() => setSelectedExerciseForModal(null)}
-            >
-              <MaterialIcons name="close" size={24} color="#222" />
-            </Pressable>
-
-            {selectedLastExercise ? (
-              <>
-                <Text style={styles.modalTitle}>
-                  הביצוע האחרון של{'\n'}
-                  {selectedExerciseForModal}
-                </Text>
-
-                <View style={styles.modalDivider} />
-
-                {Object.entries(selectedLastExercise.repsPerSet).map(
-                  ([setKey, val]: any) => (
-                    <View key={setKey} style={styles.modalRow}>
-                      <Text style={styles.modalText}>סט {parseInt(setKey, 10) + 1}</Text>
-                      <Text style={styles.modalText}>{val.reps} חזרות</Text>
-                      <Text style={styles.modalText}>{val.weight} ק״ג</Text>
-                    </View>
-                  )
-                )}
-              </>
-            ) : (
-              <Text style={styles.modalText}>אין מידע זמין</Text>
-            )}
-          </View>
-        </View>
-      </Modal>
-    </View>
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: APP_BG,
+  },
+
   screen: {
     flex: 1,
-    backgroundColor: '#F4F7FB',
+    backgroundColor: APP_BG,
   },
 
   scrollContent: {
@@ -811,6 +899,7 @@ const styles = StyleSheet.create({
     color: '#64748B',
     textAlign: 'center',
     marginTop: 8,
+    lineHeight: 22,
   },
 
   section: {
@@ -884,8 +973,22 @@ const styles = StyleSheet.create({
     gap: 10,
   },
 
+  exerciseRowStack: {
+    flexDirection: 'column',
+  },
+
   flexInput: {
     flex: 1,
+  },
+
+  fullWidthOnSmall: {
+    width: '100%',
+    flex: undefined,
+  },
+
+  fullWidthButtonOnSmall: {
+    width: '100%',
+    minWidth: '100%',
   },
 
   iconButton: {
@@ -945,6 +1048,11 @@ const styles = StyleSheet.create({
   setInputsRow: {
     flexDirection: 'row-reverse',
     justifyContent: 'space-between',
+    gap: 10,
+  },
+
+  setInputsColumn: {
+    flexDirection: 'column',
   },
 
   setInputWrapper: {
@@ -972,6 +1080,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
+    paddingHorizontal: 16,
   },
 
   disabledButton: {

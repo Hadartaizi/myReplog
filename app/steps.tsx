@@ -12,7 +12,6 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import Icon from 'react-native-vector-icons/MaterialIcons';
 import AppLayout from './components/AppLayout';
 import { useFonts } from 'expo-font';
 import { auth, db } from '../database/firebase';
@@ -35,18 +34,26 @@ const formatDateForInput = (value: Date) => {
   return `${year}-${month}-${day}`;
 };
 
+const normalizeDateOnly = (date: Date) => {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+};
+
 export default function Steps() {
   const { width, height } = useWindowDimensions();
+
   const isSmallScreen = width < 360;
+  const isTablet = width >= 768;
+  const isLargeDesktop = width >= 1200;
 
   const dynamic = useMemo(() => {
-    const horizontalPadding = width * 0.05;
-    const cardWidth = Math.min(width * 0.92, 520);
-    const inputHeight = isSmallScreen ? 46 : 50;
-    const titleSize = width < 380 ? 22 : 26;
+    const horizontalPadding = width < 480 ? 16 : width < 768 ? 22 : 28;
+    const cardWidth =
+      width < 480 ? width - 24 : width < 768 ? width * 0.92 : Math.min(760, width * 0.8);
+    const inputHeight = isSmallScreen ? 46 : 52;
+    const titleSize = width < 380 ? 22 : width < 768 ? 26 : 30;
     const labelSize = width < 380 ? 14 : 15;
-    const textSize = width < 380 ? 14 : 16;
-    const buttonHeight = isSmallScreen ? 44 : 48;
+    const textSize = width < 380 ? 14 : width < 768 ? 16 : 17;
+    const buttonHeight = isSmallScreen ? 44 : 50;
 
     return {
       horizontalPadding,
@@ -112,12 +119,13 @@ export default function Steps() {
   };
 
   const filterByDate = (workouts: any[], date: Date) => {
-    const selectedStr = date.toLocaleDateString('he-IL');
+    const selectedOnly = normalizeDateOnly(date).getTime();
 
     const filtered = workouts.filter((w) => {
       const parsedDate = parseWorkoutDate(w.date);
       if (!parsedDate) return false;
-      return parsedDate.toLocaleDateString('he-IL') === selectedStr;
+
+      return normalizeDateOnly(parsedDate).getTime() === selectedOnly;
     });
 
     setFilteredWorkouts(filtered);
@@ -137,11 +145,15 @@ export default function Steps() {
         const snapshot = await getDocs(q);
 
         const workouts = snapshot.docs
-          .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
-          .sort(
-            (a: any, b: any) =>
-              new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime()
-          );
+          .map((docSnap) => ({
+            id: docSnap.id,
+            ...docSnap.data(),
+          }))
+          .sort((a: any, b: any) => {
+            const aTime = parseWorkoutDate(a.date)?.getTime() || 0;
+            const bTime = parseWorkoutDate(b.date)?.getTime() || 0;
+            return aTime - bTime;
+          });
 
         setAllWorkouts(workouts);
         filterByDate(workouts, selectedDate);
@@ -213,14 +225,6 @@ export default function Steps() {
     setErrorMessage('');
   };
 
-  const startEditingWorkout = (workout: any) => {
-    if (editingId !== workout.id) {
-      setEditingId(workout.id);
-      setOriginalWorkout(JSON.parse(JSON.stringify(workout)));
-      setErrorMessage('');
-    }
-  };
-
   const toggleCollapse = (id: string) => {
     setCollapsedCards((prev) => ({
       ...prev,
@@ -255,7 +259,6 @@ export default function Steps() {
           }
 
           setErrorMessage('');
-
           const currentSets = w.repsPerSet || {};
           const updatedSets: Record<string, { reps: string; weight: string }> = {};
 
@@ -307,8 +310,15 @@ export default function Steps() {
 
     return new Promise<boolean>((resolve) => {
       Alert.alert(title, message, [
-        { text: 'ביטול', style: 'cancel', onPress: () => resolve(false) },
-        { text: 'אישור', onPress: () => resolve(true) },
+        {
+          text: 'ביטול',
+          style: 'cancel',
+          onPress: () => resolve(false),
+        },
+        {
+          text: 'אישור',
+          onPress: () => resolve(true),
+        },
       ]);
     });
   };
@@ -411,7 +421,7 @@ export default function Steps() {
                 styles.mainCard,
                 {
                   width: dynamic.cardWidth,
-                  paddingHorizontal: width * 0.05,
+                  paddingHorizontal: width < 480 ? 16 : width * 0.04,
                   paddingVertical: height * 0.03,
                 },
               ]}
@@ -428,6 +438,7 @@ export default function Steps() {
                 >
                   מעקב אחר אימונים
                 </Text>
+
                 <Text style={[styles.subtitle, { fontSize: dynamic.textSize - 1 }]}>
                   צפייה, עריכה ומחיקה של אימונים לפי תאריך
                 </Text>
@@ -471,14 +482,14 @@ export default function Steps() {
                       <Text style={styles.dateHint}>לחצי כדי לשנות תאריך</Text>
                     </View>
 
-                    <Icon name="calendar-today" size={20} color="#5B6470" />
+                    <Text style={[styles.dateArrowText, styles.arrowDown]}>⌃</Text>
                   </Pressable>
                 )}
               </View>
 
               {filteredWorkouts.length === 0 ? (
                 <View style={styles.emptyState}>
-                  <Icon name="event-busy" size={28} color="#64748B" />
+                  <Text style={styles.emptyStateSymbol}>—</Text>
                   <Text style={[styles.noWorkoutText, { fontSize: dynamic.textSize - 1 }]}>
                     לא בוצע אימון ביום זה
                   </Text>
@@ -487,7 +498,7 @@ export default function Steps() {
                 filteredWorkouts.map((workout) => {
                   const isCollapsed = collapsedCards[workout.id];
                   const isEditing = editingId === workout.id;
-                  const canEditFields = isEditing || Platform.OS === 'web';
+                  const canEditFields = isEditing;
                   const isSavingThis = savingId === workout.id;
                   const isDeletingThis = deletingId === workout.id;
 
@@ -495,11 +506,14 @@ export default function Steps() {
                     <View key={workout.id} style={styles.workoutCard}>
                       <Pressable onPress={() => toggleCollapse(workout.id)} style={styles.cardHeader}>
                         <View style={styles.cardHeaderLeft}>
-                          <Icon
-                            name={isCollapsed ? 'expand-more' : 'expand-less'}
-                            size={24}
-                            color="#64748B"
-                          />
+                          <Text
+                            style={[
+                              styles.arrowText,
+                              isCollapsed ? styles.arrowDown : styles.arrowUp,
+                            ]}
+                          >
+                            ⌃
+                          </Text>
                         </View>
 
                         <View style={styles.cardHeaderRight}>
@@ -520,11 +534,14 @@ export default function Steps() {
                               style={[
                                 styles.inputBox,
                                 styles.textInput,
-                                { minHeight: dynamic.inputHeight, fontSize: dynamic.textSize },
+                                {
+                                  minHeight: dynamic.inputHeight,
+                                  fontSize: dynamic.textSize,
+                                },
+                                !canEditFields && styles.disabledInput,
                               ]}
                               value={String(workout.numSets ?? '')}
                               keyboardType="numeric"
-                              onFocus={() => startEditingWorkout(workout)}
                               onChangeText={(val) => handleFieldChange(workout.id, 'numSets', val)}
                               editable={canEditFields && !isSavingThis && !isDeletingThis}
                               textAlign="right"
@@ -546,7 +563,14 @@ export default function Steps() {
                                   סט {parseInt(setIdx, 10) + 1}
                                 </Text>
 
-                                <View style={styles.setInputsRow}>
+                                <View
+                                  style={[
+                                    styles.setInputsRow,
+                                    isTablet || isLargeDesktop
+                                      ? styles.setInputsRowWide
+                                      : styles.setInputsRowMobile,
+                                  ]}
+                                >
                                   <View style={styles.setInputWrapper}>
                                     <Text style={styles.miniLabel}>חזרות</Text>
                                     <TextInput
@@ -558,12 +582,12 @@ export default function Steps() {
                                           minHeight: dynamic.inputHeight,
                                           fontSize: dynamic.textSize,
                                         },
+                                        !canEditFields && styles.disabledInput,
                                       ]}
                                       value={String(workout.repsPerSet[setIdx]?.reps || '')}
                                       placeholder="לדוגמה 12"
                                       placeholderTextColor="#8A94A6"
                                       keyboardType="numeric"
-                                      onFocus={() => startEditingWorkout(workout)}
                                       onChangeText={(val) =>
                                         handleRepsWeightChange(workout.id, setIdx, 'reps', val)
                                       }
@@ -583,12 +607,12 @@ export default function Steps() {
                                           minHeight: dynamic.inputHeight,
                                           fontSize: dynamic.textSize,
                                         },
+                                        !canEditFields && styles.disabledInput,
                                       ]}
                                       value={String(workout.repsPerSet[setIdx]?.weight || '')}
                                       placeholder="לדוגמה 20"
                                       placeholderTextColor="#8A94A6"
                                       keyboardType="numeric"
-                                      onFocus={() => startEditingWorkout(workout)}
                                       onChangeText={(val) =>
                                         handleRepsWeightChange(workout.id, setIdx, 'weight', val)
                                       }
@@ -600,7 +624,12 @@ export default function Steps() {
                               </View>
                             ))}
 
-                          <View style={styles.actionsRow}>
+                          <View
+                            style={[
+                              styles.actionsRow,
+                              width < 420 ? styles.actionsColumn : styles.actionsRowDesktop,
+                            ]}
+                          >
                             {isEditing ? (
                               <>
                                 <Pressable
@@ -609,6 +638,7 @@ export default function Steps() {
                                     styles.saveButton,
                                     { minHeight: dynamic.buttonHeight },
                                     (isSavingThis || isDeletingThis) && styles.disabledButton,
+                                    width < 420 && styles.fullWidthButton,
                                   ]}
                                   onPress={() => saveWorkout(workout)}
                                   disabled={isSavingThis || isDeletingThis}
@@ -633,10 +663,13 @@ export default function Steps() {
                                     styles.cancelButton,
                                     { minHeight: dynamic.buttonHeight },
                                     (isSavingThis || isDeletingThis) && styles.disabledButton,
+                                    width < 420 && styles.fullWidthButton,
                                   ]}
                                   onPress={() => {
                                     setFilteredWorkouts((prev) =>
-                                      prev.map((w) => (w.id === workout.id ? originalWorkout || w : w))
+                                      prev.map((w) =>
+                                        w.id === workout.id ? originalWorkout || w : w
+                                      )
                                     );
                                     setEditingId(null);
                                     setOriginalWorkout(null);
@@ -738,10 +771,10 @@ export default function Steps() {
 
             <View style={styles.iosButtonsRow}>
               <Pressable
-                style={[styles.dateModalButton, styles.iosHalfButton]}
+                style={[styles.dateModalButton, styles.iosHalfButton, styles.cancelLightButton]}
                 onPress={closeDatePicker}
               >
-                <Text style={styles.dateModalButtonText}>ביטול</Text>
+                <Text style={styles.cancelLightButtonText}>ביטול</Text>
               </Pressable>
 
               <Pressable
@@ -763,31 +796,26 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: APP_BG,
   },
-
   screen: {
     flex: 1,
     backgroundColor: APP_BG,
   },
-
   loaderScreen: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: APP_BG,
   },
-
   loaderText: {
     marginTop: 10,
     color: '#64748B',
     fontSize: 15,
   },
-
   scrollContent: {
     flexGrow: 1,
     alignItems: 'center',
     backgroundColor: APP_BG,
   },
-
   mainCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 24,
@@ -796,40 +824,34 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 16,
     elevation: 6,
+    alignSelf: 'center',
   },
-
   header: {
     alignItems: 'center',
     marginBottom: 24,
   },
-
   title: {
     fontWeight: '800',
     color: '#1E293B',
     textAlign: 'center',
   },
-
   subtitle: {
     color: '#64748B',
     textAlign: 'center',
     marginTop: 8,
   },
-
   section: {
     marginBottom: 18,
   },
-
   sectionInner: {
     marginBottom: 14,
   },
-
   label: {
     color: '#334155',
     fontWeight: '700',
     textAlign: 'right',
     marginBottom: 8,
   },
-
   inputBox: {
     width: '100%',
     borderWidth: 1,
@@ -841,14 +863,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-
   textInput: {
     color: '#111827',
     textAlign: 'right',
     writingDirection: 'rtl',
     paddingVertical: 0,
+    width: '100%',
   },
-
+  disabledInput: {
+    backgroundColor: '#F1F5F9',
+    color: '#64748B',
+    opacity: 0.85,
+  },
   dateField: {
     width: '100%',
     borderWidth: 1,
@@ -860,30 +886,33 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-
   dateFieldPressed: {
     opacity: 0.9,
   },
-
   dateFieldRight: {
     flex: 1,
     alignItems: 'flex-end',
     marginRight: 10,
   },
-
   dateValue: {
     color: '#111827',
     fontWeight: '700',
     textAlign: 'right',
   },
-
   dateHint: {
     marginTop: 2,
     fontSize: 12,
     color: '#64748B',
     textAlign: 'right',
   },
-
+  dateArrowText: {
+    fontSize: 22,
+    color: '#475569',
+    fontWeight: '700',
+    textAlign: 'center',
+    lineHeight: 22,
+    width: 24,
+  },
   emptyState: {
     marginTop: 8,
     backgroundColor: '#F8FAFC',
@@ -895,14 +924,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-
+  emptyStateSymbol: {
+    fontSize: 28,
+    color: '#64748B',
+    fontWeight: '700',
+    lineHeight: 30,
+  },
   noWorkoutText: {
     color: '#64748B',
     textAlign: 'center',
     fontWeight: '500',
     marginTop: 8,
   },
-
   workoutCard: {
     backgroundColor: '#F8FAFC',
     borderRadius: 18,
@@ -911,31 +944,40 @@ const styles = StyleSheet.create({
     padding: 14,
     marginBottom: 14,
   },
-
   cardHeader: {
     flexDirection: 'row-reverse',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 4,
+    paddingVertical: 6,
   },
-
   cardHeaderLeft: {
-    marginLeft: 8,
+    width: 36,
     alignItems: 'center',
     justifyContent: 'center',
   },
-
   cardHeaderRight: {
     flex: 1,
     alignItems: 'flex-end',
   },
-
+  arrowText: {
+    fontSize: 22,
+    color: '#475569',
+    fontWeight: '700',
+    textAlign: 'center',
+    lineHeight: 22,
+    width: 24,
+  },
+  arrowUp: {
+    transform: [{ rotate: '0deg' }],
+  },
+  arrowDown: {
+    transform: [{ rotate: '180deg' }],
+  },
   cardTitle: {
     fontWeight: '800',
     color: '#1E293B',
     textAlign: 'right',
   },
-
   setCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 18,
@@ -944,26 +986,27 @@ const styles = StyleSheet.create({
     padding: 14,
     marginBottom: 12,
   },
-
   setTitle: {
     textAlign: 'right',
     fontWeight: '700',
     color: '#1E293B',
     marginBottom: 10,
   },
-
   setInputsRow: {
-    flexDirection: 'row-reverse',
     justifyContent: 'space-between',
     gap: 10,
-    flexWrap: 'wrap',
   },
-
+  setInputsRowMobile: {
+    flexDirection: 'column',
+  },
+  setInputsRowWide: {
+    flexDirection: 'row-reverse',
+    flexWrap: 'nowrap',
+  },
   setInputWrapper: {
     flex: 1,
     minWidth: 120,
   },
-
   miniLabel: {
     textAlign: 'right',
     color: '#64748B',
@@ -971,24 +1014,25 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
-
   smallInput: {
     width: '100%',
   },
-
   errorText: {
     color: '#DC2626',
     marginTop: 8,
     textAlign: 'right',
     fontWeight: '500',
   },
-
   actionsRow: {
-    flexDirection: 'row-reverse',
     gap: 10,
     marginTop: 12,
   },
-
+  actionsRowDesktop: {
+    flexDirection: 'row-reverse',
+  },
+  actionsColumn: {
+    flexDirection: 'column',
+  },
   actionButton: {
     flex: 1,
     borderRadius: 16,
@@ -996,43 +1040,34 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 12,
   },
-
   fullWidthButton: {
-    flex: undefined,
     width: '100%',
   },
-
   editButton: {
     backgroundColor: '#E2E8F0',
   },
-
   editButtonText: {
     color: '#1E293B',
     fontWeight: '800',
   },
-
   saveButton: {
     backgroundColor: '#DCFCE7',
     borderWidth: 1,
     borderColor: '#BBF7D0',
   },
-
   saveButtonText: {
     color: '#166534',
     fontWeight: '800',
   },
-
   cancelButton: {
     backgroundColor: '#DBEAFE',
     borderWidth: 1,
     borderColor: '#BFDBFE',
   },
-
   cancelButtonText: {
     color: '#1D4ED8',
     fontWeight: '800',
   },
-
   deleteButton: {
     marginTop: 10,
     borderRadius: 16,
@@ -1041,29 +1076,25 @@ const styles = StyleSheet.create({
     borderColor: '#FECACA',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 12,
   },
-
   deleteButtonText: {
     color: '#DC2626',
     fontWeight: '800',
   },
-
   disabledButton: {
     opacity: 0.6,
   },
-
   datePickerInlineWrapper: {
     paddingHorizontal: 20,
     paddingBottom: 20,
     backgroundColor: APP_BG,
   },
-
   iosPickerCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 24,
     padding: 20,
   },
-
   dateModalTitle: {
     fontSize: 18,
     fontWeight: '800',
@@ -1071,7 +1102,6 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     textAlign: 'center',
   },
-
   dateModalButton: {
     marginTop: 16,
     backgroundColor: '#0F172A',
@@ -1081,21 +1111,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-
   dateModalButtonText: {
     color: '#FFFFFF',
     fontWeight: '700',
     fontSize: 15,
   },
-
   iosButtonsRow: {
     flexDirection: 'row-reverse',
     gap: 10,
     marginTop: 8,
     width: '100%',
   },
-
   iosHalfButton: {
     flex: 1,
+  },
+  cancelLightButton: {
+    backgroundColor: '#E2E8F0',
+  },
+  cancelLightButtonText: {
+    color: '#1E293B',
+    fontWeight: '700',
+    fontSize: 15,
   },
 });

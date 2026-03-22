@@ -1,6 +1,6 @@
 {
   "projects": {
-    "default": "database-e330b",
+    "default": "fir-6b758",
     "prod": "fir-6b758"
   },
   "targets": {},
