@@ -17,12 +17,116 @@ import { useFonts } from 'expo-font';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { auth, db } from '../database/firebase.js';
 import { doc, setDoc } from 'firebase/firestore';
-import { MaterialIcons } from '@expo/vector-icons';
+import Svg, { Path, Circle } from 'react-native-svg';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 const APP_BG = '#F4F7FB';
 
 const ADMIN_EMAIL = 'hadartaizi2002@gmail.com';
+
+function PersonIcon({ size = 20, color = '#5B6470' }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Circle
+        cx="12"
+        cy="8"
+        r="4"
+        stroke={color}
+        strokeWidth="2"
+        fill="none"
+      />
+      <Path
+        d="M4 20c0-3.3 3.6-6 8-6s8 2.7 8 6"
+        stroke={color}
+        strokeWidth="2"
+        fill="none"
+        strokeLinecap="round"
+      />
+    </Svg>
+  );
+}
+
+function MailIcon({ size = 20, color = '#5B6470' }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M4 6h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z"
+        stroke={color}
+        strokeWidth="2"
+        fill="none"
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M4 8l8 6 8-6"
+        stroke={color}
+        strokeWidth="2"
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+function EyeIcon({ size = 20, color = '#5B6470' }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"
+        stroke={color}
+        strokeWidth="2"
+        fill="none"
+        strokeLinejoin="round"
+      />
+      <Circle
+        cx="12"
+        cy="12"
+        r="3"
+        stroke={color}
+        strokeWidth="2"
+        fill="none"
+      />
+    </Svg>
+  );
+}
+
+function EyeOffIcon({ size = 20, color = '#5B6470' }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M3 3l18 18"
+        stroke={color}
+        strokeWidth="2"
+        fill="none"
+        strokeLinecap="round"
+      />
+      <Path
+        d="M10.6 6.3A11.4 11.4 0 0 1 12 6c6.5 0 10 6 10 6a17.4 17.4 0 0 1-3.2 3.9"
+        stroke={color}
+        strokeWidth="2"
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M6.7 6.8C3.8 8.5 2 12 2 12s3.5 6 10 6a10.7 10.7 0 0 0 4.2-.8"
+        stroke={color}
+        strokeWidth="2"
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M9.9 9.9A3 3 0 0 0 12 15a3 3 0 0 0 2.1-.9"
+        stroke={color}
+        strokeWidth="2"
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
 
 export default function Register() {
   const router = useRouter();
@@ -126,7 +230,9 @@ export default function Register() {
             <View style={styles.formSection}>
               <Text style={styles.label}>שם</Text>
               <View style={styles.inputBox}>
-                <MaterialIcons name="person-outline" size={20} color="#5B6470" />
+                <View style={styles.iconWrap}>
+                  <PersonIcon size={20} color="#5B6470" />
+                </View>
                 <TextInput
                   style={styles.input}
                   placeholder="הזיני שם"
@@ -141,7 +247,9 @@ export default function Register() {
 
               <Text style={styles.label}>אימייל</Text>
               <View style={styles.inputBox}>
-                <MaterialIcons name="mail-outline" size={20} color="#5B6470" />
+                <View style={styles.iconWrap}>
+                  <MailIcon size={20} color="#5B6470" />
+                </View>
                 <TextInput
                   style={styles.input}
                   placeholder="הזיני אימייל"
@@ -165,11 +273,13 @@ export default function Register() {
                   disabled={loading}
                   activeOpacity={0.7}
                 >
-                  <MaterialIcons
-                    name={showPassword ? 'visibility-off' : 'visibility'}
-                    size={20}
-                    color="#5B6470"
-                  />
+                  <View style={styles.iconWrap}>
+                    {showPassword ? (
+                      <EyeOffIcon size={20} color="#5B6470" />
+                    ) : (
+                      <EyeIcon size={20} color="#5B6470" />
+                    )}
+                  </View>
                 </TouchableOpacity>
 
                 <TextInput
@@ -195,11 +305,13 @@ export default function Register() {
                   disabled={loading}
                   activeOpacity={0.7}
                 >
-                  <MaterialIcons
-                    name={showConfirmPassword ? 'visibility-off' : 'visibility'}
-                    size={20}
-                    color="#5B6470"
-                  />
+                  <View style={styles.iconWrap}>
+                    {showConfirmPassword ? (
+                      <EyeOffIcon size={20} color="#5B6470" />
+                    ) : (
+                      <EyeIcon size={20} color="#5B6470" />
+                    )}
+                  </View>
                 </TouchableOpacity>
 
                 <TextInput
@@ -265,10 +377,11 @@ const styles = StyleSheet.create({
   },
 
   title: {
-    fontSize: screenWidth * 0.12,
-    fontFamily: 'Bilbo',
+    fontSize: screenWidth < 380 ? 22 : 27,
+    fontWeight: '800',
     color: '#1E293B',
-    marginBottom: 10,
+    textAlign: 'center',
+    marginBottom: 8,
   },
 
   subtitle: {
@@ -309,6 +422,13 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.04,
     shadowRadius: 10,
     elevation: 2,
+  },
+
+  iconWrap: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   input: {

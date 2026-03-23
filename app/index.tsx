@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import {
   Alert,
   Modal,
   Pressable,
+  SafeAreaView,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { useFonts } from 'expo-font';
@@ -22,10 +23,85 @@ import {
   signInWithEmailAndPassword,
   sendPasswordResetEmail,
 } from 'firebase/auth';
-import { MaterialIcons } from '@expo/vector-icons';
+import Svg, { Path, Circle, Line } from 'react-native-svg';
 import { auth } from '../database/firebase.js';
 
-const APP_BG = '#F4F7FB';
+const APP_BG = '#aec6cfb7';
+
+function MailIcon({ size = 22, color = '#5B6470' }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M4 6h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z"
+        stroke={color}
+        strokeWidth={2}
+        fill="none"
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M4 8l8 6 8-6"
+        stroke={color}
+        strokeWidth={2}
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+function EyeIcon({ size = 22, color = '#5B6470' }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"
+        stroke={color}
+        strokeWidth={2}
+        fill="none"
+        strokeLinejoin="round"
+      />
+      <Circle
+        cx="12"
+        cy="12"
+        r="3"
+        stroke={color}
+        strokeWidth={2}
+        fill="none"
+      />
+    </Svg>
+  );
+}
+
+function EyeOffIcon({ size = 22, color = '#5B6470' }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"
+        stroke={color}
+        strokeWidth={2}
+        fill="none"
+        strokeLinejoin="round"
+      />
+      <Circle
+        cx="12"
+        cy="12"
+        r="3"
+        stroke={color}
+        strokeWidth={2}
+        fill="none"
+      />
+      <Line
+        x1="4"
+        y1="4"
+        x2="20"
+        y2="20"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+      />
+    </Svg>
+  );
+}
 
 export default function Index() {
   const router = useRouter();
@@ -43,6 +119,26 @@ export default function Index() {
   const [isLoading, setIsLoading] = useState(false);
   const [isResetLoading, setIsResetLoading] = useState(false);
   const [resetModalVisible, setResetModalVisible] = useState(false);
+
+  const ui = useMemo(() => {
+    const safeWidth = Math.min(width, 430);
+    const isSmallScreen = safeWidth < 360;
+    const isTablet = width >= 768;
+
+    return {
+      isSmallScreen,
+      isTablet,
+      horizontalPadding: isTablet ? 32 : safeWidth < 380 ? 18 : 24,
+      cardMaxWidth: isTablet ? 520 : 460,
+      logoWidth: Math.min(safeWidth * 0.72, isTablet ? 360 : 300),
+      logoHeight: isSmallScreen ? 92 : isTablet ? 132 : 112,
+      titleFontSize: isSmallScreen ? 58 : isTablet ? 84 : 74,
+      welcomeFontSize: isSmallScreen ? 26 : isTablet ? 34 : 31,
+      subtitleFontSize: isSmallScreen ? 15 : 17,
+      inputFontSize: isSmallScreen ? 14 : 16,
+      buttonFontSize: isSmallScreen ? 15 : 16,
+    };
+  }, [width]);
 
   if (!fontsLoaded) {
     return <View style={{ flex: 1, backgroundColor: APP_BG }} />;
@@ -63,7 +159,7 @@ export default function Index() {
     } catch (error: any) {
       console.log('שגיאה בכניסה:', error);
 
-      switch (error.code) {
+      switch (error?.code) {
         case 'auth/user-not-found':
         case 'auth/wrong-password':
         case 'auth/invalid-credential':
@@ -71,6 +167,9 @@ export default function Index() {
           break;
         case 'auth/invalid-email':
           setErrorMessage('כתובת האימייל אינה תקינה');
+          break;
+        case 'auth/too-many-requests':
+          setErrorMessage('בוצעו יותר מדי ניסיונות. נסי שוב מאוחר יותר');
           break;
         default:
           setErrorMessage('אירעה שגיאה, אנא נסי שוב');
@@ -95,8 +194,6 @@ export default function Index() {
 
     try {
       setIsResetLoading(true);
-
-      // אפשר גם להגדיר שפה:
       auth.languageCode = 'he';
 
       await sendPasswordResetEmail(auth, trimmedEmail);
@@ -111,7 +208,7 @@ export default function Index() {
     } catch (error: any) {
       console.log('שגיאה באיפוס סיסמה:', error);
 
-      switch (error.code) {
+      switch (error?.code) {
         case 'auth/invalid-email':
           Alert.alert('שגיאה', 'כתובת האימייל אינה תקינה');
           break;
@@ -123,73 +220,88 @@ export default function Index() {
           Alert.alert('שגיאה', 'בוצעו יותר מדי ניסיונות. נסי שוב מאוחר יותר');
           break;
         default:
-          Alert.alert('שגיאה', `לא ניתן לשלוח מייל איפוס כרגע: ${error.code || ''}`);
+          Alert.alert('שגיאה', 'לא ניתן לשלוח מייל איפוס כרגע');
       }
     } finally {
       setIsResetLoading(false);
     }
   };
 
-  const isSmallScreen = width < 380;
-
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
-      <StatusBar backgroundColor={APP_BG} barStyle="dark-content" />
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar backgroundColor={APP_BG} barStyle="dark-content" />
 
-      <View style={styles.screen}>
         <KeyboardAvoidingView
-          style={styles.screen}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.flex}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 10 : 0}
         >
           <ScrollView
             contentContainerStyle={[
-              styles.container,
+              styles.scrollContainer,
               {
-                paddingHorizontal: width * 0.07,
-                paddingTop: height * 0.06,
-                paddingBottom: height * 0.05,
+                minHeight: height,
+                paddingHorizontal: ui.horizontalPadding,
+                paddingTop: Math.max(24, height * 0.04),
+                paddingBottom: Math.max(24, height * 0.05),
               },
             ]}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
+            bounces={false}
           >
-            <View style={[styles.card, { maxWidth: 460 }]}>
-              <View style={[styles.topSection, { marginBottom: height * 0.04 }]}>
+            <View style={[styles.card, { maxWidth: ui.cardMaxWidth }]}>
+              <View
+                style={[
+                  styles.topSection,
+                  { marginBottom: ui.isSmallScreen ? 28 : 36 },
+                ]}
+              >
                 <Image
                   source={require('../assets/images/myAppImg/logoBarbells.png')}
                   resizeMode="contain"
                   style={[
                     styles.logo,
                     {
-                      width: Math.min(width * 0.85, 340),
-                      height: isSmallScreen ? 95 : 125,
+                      width: ui.logoWidth,
+                      height: ui.logoHeight,
                     },
                   ]}
                 />
 
                 <Text
+                  allowFontScaling={false}
                   style={[
                     styles.titleReplog,
-                    { fontSize: isSmallScreen ? 54 : 68 },
+                    {
+                      fontSize: ui.titleFontSize,
+                      lineHeight: ui.titleFontSize,
+                    },
                   ]}
                 >
                   REPLOG
                 </Text>
 
                 <Text
+                  allowFontScaling={false}
                   style={[
                     styles.welcomeTitle,
-                    { fontSize: isSmallScreen ? 24 : 28 },
+                    { fontSize: ui.welcomeFontSize },
                   ]}
                 >
                   ברוכה הבאה
                 </Text>
 
                 <Text
+                  allowFontScaling={false}
                   style={[
                     styles.subtitle,
-                    { fontSize: isSmallScreen ? 14 : 15 },
+                    {
+                      fontSize: ui.subtitleFontSize,
+                      lineHeight: ui.subtitleFontSize + 8,
+                    },
                   ]}
                 >
                   התחבר/י כדי להמשיך לנהל ולעקוב אחרי האימונים שלך
@@ -197,14 +309,20 @@ export default function Index() {
               </View>
 
               <View style={styles.formSection}>
-                <Text style={[styles.label, { fontSize: isSmallScreen ? 14 : 15 }]}>
+                <Text
+                  allowFontScaling={false}
+                  style={[styles.label, { fontSize: ui.subtitleFontSize + 1 }]}
+                >
                   אימייל
                 </Text>
 
                 <View style={styles.inputBox}>
-                  <MaterialIcons name="mail-outline" size={20} color="#5B6470" />
+                  <View style={styles.iconWrap}>
+                    <MailIcon size={22} color="#5B6470" />
+                  </View>
+
                   <TextInput
-                    style={[styles.input, { fontSize: isSmallScreen ? 14 : 16 }]}
+                    style={[styles.input, { fontSize: ui.inputFontSize }]}
                     placeholder="הזיני אימייל"
                     placeholderTextColor="#8A94A6"
                     keyboardType="email-address"
@@ -213,10 +331,14 @@ export default function Index() {
                     value={email}
                     onChangeText={setEmail}
                     textAlign="right"
+                    returnKeyType="next"
                   />
                 </View>
 
-                <Text style={[styles.label, { fontSize: isSmallScreen ? 14 : 15 }]}>
+                <Text
+                  allowFontScaling={false}
+                  style={[styles.label, { fontSize: ui.subtitleFontSize + 1 }]}
+                >
                   סיסמה
                 </Text>
 
@@ -226,15 +348,17 @@ export default function Index() {
                     style={styles.iconPressable}
                     activeOpacity={0.7}
                   >
-                    <MaterialIcons
-                      name={showPassword ? 'visibility-off' : 'visibility'}
-                      size={20}
-                      color="#5B6470"
-                    />
+                    <View style={styles.iconWrap}>
+                      {showPassword ? (
+                        <EyeOffIcon size={22} color="#5B6470" />
+                      ) : (
+                        <EyeIcon size={22} color="#5B6470" />
+                      )}
+                    </View>
                   </TouchableOpacity>
 
                   <TextInput
-                    style={[styles.input, { fontSize: isSmallScreen ? 14 : 16 }]}
+                    style={[styles.input, { fontSize: ui.inputFontSize }]}
                     placeholder="הזיני סיסמה"
                     placeholderTextColor="#8A94A6"
                     secureTextEntry={!showPassword}
@@ -254,25 +378,27 @@ export default function Index() {
                   style={styles.forgotPasswordButton}
                 >
                   <Text
+                    allowFontScaling={false}
                     style={[
                       styles.forgotPasswordText,
-                      { fontSize: isSmallScreen ? 13 : 14 },
+                      { fontSize: ui.isSmallScreen ? 13 : 14 },
                     ]}
                   >
                     שכחתי סיסמה
                   </Text>
                 </TouchableOpacity>
 
-                {errorMessage ? (
+                {!!errorMessage && (
                   <Text
+                    allowFontScaling={false}
                     style={[
                       styles.errorText,
-                      { fontSize: isSmallScreen ? 13 : 14 },
+                      { fontSize: ui.isSmallScreen ? 13 : 14 },
                     ]}
                   >
                     {errorMessage}
                   </Text>
-                ) : null}
+                )}
 
                 <TouchableOpacity
                   style={[styles.button, isLoading && styles.buttonDisabled]}
@@ -284,9 +410,10 @@ export default function Index() {
                     <ActivityIndicator color="#FFFFFF" />
                   ) : (
                     <Text
+                      allowFontScaling={false}
                       style={[
                         styles.buttonText,
-                        { fontSize: isSmallScreen ? 15 : 16 },
+                        { fontSize: ui.buttonFontSize },
                       ]}
                     >
                       התחברות
@@ -294,11 +421,15 @@ export default function Index() {
                   )}
                 </TouchableOpacity>
 
-                <TouchableOpacity onPress={() => router.push('/register')}>
+                <TouchableOpacity
+                  onPress={() => router.push('/register')}
+                  activeOpacity={0.8}
+                >
                   <Text
+                    allowFontScaling={false}
                     style={[
                       styles.signupText,
-                      { fontSize: isSmallScreen ? 14 : 15 },
+                      { fontSize: ui.isSmallScreen ? 14 : 15 },
                     ]}
                   >
                     אין לך חשבון? להרשמה
@@ -324,17 +455,25 @@ export default function Index() {
             }}
           >
             <Pressable
-              style={styles.modalCard}
+              style={[
+                styles.modalCard,
+                { width: Math.min(width - 32, 420) },
+              ]}
               onPress={(e) => e.stopPropagation()}
             >
-              <Text style={styles.modalTitle}>איפוס סיסמה</Text>
+              <Text allowFontScaling={false} style={styles.modalTitle}>
+                איפוס סיסמה
+              </Text>
 
-              <Text style={styles.modalSubtitle}>
+              <Text allowFontScaling={false} style={styles.modalSubtitle}>
                 הזיני את כתובת האימייל שלך ונשלח אלייך קישור לאיפוס הסיסמה
               </Text>
 
               <View style={styles.modalInputBox}>
-                <MaterialIcons name="mail-outline" size={20} color="#5B6470" />
+                <View style={styles.iconWrap}>
+                  <MailIcon size={22} color="#5B6470" />
+                </View>
+
                 <TextInput
                   style={styles.modalInput}
                   placeholder="הזיני אימייל"
@@ -356,7 +495,9 @@ export default function Index() {
                   disabled={isResetLoading}
                   activeOpacity={0.8}
                 >
-                  <Text style={styles.modalCancelText}>ביטול</Text>
+                  <Text allowFontScaling={false} style={styles.modalCancelText}>
+                    ביטול
+                  </Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -371,25 +512,31 @@ export default function Index() {
                   {isResetLoading ? (
                     <ActivityIndicator color="#FFFFFF" />
                   ) : (
-                    <Text style={styles.modalSendText}>שלחי קישור</Text>
+                    <Text allowFontScaling={false} style={styles.modalSendText}>
+                      שלחי קישור
+                    </Text>
                   )}
                 </TouchableOpacity>
               </View>
             </Pressable>
           </Pressable>
         </Modal>
-      </View>
+      </SafeAreaView>
     </>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
+  safeArea: {
     flex: 1,
-    backgroundColor: '#aec6cfb7',
+    backgroundColor: APP_BG,
   },
 
-  container: {
+  flex: {
+    flex: 1,
+  },
+
+  scrollContainer: {
     flexGrow: 1,
     justifyContent: 'center',
     alignItems: 'center',
@@ -397,6 +544,7 @@ const styles = StyleSheet.create({
 
   card: {
     width: '100%',
+    alignSelf: 'center',
   },
 
   topSection: {
@@ -410,22 +558,24 @@ const styles = StyleSheet.create({
   titleReplog: {
     fontFamily: 'Bilbo',
     color: '#1E293B',
-    marginBottom: 10,
-    lineHeight: 72,
+    marginBottom: 14,
+    textAlign: 'center',
+    includeFontPadding: false,
   },
 
   welcomeTitle: {
     fontWeight: '800',
     color: '#1E293B',
     textAlign: 'center',
-    marginBottom: 8,
+    marginBottom: 10,
   },
 
   subtitle: {
     color: '#64748B',
     textAlign: 'center',
-    lineHeight: 22,
     paddingHorizontal: 8,
+    maxWidth: 420,
+    fontWeight: '500',
   },
 
   formSection: {
@@ -442,7 +592,7 @@ const styles = StyleSheet.create({
 
   inputBox: {
     width: '100%',
-    minHeight: 54,
+    minHeight: 56,
     borderWidth: 1,
     borderColor: '#D7DFE9',
     borderRadius: 16,
@@ -456,7 +606,14 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.04,
     shadowRadius: 10,
-    elevation: 2,
+    elevation: Platform.OS === 'android' ? 2 : 0,
+  },
+
+  iconWrap: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   input: {
@@ -464,12 +621,15 @@ const styles = StyleSheet.create({
     color: '#111827',
     textAlign: 'right',
     marginRight: 10,
-    minHeight: 44,
+    minHeight: 48,
+    paddingVertical: Platform.OS === 'android' ? 8 : 10,
   },
 
   iconPressable: {
-    paddingLeft: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
     paddingVertical: 4,
+    paddingHorizontal: 2,
   },
 
   forgotPasswordButton: {
@@ -487,17 +647,18 @@ const styles = StyleSheet.create({
 
   button: {
     width: '100%',
-    minHeight: 54,
+    minHeight: 56,
     backgroundColor: '#0F172A',
     borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 10,
+    paddingVertical: 14,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.08,
     shadowRadius: 12,
-    elevation: 4,
+    elevation: Platform.OS === 'android' ? 4 : 0,
   },
 
   buttonDisabled: {
@@ -529,12 +690,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(15, 23, 42, 0.45)',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 24,
+    paddingHorizontal: 16,
   },
 
   modalCard: {
-    width: '100%',
-    maxWidth: 420,
     backgroundColor: '#FFFFFF',
     borderRadius: 22,
     padding: 20,
@@ -542,7 +701,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.12,
     shadowRadius: 20,
-    elevation: 8,
+    elevation: Platform.OS === 'android' ? 8 : 0,
   },
 
   modalTitle: {
@@ -563,7 +722,7 @@ const styles = StyleSheet.create({
 
   modalInputBox: {
     width: '100%',
-    minHeight: 54,
+    minHeight: 56,
     borderWidth: 1,
     borderColor: '#D7DFE9',
     borderRadius: 16,
@@ -579,7 +738,9 @@ const styles = StyleSheet.create({
     color: '#111827',
     textAlign: 'right',
     marginRight: 10,
-    minHeight: 44,
+    minHeight: 48,
+    paddingVertical: Platform.OS === 'android' ? 8 : 10,
+    fontSize: 15,
   },
 
   modalButtonsRow: {
@@ -597,6 +758,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
+    paddingVertical: 12,
   },
 
   modalCancelText: {
@@ -612,6 +774,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#0F172A',
     justifyContent: 'center',
     alignItems: 'center',
+    paddingVertical: 12,
   },
 
   modalSendText: {
