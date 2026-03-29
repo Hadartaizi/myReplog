@@ -8,15 +8,18 @@ import {
   StatusBar,
   useWindowDimensions,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useFonts } from 'expo-font';
+import useAccessGuard from './admin/useAccessGuard';
 
 const APP_BG = '#F4F7FB';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { width } = useWindowDimensions();
+  const { checkingAccess } = useAccessGuard();
 
   const [fontsLoaded] = useFonts({
     Bilbo: require('../../assets/fonts/Bilbo-Regular.ttf'),
@@ -50,8 +53,20 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     };
   }, [width]);
 
-  if (!fontsLoaded) {
-    return <View style={styles.loadingScreen} />;
+  if (!fontsLoaded || checkingAccess) {
+    return (
+      <>
+        <StatusBar
+          backgroundColor="#AEC6CF"
+          barStyle="dark-content"
+          translucent={false}
+        />
+        <View style={styles.loadingScreen}>
+          <ActivityIndicator size="large" color="#0F172A" />
+          <Text style={styles.loadingText}>טוען נתונים...</Text>
+        </View>
+      </>
+    );
   }
 
   return (
@@ -195,6 +210,16 @@ const styles = StyleSheet.create({
   loadingScreen: {
     flex: 1,
     backgroundColor: APP_BG,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+
+  loadingText: {
+    marginTop: 12,
+    color: '#64748B',
+    fontSize: 15,
+    textAlign: 'center',
   },
 
   container: {

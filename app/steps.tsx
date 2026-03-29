@@ -517,9 +517,30 @@ export default function Steps() {
                         </View>
 
                         <View style={styles.cardHeaderRight}>
-                          <Text style={[styles.cardTitle, { fontSize: dynamic.textSize + 1 }]}>
-                            {workout.exerciseName || 'תרגיל ללא שם'}
-                          </Text>
+                          {isEditing ? (
+                            <TextInput
+                              style={[
+                                styles.inputBox,
+                                styles.textInput,
+                                {
+                                  fontSize: dynamic.textSize + 1,
+                                  minHeight: dynamic.inputHeight,
+                                },
+                              ]}
+                              value={workout.exerciseName || ''}
+                              onChangeText={(val) =>
+                                handleFieldChange(workout.id, 'exerciseName', val)
+                              }
+                              editable={!isSavingThis && !isDeletingThis}
+                              textAlign="right"
+                              placeholder="שם התרגיל"
+                              placeholderTextColor="#8A94A6"
+                            />
+                          ) : (
+                            <Text style={[styles.cardTitle, { fontSize: dynamic.textSize + 1 }]}>
+                              {workout.exerciseName || 'תרגיל ללא שם'}
+                            </Text>
+                          )}
                         </View>
                       </Pressable>
 

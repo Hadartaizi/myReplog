@@ -11,6 +11,7 @@ import {
   Platform,
   ScrollView,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { useFonts } from 'expo-font';
@@ -128,6 +129,14 @@ function EyeOffIcon({ size = 20, color = '#5B6470' }) {
   );
 }
 
+type FormErrors = {
+  name?: string;
+  email?: string;
+  password?: string;
+  confirmPassword?: string;
+  general?: string;
+};
+
 export default function Register() {
   const router = useRouter();
 
@@ -139,7 +148,7 @@ export default function Register() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [errors, setErrors] = useState<any>({});
+  const [errors, setErrors] = useState<FormErrors>({});
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -148,59 +157,96 @@ export default function Register() {
     return <View style={{ flex: 1, backgroundColor: APP_BG }} />;
   }
 
-  const handleRegister = async () => {
-    const newErrors: any = {};
+  const showErrorAlert = (message: string) => {
+    if (Platform.OS === 'web') {
+      window.alert(message);
+    } else {
+      Alert.alert('שגיאה', message);
+    }
+  };
 
-    if (!name.trim()) newErrors.name = 'אנא הזיני שם';
-    if (!email.trim()) newErrors.email = 'אנא הזיני אימייל';
+  const showSuccessAlert = (message: string) => {
+    if (Platform.OS === 'web') {
+      window.alert(message);
+    } else {
+      Alert.alert('הצלחה', message);
+    }
+  };
+
+  const handleRegister = async () => {
+    const newErrors: FormErrors = {};
+
+    const trimmedName = name.trim();
+    const trimmedEmail = email.trim().toLowerCase();
+
+    if (!trimmedName) newErrors.name = 'אנא הזיני שם';
+    if (!trimmedEmail) newErrors.email = 'אנא הזיני אימייל';
     if (!password) newErrors.password = 'אנא הזיני סיסמה';
     if (!confirmPassword) newErrors.confirmPassword = 'אנא אשרי את הסיסמה';
+
+    if (password && password.length < 6) {
+      newErrors.password = 'הסיסמה חייבת להכיל לפחות 6 תווים';
+    }
+
     if (password && confirmPassword && password !== confirmPassword) {
       newErrors.confirmPassword = 'הסיסמאות אינן תואמות';
     }
 
     setErrors(newErrors);
 
-    if (Object.keys(newErrors).length === 0) {
-      setLoading(true);
+    if (Object.keys(newErrors).length > 0) return;
 
-      try {
-        const trimmedName = name.trim();
-        const trimmedEmail = email.trim().toLowerCase();
+    setLoading(true);
 
-        const userCredential = await createUserWithEmailAndPassword(
-          auth,
-          trimmedEmail,
-          password
-        );
+    try {
+      const userCredential = await createUserWithEmailAndPassword(
+        auth,
+        trimmedEmail,
+        password
+      );
 
-        const user = userCredential.user;
-        const role =
-          trimmedEmail === ADMIN_EMAIL.toLowerCase() ? 'admin' : 'client';
+      const user = userCredential.user;
+      const isAdmin = trimmedEmail === ADMIN_EMAIL.toLowerCase();
+      const role = isAdmin ? 'admin' : 'client';
 
-        await setDoc(doc(db, 'users', user.uid), {
-          uid: user.uid,
-          name: trimmedName,
-          email: trimmedEmail,
-          role,
-          createdAt: new Date().toISOString(),
-        });
+      const nowIso = new Date().toISOString();
 
-        setLoading(false);
-        router.push('/');
-      } catch (error: any) {
-        setLoading(false);
-        console.error('שגיאה בהרשמה:', error);
+      await setDoc(doc(db, 'users', user.uid), {
+        uid: user.uid,
+        name: trimmedName,
+        email: trimmedEmail,
+        role,
+        createdAt: nowIso,
 
-        if (error.code === 'auth/email-already-in-use') {
-          setErrors({ email: 'כתובת המייל כבר רשומה במערכת' });
-        } else if (error.code === 'auth/invalid-email') {
-          setErrors({ email: 'כתובת מייל לא תקינה' });
-        } else if (error.code === 'auth/weak-password') {
-          setErrors({ password: 'הסיסמה חלשה מדי' });
-        } else {
-          setErrors({ general: 'אירעה שגיאה בהרשמה, אנא נסי שוב' });
-        }
+        approvalStatus: isAdmin ? 'approved' : 'pending',
+        accessStartAt: isAdmin ? nowIso : null,
+        accessEndAt: isAdmin ? '2099-12-31T23:59:59.000Z' : null,
+        approvedAt: isAdmin ? nowIso : null,
+      });
+
+      setLoading(false);
+
+      if (isAdmin) {
+        showSuccessAlert('ההרשמה בוצעה בהצלחה');
+        router.replace('/');
+        return;
+      }
+
+      showSuccessAlert('ההרשמה התקבלה. החשבון ממתין לאישור מנהל.');
+      router.replace('/');
+    } catch (error: any) {
+      setLoading(false);
+      console.error('שגיאה בהרשמה:', error);
+
+      if (error.code === 'auth/email-already-in-use') {
+        setErrors({ email: 'כתובת המייל כבר רשומה במערכת' });
+      } else if (error.code === 'auth/invalid-email') {
+        setErrors({ email: 'כתובת מייל לא תקינה' });
+      } else if (error.code === 'auth/weak-password') {
+        setErrors({ password: 'הסיסמה חלשה מדי' });
+      } else {
+        setErrors({ general: 'אירעה שגיאה בהרשמה, אנא נסי שוב' });
+        showErrorAlert('אירעה שגיאה בהרשמה, אנא נסי שוב');
       }
     }
   };
@@ -243,7 +289,9 @@ export default function Register() {
                   textAlign="right"
                 />
               </View>
-              {errors.name ? <Text style={styles.errorText}>{errors.name}</Text> : null}
+              {errors.name ? (
+                <Text style={styles.errorText}>{errors.name}</Text>
+              ) : null}
 
               <Text style={styles.label}>אימייל</Text>
               <View style={styles.inputBox}>
@@ -263,7 +311,9 @@ export default function Register() {
                   textAlign="right"
                 />
               </View>
-              {errors.email ? <Text style={styles.errorText}>{errors.email}</Text> : null}
+              {errors.email ? (
+                <Text style={styles.errorText}>{errors.email}</Text>
+              ) : null}
 
               <Text style={styles.label}>סיסמה</Text>
               <View style={styles.inputBox}>
@@ -295,7 +345,9 @@ export default function Register() {
                   autoCorrect={false}
                 />
               </View>
-              {errors.password ? <Text style={styles.errorText}>{errors.password}</Text> : null}
+              {errors.password ? (
+                <Text style={styles.errorText}>{errors.password}</Text>
+              ) : null}
 
               <Text style={styles.label}>אישור סיסמה</Text>
               <View style={styles.inputBox}>
@@ -331,7 +383,9 @@ export default function Register() {
                 <Text style={styles.errorText}>{errors.confirmPassword}</Text>
               ) : null}
 
-              {errors.general ? <Text style={styles.errorText}>{errors.general}</Text> : null}
+              {errors.general ? (
+                <Text style={styles.errorText}>{errors.general}</Text>
+              ) : null}
 
               <TouchableOpacity
                 style={[styles.button, loading && styles.buttonDisabled]}
@@ -346,7 +400,10 @@ export default function Register() {
                 )}
               </TouchableOpacity>
 
-              <TouchableOpacity disabled={loading} onPress={() => router.push('/')}>
+              <TouchableOpacity
+                disabled={loading}
+                onPress={() => router.push('/')}
+              >
                 <Text style={styles.loginLink}>יש לך כבר חשבון? התחברות</Text>
               </TouchableOpacity>
             </View>

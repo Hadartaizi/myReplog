@@ -9,11 +9,12 @@ import {
   query,
   where,
 } from "firebase/firestore";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Svg, { Circle, Line, Path, Rect } from "react-native-svg";
 import {
   ActivityIndicator,
   Alert,
+  I18nManager,
   Linking,
   Modal,
   Platform,
@@ -27,6 +28,12 @@ import {
 } from "react-native";
 import { auth, db } from "../database/firebase";
 import AppLayout from "./components/AppLayout";
+import ClientAccessManager from "./components/admin/ClientAccessManager";
+import useAccessGuard from "./components/admin/useAccessGuard";
+import {
+  formatDateTimeIL,
+  getRemainingTimeLabel,
+} from "./components/admin/accessUtils";
 
 const APP_BG = "#F4F7FB";
 
@@ -52,8 +59,26 @@ function SupportIcon({ size = 22, color = "#FFFFFF" }) {
         fill="none"
         strokeLinecap="round"
       />
-      <Rect x="2.5" y="10" width="3" height="5.5" rx="1.5" stroke={color} strokeWidth={2} fill="none" />
-      <Rect x="18.5" y="10" width="3" height="5.5" rx="1.5" stroke={color} strokeWidth={2} fill="none" />
+      <Rect
+        x="2.5"
+        y="10"
+        width="3"
+        height="5.5"
+        rx="1.5"
+        stroke={color}
+        strokeWidth={2}
+        fill="none"
+      />
+      <Rect
+        x="18.5"
+        y="10"
+        width="3"
+        height="5.5"
+        rx="1.5"
+        stroke={color}
+        strokeWidth={2}
+        fill="none"
+      />
     </Svg>
   );
 }
@@ -217,8 +242,29 @@ function PhoneIcon({ size = 20, color = "#1E293B" }) {
   );
 }
 
+type ClientItem = {
+  id: string;
+  uid?: string;
+  name?: string;
+  email?: string;
+  role?: "admin" | "client";
+  approvalStatus?: "pending" | "approved" | "blocked";
+  accessStartAt?: string | null;
+  accessEndAt?: string | null;
+};
+
+type CurrentUserData = {
+  name?: string;
+  email?: string;
+  role?: "admin" | "client";
+  approvalStatus?: "pending" | "approved" | "blocked";
+  accessStartAt?: string | null;
+  accessEndAt?: string | null;
+};
+
 export default function Menu() {
   const { width, height } = useWindowDimensions();
+  const { checkingAccess } = useAccessGuard();
 
   const isVerySmall = width < 340;
   const isSmallScreen = width < 380;
@@ -256,55 +302,66 @@ export default function Menu() {
   const [loggingOut, setLoggingOut] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [clients, setClients] = useState<any[]>([]);
+  const [clients, setClients] = useState<ClientItem[]>([]);
   const [adminActionsOpen, setAdminActionsOpen] = useState(false);
   const [clientsSectionOpen, setClientsSectionOpen] = useState(false);
+  const [deleteClientsOpen, setDeleteClientsOpen] = useState(false);
+  const [accessManagementOpen, setAccessManagementOpen] = useState(false);
+  const [accessInfoOpen, setAccessInfoOpen] = useState(false);
+  const [currentUserData, setCurrentUserData] = useState<CurrentUserData | null>(null);
+
+  const fetchMenuData = useCallback(async () => {
+    try {
+      const user = auth.currentUser;
+      if (!user) {
+        setCurrentUserData(null);
+        setClients([]);
+        setIsAdmin(false);
+        setLoading(false);
+        return;
+      }
+
+      const userRef = doc(db, "users", user.uid);
+      const userSnap = await getDoc(userRef);
+
+      if (!userSnap.exists()) {
+        setCurrentUserData(null);
+        setClients([]);
+        setIsAdmin(false);
+        setLoading(false);
+        return;
+      }
+
+      const userData = userSnap.data() as CurrentUserData;
+      setCurrentUserData(userData);
+
+      const adminMode = userData.role === "admin";
+      setIsAdmin(adminMode);
+
+      if (adminMode) {
+        const q = query(collection(db, "users"), where("role", "==", "client"));
+        const snapshot = await getDocs(q);
+
+        const clientsList: ClientItem[] = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...(docSnap.data() as Omit<ClientItem, "id">),
+        }));
+
+        clientsList.sort((a, b) => (a.name || "").localeCompare(b.name || "", "he"));
+        setClients(clientsList);
+      } else {
+        setClients([]);
+      }
+    } catch (error) {
+      console.error("שגיאה בטעינת נתוני תפריט:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    const fetchMenuData = async () => {
-      try {
-        const user = auth.currentUser;
-        if (!user) {
-          setLoading(false);
-          return;
-        }
-
-        const userRef = doc(db, "users", user.uid);
-        const userSnap = await getDoc(userRef);
-
-        if (!userSnap.exists()) {
-          setLoading(false);
-          return;
-        }
-
-        const userData = userSnap.data();
-        const adminMode = userData.role === "admin";
-        setIsAdmin(adminMode);
-
-        if (adminMode) {
-          const q = query(collection(db, "users"), where("role", "==", "client"));
-          const snapshot = await getDocs(q);
-
-          const clientsList = snapshot.docs.map((docSnap) => ({
-            id: docSnap.id,
-            ...docSnap.data(),
-          }));
-
-          clientsList.sort((a: any, b: any) =>
-            (a.name || "").localeCompare(b.name || "", "he")
-          );
-
-          setClients(clientsList);
-        }
-      } catch (error) {
-        console.error("שגיאה בטעינת נתוני תפריט:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchMenuData();
-  }, []);
+  }, [fetchMenuData]);
 
   if (!fontsLoaded) {
     return <View style={{ flex: 1, backgroundColor: APP_BG }} />;
@@ -405,6 +462,28 @@ export default function Menu() {
     }
   };
 
+  const currentApprovalLabel =
+    currentUserData?.approvalStatus === "approved"
+      ? "מאושר"
+      : currentUserData?.approvalStatus === "blocked"
+      ? "חסום"
+      : "ממתין לאישור";
+
+  if (checkingAccess || loading) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <AppLayout>
+          <View style={styles.screen}>
+            <View style={styles.loadingScreen}>
+              <ActivityIndicator size="large" color="#0F172A" />
+              <Text style={styles.loaderText}>טוען נתונים...</Text>
+            </View>
+          </View>
+        </AppLayout>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <AppLayout>
@@ -447,193 +526,333 @@ export default function Menu() {
                 <Text style={[styles.subtitle, { fontSize: dynamic.subtitleSize }]}>
                   {isAdmin
                     ? "כאן אפשר ליצור קשר, להתנתק ולצפות בפעולות ניהול"
-                    : "כאן אפשר ליצור קשר או להתנתק מהחשבון"}
+                    : "כאן אפשר ליצור קשר, להתנתק ולראות את מצב הגישה שלך"}
                 </Text>
               </View>
 
-              {loading ? (
-                <View style={styles.loaderWrapper}>
-                  <ActivityIndicator size="large" color="#0F172A" />
-                  <Text style={styles.loaderText}>טוען נתונים...</Text>
-                </View>
-              ) : (
-                <View style={styles.actionsContainer}>
-                  <Pressable
-                    style={({ pressed }) => [
-                      styles.primaryButton,
-                      { minHeight: dynamic.buttonHeight },
-                      pressed && styles.pressed,
-                    ]}
-                    onPress={() => setContactVisible(true)}
-                  >
+              <View style={styles.actionsContainer}>
+                {!isAdmin && currentUserData && (
+                  <View style={styles.accessWrapper}>
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.accessToggleButton,
+                        { minHeight: dynamic.buttonHeight },
+                        pressed && styles.pressedLight,
+                      ]}
+                      onPress={() => setAccessInfoOpen((prev) => !prev)}
+                    >
+                      <View style={styles.buttonRow}>
+                        <View style={styles.leftSlot}>
+                          {accessInfoOpen ? (
+                            <ArrowUpIcon size={20} color="#1E293B" />
+                          ) : (
+                            <ArrowDownIcon size={20} color="#1E293B" />
+                          )}
+                        </View>
+
+                        <View style={styles.centerContent}>
+                          <Text
+                            style={[
+                              styles.accessToggleButtonText,
+                              { fontSize: dynamic.textSize },
+                            ]}
+                            numberOfLines={1}
+                          >
+                            פרטי גישה למערכת
+                          </Text>
+                        </View>
+
+                        <View style={styles.rightSlot} />
+                      </View>
+                    </Pressable>
+
+                    {accessInfoOpen && (
+                      <View style={styles.accessCard}>
+                        <View style={styles.accessRow}>
+                          <Text style={styles.accessLabel}>סטטוס</Text>
+                          <Text style={styles.accessValue}>{currentApprovalLabel}</Text>
+                        </View>
+
+                        <View style={styles.accessRow}>
+                          <Text style={styles.accessLabel}>תחילת גישה</Text>
+                          <Text style={styles.accessValue}>
+                            {formatDateTimeIL(currentUserData.accessStartAt)}
+                          </Text>
+                        </View>
+
+                        <View style={styles.accessRow}>
+                          <Text style={styles.accessLabel}>סיום גישה</Text>
+                          <Text style={styles.accessValue}>
+                            {formatDateTimeIL(currentUserData.accessEndAt)}
+                          </Text>
+                        </View>
+
+                        <View style={[styles.accessRow, styles.accessRowLast]}>
+                          <Text style={styles.accessLabel}>זמן נותר</Text>
+                          <Text style={styles.accessValue}>
+                            {getRemainingTimeLabel(currentUserData.accessEndAt)}
+                          </Text>
+                        </View>
+                      </View>
+                    )}
+                  </View>
+                )}
+
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.primaryButton,
+                    { minHeight: dynamic.buttonHeight },
+                    pressed && styles.pressed,
+                  ]}
+                  onPress={() => setContactVisible(true)}
+                >
+                  <View style={styles.buttonRow}>
+                    <View style={styles.leftSlot} />
+                    <View style={styles.centerContent}>
+                      <View style={styles.iconWrap}>
+                        <SupportIcon size={dynamic.iconSize + 4} color="#FFFFFF" />
+                      </View>
+                      <Text
+                        style={[
+                          styles.primaryButtonText,
+                          { fontSize: dynamic.textSize },
+                        ]}
+                      >
+                        צור קשר
+                      </Text>
+                    </View>
+                    <View style={styles.rightSlot} />
+                  </View>
+                </Pressable>
+
+                {isAdmin && (
+                  <View style={styles.adminWrapper}>
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.adminMainButton,
+                        { minHeight: dynamic.buttonHeight },
+                        pressed && styles.pressedLight,
+                      ]}
+                      onPress={() => setAdminActionsOpen((prev) => !prev)}
+                    >
+                      <View style={styles.buttonRow}>
+                        <View style={styles.leftSlot}>
+                          {adminActionsOpen ? (
+                            <ArrowUpIcon size={20} color="#1E293B" />
+                          ) : (
+                            <ArrowDownIcon size={20} color="#1E293B" />
+                          )}
+                        </View>
+
+                        <View style={styles.centerContent}>
+                          <View style={styles.iconWrap}>
+                            <AdminIcon size={dynamic.iconSize} color="#1E293B" />
+                          </View>
+                          <Text
+                            style={[
+                              styles.adminMainButtonText,
+                              { fontSize: dynamic.textSize },
+                            ]}
+                            numberOfLines={1}
+                          >
+                            פעולות למנהל
+                          </Text>
+                        </View>
+
+                        <View style={styles.rightSlot} />
+                      </View>
+                    </Pressable>
+
+                    {adminActionsOpen && (
+                      <View style={styles.adminDropdown}>
+                        <Pressable
+                          style={({ pressed }) => [
+                            styles.adminSubButton,
+                            { minHeight: dynamic.buttonHeight - 2 },
+                            pressed && styles.pressedLight,
+                          ]}
+                          onPress={() => setClientsSectionOpen((prev) => !prev)}
+                        >
+                          <View style={styles.buttonRow}>
+                            <View style={styles.leftSlot}>
+                              {clientsSectionOpen ? (
+                                <ArrowUpIcon size={20} color="#0F172A" />
+                              ) : (
+                                <ArrowDownIcon size={20} color="#0F172A" />
+                              )}
+                            </View>
+
+                            <View style={styles.centerContent}>
+                              <View style={styles.iconWrap}>
+                                <GroupsIcon size={20} color="#0F172A" />
+                              </View>
+                              <Text style={styles.adminSubButtonText} numberOfLines={1}>
+                                ניהול לקוחות
+                              </Text>
+                            </View>
+
+                            <View style={styles.rightSlot} />
+                          </View>
+                        </Pressable>
+
+                        {clientsSectionOpen && (
+                          <View style={styles.clientsBox}>
+                            <Pressable
+                              style={({ pressed }) => [
+                                styles.adminSubButton,
+                                { minHeight: dynamic.buttonHeight - 6 },
+                                pressed && styles.pressedLight,
+                              ]}
+                              onPress={() => setDeleteClientsOpen((prev) => !prev)}
+                            >
+                              <View style={styles.buttonRow}>
+                                <View style={styles.leftSlot}>
+                                  {deleteClientsOpen ? (
+                                    <ArrowUpIcon size={20} color="#0F172A" />
+                                  ) : (
+                                    <ArrowDownIcon size={20} color="#0F172A" />
+                                  )}
+                                </View>
+
+                                <View style={styles.centerContent}>
+                                  <View style={styles.iconWrap}>
+                                    <DeleteIcon size={18} color="#0F172A" />
+                                  </View>
+                                  <Text style={styles.adminSubButtonText} numberOfLines={1}>
+                                    מחיקת לקוח
+                                  </Text>
+                                </View>
+
+                                <View style={styles.rightSlot} />
+                              </View>
+                            </Pressable>
+
+                            {deleteClientsOpen && (
+                              <View style={styles.clientsInnerBox}>
+                                {clients.length === 0 ? (
+                                  <View style={styles.emptyClientsBox}>
+                                    <Text style={styles.emptyClientsText}>אין לקוחות להצגה</Text>
+                                  </View>
+                                ) : (
+                                  clients.map((client) => {
+                                    const targetUid = client.uid || client.id;
+
+                                    return (
+                                      <View key={`delete-${client.id}`} style={styles.clientRow}>
+                                        <View style={styles.clientActions}>
+                                          <Pressable
+                                            style={({ pressed }) => [
+                                              styles.deleteClientButton,
+                                              pressed && styles.deletePressed,
+                                            ]}
+                                            onPress={() => handleDeleteClient(targetUid)}
+                                            hitSlop={10}
+                                          >
+                                            <DeleteIcon size={20} color="#DC2626" />
+                                          </Pressable>
+                                        </View>
+
+                                        <View style={styles.clientInfo}>
+                                          <Text style={styles.clientName}>
+                                            {client.name || "ללא שם"}
+                                          </Text>
+
+                                          <Text style={styles.clientEmail}>
+                                            {client.email || "ללא אימייל"}
+                                          </Text>
+                                        </View>
+                                      </View>
+                                    );
+                                  })
+                                )}
+                              </View>
+                            )}
+
+                            <Pressable
+                              style={({ pressed }) => [
+                                styles.adminSubButton,
+                                { minHeight: dynamic.buttonHeight - 6 },
+                                pressed && styles.pressedLight,
+                              ]}
+                              onPress={() => setAccessManagementOpen((prev) => !prev)}
+                            >
+                              <View style={styles.buttonRow}>
+                                <View style={styles.leftSlot}>
+                                  {accessManagementOpen ? (
+                                    <ArrowUpIcon size={20} color="#0F172A" />
+                                  ) : (
+                                    <ArrowDownIcon size={20} color="#0F172A" />
+                                  )}
+                                </View>
+
+                                <View style={styles.centerContent}>
+                                  <View style={styles.iconWrap}>
+                                    <AdminIcon size={18} color="#0F172A" />
+                                  </View>
+                                  <Text style={styles.adminSubButtonText} numberOfLines={1}>
+                                    הגדרת תקופת גישה
+                                  </Text>
+                                </View>
+
+                                <View style={styles.rightSlot} />
+                              </View>
+                            </Pressable>
+
+                            {accessManagementOpen && (
+                              <View style={styles.clientsInnerBox}>
+                                {clients.length === 0 ? (
+                                  <View style={styles.emptyClientsBox}>
+                                    <Text style={styles.emptyClientsText}>אין לקוחות להצגה</Text>
+                                  </View>
+                                ) : (
+                                  <ClientAccessManager
+                                    clients={clients}
+                                    onAfterUpdate={fetchMenuData}
+                                  />
+                                )}
+                              </View>
+                            )}
+                          </View>
+                        )}
+                      </View>
+                    )}
+                  </View>
+                )}
+
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.logoutButton,
+                    { minHeight: dynamic.buttonHeight },
+                    pressed && styles.logoutPressed,
+                    loggingOut && styles.disabledButton,
+                  ]}
+                  onPress={handleLogout}
+                  disabled={loggingOut}
+                  hitSlop={6}
+                >
+                  {loggingOut ? (
+                    <ActivityIndicator color="#DC2626" />
+                  ) : (
                     <View style={styles.buttonRow}>
                       <View style={styles.leftSlot} />
                       <View style={styles.centerContent}>
                         <View style={styles.iconWrap}>
-                          <SupportIcon size={dynamic.iconSize + 4} color="#FFFFFF" />
+                          <LogoutIcon size={dynamic.iconSize} color="#DC2626" />
                         </View>
                         <Text
                           style={[
-                            styles.primaryButtonText,
+                            styles.logoutButtonText,
                             { fontSize: dynamic.textSize },
                           ]}
                         >
-                          צור קשר
+                          התנתקות
                         </Text>
                       </View>
                       <View style={styles.rightSlot} />
                     </View>
-                  </Pressable>
-
-                  {isAdmin && (
-                    <View style={styles.adminWrapper}>
-                      <Pressable
-                        style={({ pressed }) => [
-                          styles.adminMainButton,
-                          { minHeight: dynamic.buttonHeight },
-                          pressed && styles.pressedLight,
-                        ]}
-                        onPress={() => setAdminActionsOpen((prev) => !prev)}
-                      >
-                        <View style={styles.buttonRow}>
-                          <View style={styles.leftSlot}>
-                            {adminActionsOpen ? (
-                              <ArrowUpIcon size={20} color="#1E293B" />
-                            ) : (
-                              <ArrowDownIcon size={20} color="#1E293B" />
-                            )}
-                          </View>
-
-                          <View style={styles.centerContent}>
-                            <View style={styles.iconWrap}>
-                              <AdminIcon size={dynamic.iconSize} color="#1E293B" />
-                            </View>
-                            <Text
-                              style={[
-                                styles.adminMainButtonText,
-                                { fontSize: dynamic.textSize },
-                              ]}
-                              numberOfLines={1}
-                            >
-                              פעולות למנהל
-                            </Text>
-                          </View>
-
-                          <View style={styles.rightSlot} />
-                        </View>
-                      </Pressable>
-
-                      {adminActionsOpen && (
-                        <View style={styles.adminDropdown}>
-                          <Pressable
-                            style={({ pressed }) => [
-                              styles.adminSubButton,
-                              { minHeight: dynamic.buttonHeight - 2 },
-                              pressed && styles.pressedLight,
-                            ]}
-                            onPress={() => setClientsSectionOpen((prev) => !prev)}
-                          >
-                            <View style={styles.buttonRow}>
-                              <View style={styles.leftSlot}>
-                                {clientsSectionOpen ? (
-                                  <ArrowUpIcon size={20} color="#0F172A" />
-                                ) : (
-                                  <ArrowDownIcon size={20} color="#0F172A" />
-                                )}
-                              </View>
-
-                              <View style={styles.centerContent}>
-                                <View style={styles.iconWrap}>
-                                  <GroupsIcon size={20} color="#0F172A" />
-                                </View>
-                                <Text style={styles.adminSubButtonText} numberOfLines={1}>
-                                  לקוחות מחוברים למערכת
-                                </Text>
-                              </View>
-
-                              <View style={styles.rightSlot} />
-                            </View>
-                          </Pressable>
-
-                          {clientsSectionOpen && (
-                            <View style={styles.clientsBox}>
-                              {clients.length === 0 ? (
-                                <View style={styles.emptyClientsBox}>
-                                  <Text style={styles.emptyClientsText}>אין לקוחות להצגה</Text>
-                                </View>
-                              ) : (
-                                clients.map((client) => {
-                                  const targetUid = client.uid || client.id;
-
-                                  return (
-                                    <View key={client.id} style={styles.clientRow}>
-                                      <View style={styles.clientActions}>
-                                        <Pressable
-                                          style={({ pressed }) => [
-                                            styles.deleteClientButton,
-                                            pressed && styles.deletePressed,
-                                          ]}
-                                          onPress={() => handleDeleteClient(targetUid)}
-                                          hitSlop={10}
-                                        >
-                                          <DeleteIcon size={20} color="#DC2626" />
-                                        </Pressable>
-                                      </View>
-
-                                      <View style={styles.clientInfo}>
-                                        <Text style={styles.clientName}>
-                                          {client.name || "ללא שם"}
-                                        </Text>
-                                        <Text style={styles.clientEmail}>
-                                          {client.email || "ללא אימייל"}
-                                        </Text>
-                                      </View>
-                                    </View>
-                                  );
-                                })
-                              )}
-                            </View>
-                          )}
-                        </View>
-                      )}
-                    </View>
                   )}
-
-                  <Pressable
-                    style={({ pressed }) => [
-                      styles.logoutButton,
-                      { minHeight: dynamic.buttonHeight },
-                      pressed && styles.logoutPressed,
-                      loggingOut && styles.disabledButton,
-                    ]}
-                    onPress={handleLogout}
-                    disabled={loggingOut}
-                    hitSlop={6}
-                  >
-                    {loggingOut ? (
-                      <ActivityIndicator color="#DC2626" />
-                    ) : (
-                      <View style={styles.buttonRow}>
-                        <View style={styles.leftSlot} />
-                        <View style={styles.centerContent}>
-                          <View style={styles.iconWrap}>
-                            <LogoutIcon size={dynamic.iconSize} color="#DC2626" />
-                          </View>
-                          <Text
-                            style={[
-                              styles.logoutButtonText,
-                              { fontSize: dynamic.textSize },
-                            ]}
-                          >
-                            התנתקות
-                          </Text>
-                        </View>
-                        <View style={styles.rightSlot} />
-                      </View>
-                    )}
-                  </Pressable>
-                </View>
-              )}
+                </Pressable>
+              </View>
             </View>
           </ScrollView>
 
@@ -734,6 +953,13 @@ const styles = StyleSheet.create({
     backgroundColor: APP_BG,
   },
 
+  loadingScreen: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 24,
+  },
+
   scrollContent: {
     flexGrow: 1,
     alignItems: "center",
@@ -767,12 +993,6 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
 
-  loaderWrapper: {
-    paddingVertical: 30,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
   loaderText: {
     marginTop: 10,
     color: "#64748B",
@@ -783,6 +1003,72 @@ const styles = StyleSheet.create({
   actionsContainer: {
     gap: 14,
     width: "100%",
+  },
+
+  accessWrapper: {
+    width: "100%",
+    gap: 10,
+  },
+
+  accessToggleButton: {
+    borderRadius: 18,
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#D7DFE9",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    width: "100%",
+  },
+
+  accessToggleButtonText: {
+    color: "#1E293B",
+    fontWeight: "800",
+    textAlign: "center",
+  },
+
+  accessCard: {
+    width: "100%",
+    backgroundColor: "#F8FAFC",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    padding: 16,
+  },
+
+  accessRow: {
+    width: "100%",
+    flexDirection: "row-reverse",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E2E8F0",
+    gap: 12,
+  },
+
+  accessRowLast: {
+    borderBottomWidth: 0,
+    paddingBottom: 0,
+  },
+
+  accessLabel: {
+    width: 92,
+    fontSize: 13,
+    color: "#64748B",
+    fontWeight: "700",
+    textAlign: "right",
+    writingDirection: I18nManager.isRTL ? "rtl" : "ltr",
+  },
+
+  accessValue: {
+    flex: 1,
+    fontSize: 14,
+    color: "#0F172A",
+    fontWeight: "700",
+    textAlign: "right",
+    writingDirection: "rtl",
   },
 
   buttonRow: {
@@ -888,6 +1174,12 @@ const styles = StyleSheet.create({
 
   clientsBox: {
     marginTop: 12,
+    gap: 10,
+  },
+
+  clientsInnerBox: {
+    marginTop: 10,
+    gap: 10,
   },
 
   emptyClientsBox: {
@@ -938,6 +1230,13 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: "right",
     marginTop: 4,
+  },
+
+  clientMeta: {
+    marginTop: 5,
+    color: "#334155",
+    fontSize: 13,
+    textAlign: "right",
   },
 
   clientActions: {

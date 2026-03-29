@@ -26,7 +26,7 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
-import Svg, { Path, Rect, Line } from 'react-native-svg';
+import Svg, { Line, Path, Rect } from 'react-native-svg';
 import { auth, db } from '../database/firebase';
 import AppLayout from './components/AppLayout';
 
@@ -148,7 +148,7 @@ export default function Home() {
     const horizontalPadding = isTablet ? width * 0.04 : width * 0.05;
     const cardWidth = Math.min(width * 0.94, 560);
     const inputHeight = isVerySmall ? 44 : isSmallScreen ? 48 : 52;
-    const titleSize = isVerySmall ? 21 : isSmallScreen ? 24 : 28;
+    const titleSize = isVerySmall ? 19 : isSmallScreen ? 21 : isTablet ? 30 : 26;
     const labelSize = isVerySmall ? 13 : 15;
     const textSize = isVerySmall ? 13 : isSmallScreen ? 14 : 16;
     const buttonHeight = isVerySmall ? 50 : 56;
@@ -201,18 +201,15 @@ export default function Home() {
         const userSnap = await getDoc(userRef);
 
         if (userSnap.exists()) {
-          setUserName(userSnap.data().name || '');
+          const data = userSnap.data();
+          setUserName((data?.name || '').trim());
         }
 
         const q = query(collection(db, 'exercises'), where('uid', '==', user.uid));
         const snapshot = await getDocs(q);
 
         const uniqueNames = Array.from(
-          new Set(
-            snapshot.docs
-              .map((item) => item.data().exerciseName)
-              .filter(Boolean)
-          )
+          new Set(snapshot.docs.map((item) => item.data().exerciseName).filter(Boolean))
         );
 
         setExistingExercises(uniqueNames);
@@ -241,8 +238,7 @@ export default function Home() {
         const sorted = snapshot.docs
           .map((item) => item.data() as WorkoutDocType)
           .sort(
-            (a, b) =>
-              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+            (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
           );
 
         setLastExerciseData((prev) => ({
@@ -316,9 +312,7 @@ export default function Home() {
       } else {
         updated.error = '';
         updated.repsPerSet = Array.from({ length: num || 0 }, (_, j) =>
-          exercise.repsPerSet[j]
-            ? exercise.repsPerSet[j]
-            : { reps: '', weight: '' }
+          exercise.repsPerSet[j] ? exercise.repsPerSet[j] : { reps: '', weight: '' }
         ).reduce((acc: RepsPerSetType, val, j) => {
           acc[j] = val;
           return acc;
@@ -470,6 +464,7 @@ export default function Home() {
   }
 
   const greeting = getGreeting();
+  const titleLineOne = userName ? `${greeting} ${userName}` : greeting;
 
   const selectedLastExercise =
     selectedExerciseForModal && lastExerciseData[selectedExerciseForModal]
@@ -507,20 +502,39 @@ export default function Home() {
                 ]}
               >
                 <View style={styles.header}>
-                  <Text
-                    style={[
-                      styles.title,
-                      {
-                        fontSize: dynamic.titleSize,
-                        lineHeight: dynamic.titleSize * 1.4,
-                      },
-                    ]}
-                  >
-                    היי {userName ? `${userName}, ` : ''}
-                    {greeting}
-                    {'\n'}
-                    הגיע הזמן להזין אימון
-                  </Text>
+                  <View style={styles.titleWrapper}>
+                    <Text
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.68}
+                      style={[
+                        styles.title,
+                        styles.titleFirstLine,
+                        {
+                          fontSize: dynamic.titleSize,
+                          lineHeight: dynamic.titleSize * 1.25,
+                        },
+                      ]}
+                    >
+                      {titleLineOne}
+                    </Text>
+
+                    <Text
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.74}
+                      style={[
+                        styles.title,
+                        styles.titleSecondLine,
+                        {
+                          fontSize: dynamic.titleSize,
+                          lineHeight: dynamic.titleSize * 1.25,
+                        },
+                      ]}
+                    >
+                      הגיע הזמן להזין אימון
+                    </Text>
+                  </View>
 
                   <Text style={[styles.subtitle, { fontSize: dynamic.textSize - 1 }]}>
                     שמרי תרגיל חדש בצורה מסודרת, נקייה ונוחה
@@ -837,15 +851,13 @@ export default function Home() {
 
                   <View style={styles.modalDivider} />
 
-                  {Object.entries(selectedLastExercise.repsPerSet).map(
-                    ([setKey, val]) => (
-                      <View key={setKey} style={styles.modalRow}>
-                        <Text style={styles.modalText}>סט {parseInt(setKey, 10) + 1}</Text>
-                        <Text style={styles.modalText}>{val.reps} חזרות</Text>
-                        <Text style={styles.modalText}>{val.weight} ק״ג</Text>
-                      </View>
-                    )
-                  )}
+                  {Object.entries(selectedLastExercise.repsPerSet).map(([setKey, val]) => (
+                    <View key={setKey} style={styles.modalRow}>
+                      <Text style={styles.modalText}>סט {parseInt(setKey, 10) + 1}</Text>
+                      <Text style={styles.modalText}>{val.reps} חזרות</Text>
+                      <Text style={styles.modalText}>{val.weight} ק״ג</Text>
+                    </View>
+                  ))}
                 </>
               ) : (
                 <Text style={styles.modalText}>אין מידע זמין</Text>
@@ -889,16 +901,35 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
 
+  titleWrapper: {
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+  },
+
   title: {
+    width: '100%',
     fontWeight: '800',
     color: '#1E293B',
     textAlign: 'center',
+    paddingHorizontal: 4,
+  },
+
+  titleFirstLine: {
+    writingDirection: 'rtl',
+    includeFontPadding: false,
+  },
+
+  titleSecondLine: {
+    writingDirection: 'rtl',
+    includeFontPadding: false,
   },
 
   subtitle: {
     color: '#64748B',
     textAlign: 'center',
-    marginTop: 8,
+    marginTop: 10,
     lineHeight: 22,
   },
 

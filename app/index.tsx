@@ -22,9 +22,12 @@ import { useFonts } from 'expo-font';
 import {
   signInWithEmailAndPassword,
   sendPasswordResetEmail,
+  signOut,
 } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
 import Svg, { Path, Circle, Line } from 'react-native-svg';
-import { auth } from '../database/firebase.js';
+import { auth, db } from '../database/firebase.js';
+import { getAccessState } from './components/admin/accessUtils';
 
 const APP_BG = '#aec6cfb7';
 
@@ -144,18 +147,98 @@ export default function Index() {
     return <View style={{ flex: 1, backgroundColor: APP_BG }} />;
   }
 
+  const showMessage = (title: string, message: string) => {
+    if (Platform.OS === 'web') {
+      window.alert(`${title}\n\n${message}`);
+    } else {
+      Alert.alert(title, message);
+    }
+  };
+
   const handleLogin = async () => {
     setErrorMessage('');
 
-    if (!email.trim() || !password) {
+    const trimmedEmail = email.trim().toLowerCase();
+
+    if (!trimmedEmail || !password) {
       setErrorMessage('אנא הזיני אימייל וסיסמה');
       return;
     }
 
     try {
       setIsLoading(true);
-      await signInWithEmailAndPassword(auth, email.trim(), password);
-      router.push('/home');
+
+      const userCredential = await signInWithEmailAndPassword(
+        auth,
+        trimmedEmail,
+        password
+      );
+
+      const user = userCredential.user;
+
+      const userRef = doc(db, 'users', user.uid);
+      const userSnap = await getDoc(userRef);
+
+      if (!userSnap.exists()) {
+        await signOut(auth);
+        setErrorMessage('לא נמצאו פרטי משתמש. יש להתחבר מחדש');
+        return;
+      }
+
+      const userData = userSnap.data();
+      const accessState = getAccessState(userData);
+
+      if (!accessState.allowed) {
+        await signOut(auth);
+
+        switch (accessState.reason) {
+          case 'blocked':
+            setErrorMessage('החשבון שלך נחסם');
+            showMessage(
+              'החשבון חסום',
+              'הגישה שלך למערכת נחסמה. יש לפנות למנהל המערכת.'
+            );
+            return;
+
+          case 'pending_approval':
+            setErrorMessage('החשבון עדיין ממתין לאישור מנהל');
+            showMessage(
+              'החשבון ממתין לאישור',
+              'עדיין אין לך הרשאת גישה למערכת. יש להמתין לאישור מנהל.'
+            );
+            return;
+
+          case 'expired':
+            setErrorMessage('תקופת הגישה שלך הסתיימה');
+            showMessage(
+              'הגישה הסתיימה',
+              'תקופת הגישה שהוגדרה עבורך הסתיימה.'
+            );
+            return;
+
+          case 'missing_access_end':
+          case 'invalid_access_end':
+            setErrorMessage('לא הוגדרה תקופת גישה תקינה לחשבון');
+            showMessage(
+              'אין גישה למערכת',
+              'לא הוגדרה עבורך תקופת גישה תקינה. יש לפנות למנהל המערכת.'
+            );
+            return;
+
+          case 'missing_user_doc':
+            setErrorMessage('לא נמצאו פרטי משתמש');
+            showMessage('שגיאה', 'לא נמצאו פרטי משתמש. יש לנסות שוב.');
+            return;
+
+          case 'not_approved':
+          default:
+            setErrorMessage('אין כרגע הרשאת גישה למערכת');
+            showMessage('אין גישה למערכת', 'אין כרגע הרשאת גישה למערכת.');
+            return;
+        }
+      }
+
+      router.replace('/home');
     } catch (error: any) {
       console.log('שגיאה בכניסה:', error);
 
