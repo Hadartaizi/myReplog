@@ -19,7 +19,10 @@ const APP_BG = '#F4F7FB';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { width } = useWindowDimensions();
-  const { checkingAccess } = useAccessGuard();
+
+  const isWeb = Platform.OS === 'web';
+  const guardState = isWeb ? { checkingAccess: false } : useAccessGuard();
+  const { checkingAccess } = guardState;
 
   const [fontsLoaded] = useFonts({
     Bilbo: require('../../assets/fonts/Bilbo-Regular.ttf'),

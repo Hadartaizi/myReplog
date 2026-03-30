@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
@@ -9,7 +9,13 @@ import {
   View,
   Alert,
 } from 'react-native';
-import { updateDoc, doc } from 'firebase/firestore';
+import { Picker } from '@react-native-picker/picker';
+import {
+  collection,
+  onSnapshot,
+  updateDoc,
+  doc,
+} from 'firebase/firestore';
 import { db } from '../../../database/firebase';
 import {
   formatDateTimeIL,
@@ -24,22 +30,44 @@ type ClientItem = {
   approvalStatus?: 'pending' | 'approved' | 'blocked';
   accessStartAt?: string | null;
   accessEndAt?: string | null;
+  role?: 'admin' | 'client';
 };
 
 type Props = {
-  clients: ClientItem[];
   onAfterUpdate?: () => Promise<void> | void;
 };
 
-export default function ClientAccessManager({ clients, onAfterUpdate }: Props) {
+type SelectedAction = 'extend' | 'reduce' | 'unlimited' | 'toggleBlock';
+
+const normalizeStatus = (
+  status?: string | null
+): 'pending' | 'approved' | 'blocked' => {
+  const clean = String(status ?? '').trim().toLowerCase();
+
+  if (clean === 'approved') return 'approved';
+  if (clean === 'blocked') return 'blocked';
+
+  return 'pending';
+};
+
+const isClientLikeUser = (user: ClientItem) => {
+  if (user.role === 'admin') return false;
+  return true;
+};
+
+export default function ClientAccessManager({ onAfterUpdate }: Props) {
+  const [clients, setClients] = useState<ClientItem[]>([]);
+  const [loadingClients, setLoadingClients] = useState(true);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [daysInput, setDaysInput] = useState('30');
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [isHydrated, setIsHydrated] = useState(false);
+  const [selectedAction, setSelectedAction] =
+    useState<SelectedAction>('extend');
 
-  const selectedClient = useMemo(
-    () => clients.find((c) => (c.uid || c.id) === selectedClientId) || null,
-    [clients, selectedClientId]
-  );
+  useEffect(() => {
+    setIsHydrated(true);
+  }, []);
 
   const showMessage = (title: string, message: string) => {
     if (Platform.OS === 'web') {
@@ -49,28 +77,81 @@ export default function ClientAccessManager({ clients, onAfterUpdate }: Props) {
     }
   };
 
-  const approveClient = async () => {
-    if (!selectedClient) {
-      showMessage('שגיאה', 'יש לבחור לקוח');
-      return;
+  useEffect(() => {
+    const unsubscribe = onSnapshot(
+      collection(db, 'users'),
+      (snapshot) => {
+        const nextClients: ClientItem[] = snapshot.docs
+          .map((item) => {
+            const data = item.data() as Omit<ClientItem, 'id'>;
+
+            return {
+              id: item.id,
+              uid: data.uid,
+              name: data.name,
+              email: data.email,
+              approvalStatus: normalizeStatus(data.approvalStatus),
+              accessStartAt: data.accessStartAt ?? null,
+              accessEndAt: data.accessEndAt ?? null,
+              role: data.role,
+            };
+          })
+          .filter(isClientLikeUser);
+
+        setClients(nextClients);
+        setLoadingClients(false);
+      },
+      (error) => {
+        console.error('שגיאה בטעינת לקוחות:', error);
+        setLoadingClients(false);
+        showMessage('שגיאה', 'לא ניתן לטעון את רשימת הלקוחות');
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
+  const selectedClient = useMemo(
+    () => clients.find((c) => c.id === selectedClientId) || null,
+    [clients, selectedClientId]
+  );
+
+  const pendingClients = useMemo(
+    () => clients.filter((client) => client.approvalStatus === 'pending'),
+    [clients]
+  );
+
+  const getValidDays = () => {
+    const value = daysInput.trim();
+
+    if (!value) {
+      showMessage('שגיאה', 'יש להזין מספר ימים תקין');
+      return null;
     }
 
-    const days = Number(daysInput);
+    const days = Number(value);
 
     if (!Number.isFinite(days) || days <= 0) {
       showMessage('שגיאה', 'יש להזין מספר ימים תקין');
-      return;
+      return null;
     }
 
-    const targetUid = selectedClient.uid || selectedClient.id;
+    return days;
+  };
+
+  const approveClientById = async (clientId: string) => {
+    const days = getValidDays();
+    if (!days) return;
+
     const startAt = new Date();
     const endAt = new Date(startAt.getTime() + days * 24 * 60 * 60 * 1000);
 
     try {
-      setSavingId(targetUid);
+      setSavingId(clientId);
 
-      await updateDoc(doc(db, 'users', targetUid), {
+      await updateDoc(doc(db, 'users', clientId), {
         approvalStatus: 'approved',
+        role: 'client',
         accessStartAt: startAt.toISOString(),
         accessEndAt: endAt.toISOString(),
         approvedAt: new Date().toISOString(),
@@ -90,59 +171,33 @@ export default function ClientAccessManager({ clients, onAfterUpdate }: Props) {
     }
   };
 
-  const blockClient = async () => {
-    if (!selectedClient) {
-      showMessage('שגיאה', 'יש לבחור לקוח');
-      return;
-    }
-
-    const targetUid = selectedClient.uid || selectedClient.id;
-
-    try {
-      setSavingId(targetUid);
-
-      await updateDoc(doc(db, 'users', targetUid), {
-        approvalStatus: 'blocked',
-        accessEndAt: new Date().toISOString(),
-      });
-
-      await onAfterUpdate?.();
-
-      showMessage('בוצע', 'הגישה של הלקוח נחסמה');
-    } catch (error) {
-      console.error('שגיאה בחסימת לקוח:', error);
-      showMessage('שגיאה', 'לא ניתן לחסום את הלקוח');
-    } finally {
-      setSavingId(null);
-    }
-  };
-
   const extendClient = async () => {
     if (!selectedClient) {
       showMessage('שגיאה', 'יש לבחור לקוח');
       return;
     }
 
-    const days = Number(daysInput);
-
-    if (!Number.isFinite(days) || days <= 0) {
-      showMessage('שגיאה', 'יש להזין מספר ימים תקין');
+    if (!selectedClient.accessEndAt) {
+      showMessage(
+        'שגיאה',
+        'ללקוח כבר מוגדרת גישה ללא הגבלה. אין צורך להאריך.'
+      );
       return;
     }
 
-    const targetUid = selectedClient.uid || selectedClient.id;
-    const currentEnd = selectedClient.accessEndAt
-      ? new Date(selectedClient.accessEndAt).getTime()
-      : Date.now();
+    const days = getValidDays();
+    if (!days) return;
 
+    const currentEnd = new Date(selectedClient.accessEndAt).getTime();
     const base = Math.max(currentEnd, Date.now());
     const newEnd = new Date(base + days * 24 * 60 * 60 * 1000);
 
     try {
-      setSavingId(targetUid);
+      setSavingId(selectedClient.id);
 
-      await updateDoc(doc(db, 'users', targetUid), {
+      await updateDoc(doc(db, 'users', selectedClient.id), {
         approvalStatus: 'approved',
+        role: 'client',
         accessEndAt: newEnd.toISOString(),
       });
 
@@ -160,24 +215,239 @@ export default function ClientAccessManager({ clients, onAfterUpdate }: Props) {
     }
   };
 
+  const reduceClient = async () => {
+    if (!selectedClient) {
+      showMessage('שגיאה', 'יש לבחור לקוח');
+      return;
+    }
+
+    if (!selectedClient.accessEndAt) {
+      showMessage(
+        'שגיאה',
+        'ללקוח יש גישה ללא הגבלה. אי אפשר להפחית זמן עד שמוגדר תאריך סיום.'
+      );
+      return;
+    }
+
+    const days = getValidDays();
+    if (!days) return;
+
+    try {
+      setSavingId(selectedClient.id);
+
+      const currentEndMs = new Date(selectedClient.accessEndAt).getTime();
+      const reducedEnd = new Date(
+        currentEndMs - days * 24 * 60 * 60 * 1000
+      );
+
+      await updateDoc(doc(db, 'users', selectedClient.id), {
+        approvalStatus: 'approved',
+        role: 'client',
+        accessEndAt: reducedEnd.toISOString(),
+      });
+
+      await onAfterUpdate?.();
+
+      showMessage(
+        'הצלחה',
+        `תקופת הגישה קוצרה.\nתאריך הסיום החדש: ${formatDateTimeIL(
+          reducedEnd.toISOString()
+        )}`
+      );
+    } catch (error) {
+      console.error('שגיאה בהפחתת גישה:', error);
+      showMessage('שגיאה', 'לא ניתן להפחית את תקופת הגישה');
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const setUnlimitedForSelectedClient = async () => {
+    if (!selectedClient) {
+      showMessage('שגיאה', 'יש לבחור לקוח');
+      return;
+    }
+
+    try {
+      setSavingId(selectedClient.id);
+
+      await updateDoc(doc(db, 'users', selectedClient.id), {
+        approvalStatus: 'approved',
+        role: 'client',
+        accessEndAt: null,
+      });
+
+      await onAfterUpdate?.();
+
+      showMessage('הצלחה', 'הוגדרה ללקוח גישה ללא הגבלה');
+    } catch (error) {
+      console.error('שגיאה בהגדרת גישה ללא הגבלה:', error);
+      showMessage('שגיאה', 'לא ניתן להגדיר גישה ללא הגבלה');
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const blockOrUnblockClient = async () => {
+    if (!selectedClient) {
+      showMessage('שגיאה', 'יש לבחור לקוח');
+      return;
+    }
+
+    const isBlocked = selectedClient.approvalStatus === 'blocked';
+
+    try {
+      setSavingId(selectedClient.id);
+
+      if (isBlocked) {
+        await updateDoc(doc(db, 'users', selectedClient.id), {
+          approvalStatus: 'approved',
+          role: 'client',
+          accessStartAt: new Date().toISOString(),
+          accessEndAt: null,
+        });
+
+        await onAfterUpdate?.();
+
+        showMessage('הצלחה', 'החסימה בוטלה והלקוח חזר לגישה ללא הגבלה');
+      } else {
+        await updateDoc(doc(db, 'users', selectedClient.id), {
+          approvalStatus: 'blocked',
+          role: 'client',
+          accessStartAt: null,
+          accessEndAt: null,
+        });
+
+        await onAfterUpdate?.();
+
+        showMessage('בוצע', 'הגישה של הלקוח נחסמה לצמיתות עד ביטול החסימה');
+      }
+    } catch (error) {
+      console.error('שגיאה בעדכון חסימה:', error);
+      showMessage('שגיאה', 'לא ניתן לעדכן את מצב החסימה של הלקוח');
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const runSelectedAction = async () => {
+    if (!selectedClient) {
+      showMessage('שגיאה', 'יש לבחור לקוח');
+      return;
+    }
+
+    if (selectedAction === 'extend') {
+      await extendClient();
+      return;
+    }
+
+    if (selectedAction === 'reduce') {
+      await reduceClient();
+      return;
+    }
+
+    if (selectedAction === 'unlimited') {
+      await setUnlimitedForSelectedClient();
+      return;
+    }
+
+    await blockOrUnblockClient();
+  };
+
+  const selectedActionLabel = useMemo(() => {
+    if (selectedAction === 'extend') return 'הארכת גישה';
+    if (selectedAction === 'reduce') return 'הפחתת גישה';
+    if (selectedAction === 'unlimited') return 'גישה ללא הגבלה';
+
+    return selectedClient?.approvalStatus === 'blocked'
+      ? 'ביטול חסימה'
+      : 'חסימת גישה';
+  }, [selectedAction, selectedClient]);
+
+  const actionNeedsDays =
+    selectedAction === 'extend' || selectedAction === 'reduce';
+
+  const renderEndDate = (client: ClientItem) => {
+    if (!isHydrated) return '...';
+    if (client.approvalStatus === 'blocked') return 'חסום עד לביטול';
+    return formatDateTimeIL(client.accessEndAt);
+  };
+
+  const renderRemainingTime = (client: ClientItem) => {
+    if (!isHydrated) return '...';
+    if (client.approvalStatus === 'blocked') return 'חסום';
+    return getRemainingTimeLabel(client.accessEndAt);
+  };
+
   return (
     <View style={styles.wrapper}>
       <Text style={styles.sectionTitle}>אישור לקוחות והגדרת תקופת גישה</Text>
 
+      <View style={styles.pendingBox}>
+        <Text style={styles.pendingTitle}>לקוחות שממתינות לאישור</Text>
+
+        {loadingClients ? (
+          <View style={styles.emptyBox}>
+            <ActivityIndicator size="small" color="#0F172A" />
+            <Text style={styles.emptyText}>טוען לקוחות...</Text>
+          </View>
+        ) : pendingClients.length === 0 ? (
+          <View style={styles.emptyBox}>
+            <Text style={styles.emptyText}>אין לקוחות שממתינות לאישור</Text>
+          </View>
+        ) : (
+          pendingClients.map((client) => {
+            const isSaving = savingId === client.id;
+
+            return (
+              <View key={`pending-${client.id}`} style={styles.pendingClientCard}>
+                <View style={styles.pendingClientInfo}>
+                  <Text style={styles.clientName}>{client.name || 'ללא שם'}</Text>
+                  <Text style={styles.clientEmail}>
+                    {client.email || 'ללא אימייל'}
+                  </Text>
+                  <Text style={styles.pendingStatusText}>סטטוס: ממתין לאישור</Text>
+                </View>
+
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.approvePendingButton,
+                    pressed && styles.pressed,
+                    isSaving && styles.disabled,
+                  ]}
+                  onPress={() => approveClientById(client.id)}
+                  disabled={isSaving}
+                >
+                  {isSaving ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.approvePendingButtonText}>אשר לקוח</Text>
+                  )}
+                </Pressable>
+              </View>
+            );
+          })
+        )}
+      </View>
+
       <View style={styles.clientsList}>
-        {clients.length === 0 ? (
+        {loadingClients ? (
+          <View style={styles.emptyBox}>
+            <ActivityIndicator size="small" color="#0F172A" />
+            <Text style={styles.emptyText}>טוען לקוחות...</Text>
+          </View>
+        ) : clients.length === 0 ? (
           <View style={styles.emptyBox}>
             <Text style={styles.emptyText}>אין לקוחות להצגה</Text>
           </View>
         ) : (
           clients.map((client) => {
-            const targetUid = client.uid || client.id;
-            const isSelected = selectedClientId === targetUid;
+            const isSelected = selectedClientId === client.id;
 
             return (
               <Pressable
-                key={targetUid}
-                onPress={() => setSelectedClientId(targetUid)}
+                key={client.id}
+                onPress={() => setSelectedClientId(client.id)}
                 style={({ pressed }) => [
                   styles.clientItem,
                   isSelected && styles.clientItemSelected,
@@ -185,7 +455,10 @@ export default function ClientAccessManager({ clients, onAfterUpdate }: Props) {
                 ]}
               >
                 <Text style={styles.clientName}>{client.name || 'ללא שם'}</Text>
-                <Text style={styles.clientEmail}>{client.email || 'ללא אימייל'}</Text>
+                <Text style={styles.clientEmail}>
+                  {client.email || 'ללא אימייל'}
+                </Text>
+
                 <Text style={styles.clientMeta}>
                   סטטוס:{' '}
                   {client.approvalStatus === 'approved'
@@ -194,11 +467,13 @@ export default function ClientAccessManager({ clients, onAfterUpdate }: Props) {
                     ? 'חסום'
                     : 'ממתין לאישור'}
                 </Text>
+
                 <Text style={styles.clientMeta}>
-                  תאריך סיום: {formatDateTimeIL(client.accessEndAt)}
+                  תאריך סיום: {renderEndDate(client)}
                 </Text>
+
                 <Text style={styles.clientMeta}>
-                  זמן שנותר: {getRemainingTimeLabel(client.accessEndAt)}
+                  זמן שנותר: {renderRemainingTime(client)}
                 </Text>
               </Pressable>
             );
@@ -206,59 +481,84 @@ export default function ClientAccessManager({ clients, onAfterUpdate }: Props) {
         )}
       </View>
 
-      <View style={styles.controlBox}>
-        <Text style={styles.label}>מספר ימים לגישה</Text>
-        <TextInput
-          value={daysInput}
-          onChangeText={setDaysInput}
-          keyboardType="number-pad"
-          placeholder="למשל 30"
-          placeholderTextColor="#94A3B8"
-          style={styles.input}
-          textAlign="right"
-        />
+      <View style={styles.actionsBox}>
+        <Text style={styles.actionsTitle}>פעולות על לקוח נבחר</Text>
 
-        <View style={styles.buttonsRow}>
-          <Pressable
-            style={({ pressed }) => [
-              styles.primaryButton,
-              pressed && styles.pressed,
-              savingId && styles.disabled,
-            ]}
-            onPress={approveClient}
-            disabled={!!savingId}
-          >
-            {savingId ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <Text style={styles.primaryButtonText}>אשר לקוח</Text>
-            )}
-          </Pressable>
-
-          <Pressable
-            style={({ pressed }) => [
-              styles.secondaryButton,
-              pressed && styles.pressed,
-              savingId && styles.disabled,
-            ]}
-            onPress={extendClient}
-            disabled={!!savingId}
-          >
-            <Text style={styles.secondaryButtonText}>הארך גישה</Text>
-          </Pressable>
-
-          <Pressable
-            style={({ pressed }) => [
-              styles.dangerButton,
-              pressed && styles.pressed,
-              savingId && styles.disabled,
-            ]}
-            onPress={blockClient}
-            disabled={!!savingId}
-          >
-            <Text style={styles.dangerButtonText}>חסום גישה</Text>
-          </Pressable>
+        <View style={styles.selectedClientBox}>
+          {selectedClient ? (
+            <>
+              <Text style={styles.selectedClientName}>
+                {selectedClient.name || 'ללא שם'}
+              </Text>
+              <Text style={styles.selectedClientMeta}>
+                {selectedClient.email || 'ללא אימייל'}
+              </Text>
+            </>
+          ) : (
+            <Text style={styles.selectedClientPlaceholder}>
+              בחרי לקוח מהרשימה
+            </Text>
+          )}
         </View>
+
+        <View style={styles.pickerLabelRow}>
+          <Text style={styles.pickerLabel}>בחרי פעולה</Text>
+        </View>
+
+        <View style={styles.pickerWrapper}>
+          <Picker
+            selectedValue={selectedAction}
+            onValueChange={(value) =>
+              setSelectedAction(value as SelectedAction)
+            }
+            enabled={!savingId}
+            style={styles.picker}
+            itemStyle={styles.pickerItem}
+          >
+            <Picker.Item label="הארכת גישה" value="extend" />
+            <Picker.Item label="הפחתת גישה" value="reduce" />
+            <Picker.Item label="גישה ללא הגבלה" value="unlimited" />
+            <Picker.Item
+              label={
+                selectedClient?.approvalStatus === 'blocked'
+                  ? 'ביטול חסימה'
+                  : 'חסימת גישה'
+              }
+              value="toggleBlock"
+            />
+          </Picker>
+        </View>
+
+        {actionNeedsDays && (
+          <View style={styles.controlBox}>
+            <Text style={styles.label}>מספר ימים</Text>
+            <TextInput
+              value={daysInput}
+              onChangeText={setDaysInput}
+              keyboardType="number-pad"
+              placeholder="למשל 30"
+              placeholderTextColor="#94A3B8"
+              style={styles.input}
+              textAlign="right"
+            />
+          </View>
+        )}
+
+        <Pressable
+          style={({ pressed }) => [
+            styles.mainActionButton,
+            pressed && styles.pressed,
+            (!selectedClient || !!savingId) && styles.disabled,
+          ]}
+          onPress={runSelectedAction}
+          disabled={!selectedClient || !!savingId}
+        >
+          {savingId === selectedClient?.id ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <Text style={styles.mainActionButtonText}>בצעי פעולה</Text>
+          )}
+        </Pressable>
       </View>
     </View>
   );
@@ -269,15 +569,70 @@ const styles = StyleSheet.create({
     marginTop: 12,
     gap: 12,
   },
+
   sectionTitle: {
     fontSize: 16,
     fontWeight: '800',
     color: '#0F172A',
     textAlign: 'right',
   },
+
+  pendingBox: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 14,
+    gap: 10,
+  },
+
+  pendingTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+    textAlign: 'right',
+  },
+
+  pendingClientCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 14,
+    gap: 12,
+  },
+
+  pendingClientInfo: {
+    alignItems: 'flex-end',
+  },
+
+  pendingStatusText: {
+    marginTop: 6,
+    fontSize: 13,
+    color: '#B45309',
+    fontWeight: '700',
+    textAlign: 'right',
+  },
+
+  approvePendingButton: {
+    minHeight: 46,
+    borderRadius: 14,
+    backgroundColor: '#0F172A',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+  },
+
+  approvePendingButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+    fontSize: 15,
+  },
+
   clientsList: {
     gap: 10,
   },
+
   emptyBox: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
@@ -285,12 +640,16 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
     padding: 16,
     alignItems: 'center',
+    gap: 8,
   },
+
   emptyText: {
     color: '#64748B',
     fontSize: 14,
     fontWeight: '600',
+    textAlign: 'center',
   },
+
   clientItem: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
@@ -298,28 +657,113 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
     padding: 14,
   },
+
   clientItemSelected: {
     borderColor: '#2563EB',
     backgroundColor: '#EFF6FF',
   },
+
   clientName: {
     fontSize: 15,
     fontWeight: '800',
     color: '#0F172A',
     textAlign: 'right',
   },
+
   clientEmail: {
     marginTop: 4,
     fontSize: 13,
     color: '#64748B',
     textAlign: 'right',
   },
+
   clientMeta: {
     marginTop: 6,
     fontSize: 13,
     color: '#334155',
     textAlign: 'right',
   },
+
+  actionsBox: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 14,
+    gap: 12,
+  },
+
+  actionsTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+    textAlign: 'right',
+  },
+
+  selectedClientBox: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 14,
+    alignItems: 'flex-end',
+  },
+
+  selectedClientName: {
+    fontSize: 16,
+    color: '#0F172A',
+    fontWeight: '800',
+    textAlign: 'right',
+  },
+
+  selectedClientMeta: {
+    marginTop: 4,
+    fontSize: 13,
+    color: '#64748B',
+    textAlign: 'right',
+  },
+
+  selectedClientPlaceholder: {
+    fontSize: 14,
+    color: '#64748B',
+    fontWeight: '600',
+    textAlign: 'center',
+    width: '100%',
+  },
+
+  pickerLabelRow: {
+    alignItems: 'flex-end',
+  },
+
+  pickerLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#334155',
+    textAlign: 'right',
+  },
+
+    pickerWrapper: {
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 14,
+    backgroundColor: '#F8FAFC',
+    overflow: 'hidden',
+    },
+
+    picker: {
+    width: '100%',
+    color: '#0F172A',
+    backgroundColor: '#F8FAFC',
+    fontSize: 18,
+    textAlign: 'right',
+    writingDirection: 'rtl',
+    },
+
+    pickerItem: {
+    fontSize: 18,
+    textAlign: 'right',
+    },
+
   controlBox: {
     backgroundColor: '#FFFFFF',
     borderRadius: 18,
@@ -327,6 +771,7 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
     padding: 14,
   },
+
   label: {
     fontSize: 14,
     fontWeight: '700',
@@ -334,63 +779,38 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     marginBottom: 8,
   },
+
   input: {
     minHeight: 50,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: '#CBD5E1',
-    paddingHorizontal: 14,
-    fontSize: 15,
+    paddingHorizontal: 16,
+    fontSize: 16,
     color: '#0F172A',
     backgroundColor: '#F8FAFC',
-    marginBottom: 12,
+    textAlign: 'right',
   },
-  buttonsRow: {
-    gap: 10,
-  },
-  primaryButton: {
-    minHeight: 50,
+
+  mainActionButton: {
+    minHeight: 52,
     borderRadius: 14,
     backgroundColor: '#0F172A',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 14,
   },
-  primaryButtonText: {
+
+  mainActionButtonText: {
     color: '#FFFFFF',
     fontWeight: '800',
     fontSize: 15,
   },
-  secondaryButton: {
-    minHeight: 50,
-    borderRadius: 14,
-    backgroundColor: '#EEF2FF',
-    borderWidth: 1,
-    borderColor: '#C7D2FE',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  secondaryButtonText: {
-    color: '#1E293B',
-    fontWeight: '800',
-    fontSize: 15,
-  },
-  dangerButton: {
-    minHeight: 50,
-    borderRadius: 14,
-    backgroundColor: '#FEF2F2',
-    borderWidth: 1,
-    borderColor: '#FECACA',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  dangerButtonText: {
-    color: '#DC2626',
-    fontWeight: '800',
-    fontSize: 15,
-  },
+
   pressed: {
     opacity: 0.8,
   },
+
   disabled: {
     opacity: 0.6,
   },

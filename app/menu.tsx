@@ -29,7 +29,7 @@ import {
 import { auth, db } from "../database/firebase";
 import AppLayout from "./components/AppLayout";
 import ClientAccessManager from "./components/admin/ClientAccessManager";
-import useAccessGuard from "./components/admin/useAccessGuard";
+import ClientProgressTracker from "./components/clientWorkout/ClientProgressTracker";
 import {
   formatDateTimeIL,
   getRemainingTimeLabel,
@@ -242,6 +242,24 @@ function PhoneIcon({ size = 20, color = "#1E293B" }) {
   );
 }
 
+function WorkoutTrackingIcon({ size = 20, color = "#0F172A" }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Rect x="3" y="10" width="4" height="4" rx="1" fill={color} />
+      <Rect x="17" y="10" width="4" height="4" rx="1" fill={color} />
+      <Line x1="7" y1="12" x2="17" y2="12" stroke={color} strokeWidth={2.4} />
+      <Line x1="3" y1="8" x2="3" y2="16" stroke={color} strokeWidth={2.4} />
+      <Line x1="21" y1="8" x2="21" y2="16" stroke={color} strokeWidth={2.4} />
+      <Path
+        d="M8 6h8"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+      />
+    </Svg>
+  );
+}
+
 type ClientItem = {
   id: string;
   uid?: string;
@@ -264,7 +282,6 @@ type CurrentUserData = {
 
 export default function Menu() {
   const { width, height } = useWindowDimensions();
-  const { checkingAccess } = useAccessGuard();
 
   const isVerySmall = width < 340;
   const isSmallScreen = width < 380;
@@ -272,7 +289,7 @@ export default function Menu() {
 
   const dynamic = useMemo(() => {
     const horizontalPadding = isTablet ? width * 0.04 : width * 0.05;
-    const cardWidth = Math.min(width * 0.94, 620);
+    const cardWidth = Math.min(width * 0.94, 760);
     const titleSize = isVerySmall ? 21 : isSmallScreen ? 23 : isTablet ? 30 : 26;
     const textSize = isVerySmall ? 13 : isSmallScreen ? 14 : 16;
     const subtitleSize = isVerySmall ? 12 : isSmallScreen ? 13 : 15;
@@ -307,6 +324,7 @@ export default function Menu() {
   const [clientsSectionOpen, setClientsSectionOpen] = useState(false);
   const [deleteClientsOpen, setDeleteClientsOpen] = useState(false);
   const [accessManagementOpen, setAccessManagementOpen] = useState(false);
+  const [clientWorkoutTrackingOpen, setClientWorkoutTrackingOpen] = useState(false);
   const [accessInfoOpen, setAccessInfoOpen] = useState(false);
   const [currentUserData, setCurrentUserData] = useState<CurrentUserData | null>(null);
 
@@ -469,7 +487,7 @@ export default function Menu() {
       ? "חסום"
       : "ממתין לאישור";
 
-  if (checkingAccess || loading) {
+  if (loading) {
     return (
       <SafeAreaView style={styles.safeArea}>
         <AppLayout>
@@ -806,9 +824,52 @@ export default function Menu() {
                                   </View>
                                 ) : (
                                   <ClientAccessManager
-                                    clients={clients}
                                     onAfterUpdate={fetchMenuData}
                                   />
+                                )}
+                              </View>
+                            )}
+
+                            <Pressable
+                              style={({ pressed }) => [
+                                styles.adminSubButton,
+                                { minHeight: dynamic.buttonHeight - 6 },
+                                pressed && styles.pressedLight,
+                              ]}
+                              onPress={() =>
+                                setClientWorkoutTrackingOpen((prev) => !prev)
+                              }
+                            >
+                              <View style={styles.buttonRow}>
+                                <View style={styles.leftSlot}>
+                                  {clientWorkoutTrackingOpen ? (
+                                    <ArrowUpIcon size={20} color="#0F172A" />
+                                  ) : (
+                                    <ArrowDownIcon size={20} color="#0F172A" />
+                                  )}
+                                </View>
+
+                                <View style={styles.centerContent}>
+                                  <View style={styles.iconWrap}>
+                                    <WorkoutTrackingIcon size={18} color="#0F172A" />
+                                  </View>
+                                  <Text style={styles.adminSubButtonText} numberOfLines={1}>
+                                    מעקב אחרי אימון לקוח
+                                  </Text>
+                                </View>
+
+                                <View style={styles.rightSlot} />
+                              </View>
+                            </Pressable>
+
+                            {clientWorkoutTrackingOpen && (
+                              <View style={styles.clientsInnerBox}>
+                                {clients.length === 0 ? (
+                                  <View style={styles.emptyClientsBox}>
+                                    <Text style={styles.emptyClientsText}>אין לקוחות להצגה</Text>
+                                  </View>
+                                ) : (
+                                  <ClientProgressTracker clients={clients} />
                                 )}
                               </View>
                             )}
@@ -1230,13 +1291,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: "right",
     marginTop: 4,
-  },
-
-  clientMeta: {
-    marginTop: 5,
-    color: "#334155",
-    fontSize: 13,
-    textAlign: "right",
   },
 
   clientActions: {

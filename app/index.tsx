@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -114,6 +114,7 @@ export default function Index() {
     Bilbo: require('../assets/fonts/Bilbo-Regular.ttf'),
   });
 
+  const [isHydrated, setIsHydrated] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [resetEmail, setResetEmail] = useState('');
@@ -123,10 +124,14 @@ export default function Index() {
   const [isResetLoading, setIsResetLoading] = useState(false);
   const [resetModalVisible, setResetModalVisible] = useState(false);
 
+  useEffect(() => {
+    setIsHydrated(true);
+  }, []);
+
   const ui = useMemo(() => {
-    const safeWidth = Math.min(width, 430);
+    const safeWidth = Math.min(width || 430, 430);
     const isSmallScreen = safeWidth < 360;
-    const isTablet = width >= 768;
+    const isTablet = (width || 0) >= 768;
 
     return {
       isSmallScreen,
@@ -143,7 +148,7 @@ export default function Index() {
     };
   }, [width]);
 
-  if (!fontsLoaded) {
+  if (!isHydrated || !fontsLoaded) {
     return <View style={{ flex: 1, backgroundColor: APP_BG }} />;
   }
 
@@ -175,7 +180,6 @@ export default function Index() {
       );
 
       const user = userCredential.user;
-
       const userRef = doc(db, 'users', user.uid);
       const userSnap = await getDoc(userRef);
 
@@ -186,7 +190,15 @@ export default function Index() {
       }
 
       const userData = userSnap.data();
+
+      console.log('LOGIN userData:', userData);
+      console.log('LOGIN accessStartAt raw:', userData?.accessStartAt);
+      console.log('LOGIN accessEndAt raw:', userData?.accessEndAt);
+      console.log('LOGIN device now:', new Date().toISOString());
+
       const accessState = getAccessState(userData);
+
+      console.log('LOGIN accessState:', accessState);
 
       if (!accessState.allowed) {
         await signOut(auth);
@@ -201,10 +213,10 @@ export default function Index() {
             return;
 
           case 'pending_approval':
-            setErrorMessage('החשבון עדיין ממתין לאישור מנהל');
+            setErrorMessage('החשבון עדיין לא אושר');
             showMessage(
-              'החשבון ממתין לאישור',
-              'עדיין אין לך הרשאת גישה למערכת. יש להמתין לאישור מנהל.'
+              'החשבון עדיין לא אושר',
+              'ההרשמה נקלטה בהצלחה. יש להמתין לאישור סופי ממנהל המערכת.'
             );
             return;
 
@@ -216,7 +228,22 @@ export default function Index() {
             );
             return;
 
-          case 'missing_access_end':
+          case 'not_started_yet':
+            setErrorMessage('תקופת הגישה שלך עדיין לא התחילה');
+            showMessage(
+              'הגישה עדיין לא התחילה',
+              'תקופת הגישה שלך עדיין לא התחילה.'
+            );
+            return;
+
+          case 'invalid_access_start':
+            setErrorMessage('תאריך תחילת הגישה אינו תקין');
+            showMessage(
+              'שגיאת גישה',
+              'תאריך תחילת הגישה שהוגדר עבורך אינו תקין.'
+            );
+            return;
+
           case 'invalid_access_end':
             setErrorMessage('לא הוגדרה תקופת גישה תקינה לחשבון');
             showMessage(
@@ -325,10 +352,10 @@ export default function Index() {
             contentContainerStyle={[
               styles.scrollContainer,
               {
-                minHeight: height,
+                minHeight: height || 0,
                 paddingHorizontal: ui.horizontalPadding,
-                paddingTop: Math.max(24, height * 0.04),
-                paddingBottom: Math.max(24, height * 0.05),
+                paddingTop: Math.max(24, (height || 700) * 0.04),
+                paddingBottom: Math.max(24, (height || 700) * 0.05),
               },
             ]}
             keyboardShouldPersistTaps="handled"
@@ -339,7 +366,9 @@ export default function Index() {
               <View
                 style={[
                   styles.topSection,
-                  { marginBottom: ui.isSmallScreen ? 28 : 36 },
+                  {
+                    marginBottom: ui.isSmallScreen ? 28 : 36,
+                  },
                 ]}
               >
                 <Image
@@ -540,7 +569,7 @@ export default function Index() {
             <Pressable
               style={[
                 styles.modalCard,
-                { width: Math.min(width - 32, 420) },
+                { width: Math.min(width || 420, 420) - 32 },
               ]}
               onPress={(e) => e.stopPropagation()}
             >
@@ -614,30 +643,24 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: APP_BG,
   },
-
   flex: {
     flex: 1,
   },
-
   scrollContainer: {
     flexGrow: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-
   card: {
     width: '100%',
     alignSelf: 'center',
   },
-
   topSection: {
     alignItems: 'center',
   },
-
   logo: {
     marginBottom: 8,
   },
-
   titleReplog: {
     fontFamily: 'Bilbo',
     color: '#1E293B',
@@ -645,14 +668,12 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     includeFontPadding: false,
   },
-
   welcomeTitle: {
     fontWeight: '800',
     color: '#1E293B',
     textAlign: 'center',
     marginBottom: 10,
   },
-
   subtitle: {
     color: '#64748B',
     textAlign: 'center',
@@ -660,11 +681,9 @@ const styles = StyleSheet.create({
     maxWidth: 420,
     fontWeight: '500',
   },
-
   formSection: {
     width: '100%',
   },
-
   label: {
     color: '#334155',
     fontWeight: '700',
@@ -672,7 +691,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     marginTop: 4,
   },
-
   inputBox: {
     width: '100%',
     minHeight: 56,
@@ -691,14 +709,12 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: Platform.OS === 'android' ? 2 : 0,
   },
-
   iconWrap: {
     width: 24,
     height: 24,
     alignItems: 'center',
     justifyContent: 'center',
   },
-
   input: {
     flex: 1,
     color: '#111827',
@@ -707,27 +723,23 @@ const styles = StyleSheet.create({
     minHeight: 48,
     paddingVertical: Platform.OS === 'android' ? 8 : 10,
   },
-
   iconPressable: {
     justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: 4,
     paddingHorizontal: 2,
   },
-
   forgotPasswordButton: {
     alignSelf: 'flex-end',
     paddingVertical: 6,
     marginTop: -4,
     marginBottom: 10,
   },
-
   forgotPasswordText: {
     color: '#2563EB',
     textAlign: 'right',
     fontWeight: '700',
   },
-
   button: {
     width: '100%',
     minHeight: 56,
@@ -743,23 +755,19 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: Platform.OS === 'android' ? 4 : 0,
   },
-
   buttonDisabled: {
     opacity: 0.7,
   },
-
   buttonText: {
     color: '#FFFFFF',
     fontWeight: '800',
   },
-
   signupText: {
     color: '#1D4ED8',
     textAlign: 'center',
     marginTop: 18,
     fontWeight: '700',
   },
-
   errorText: {
     color: '#DC2626',
     marginTop: -2,
@@ -767,7 +775,6 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     fontWeight: '500',
   },
-
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.45)',
@@ -775,7 +782,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
   },
-
   modalCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 22,
@@ -786,7 +792,6 @@ const styles = StyleSheet.create({
     shadowRadius: 20,
     elevation: Platform.OS === 'android' ? 8 : 0,
   },
-
   modalTitle: {
     fontSize: 22,
     fontWeight: '800',
@@ -794,7 +799,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 10,
   },
-
   modalSubtitle: {
     fontSize: 14,
     color: '#64748B',
@@ -802,7 +806,6 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     marginBottom: 18,
   },
-
   modalInputBox: {
     width: '100%',
     minHeight: 56,
@@ -815,7 +818,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 18,
   },
-
   modalInput: {
     flex: 1,
     color: '#111827',
@@ -825,13 +827,11 @@ const styles = StyleSheet.create({
     paddingVertical: Platform.OS === 'android' ? 8 : 10,
     fontSize: 15,
   },
-
   modalButtonsRow: {
     flexDirection: 'row-reverse',
     justifyContent: 'space-between',
     gap: 10,
   },
-
   modalCancelButton: {
     flex: 1,
     minHeight: 50,
@@ -843,13 +843,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     paddingVertical: 12,
   },
-
   modalCancelText: {
     color: '#334155',
     fontWeight: '700',
     fontSize: 15,
   },
-
   modalSendButton: {
     flex: 1,
     minHeight: 50,
@@ -859,7 +857,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
   },
-
   modalSendText: {
     color: '#FFFFFF',
     fontWeight: '800',

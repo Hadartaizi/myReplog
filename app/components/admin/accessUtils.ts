@@ -1,17 +1,63 @@
 export type AccessStatus = 'pending' | 'approved' | 'blocked';
 
+type FirestoreLikeTimestamp = {
+  toDate?: () => Date;
+  seconds?: number;
+  nanoseconds?: number;
+};
+
 export type UserAccessData = {
   approvalStatus?: AccessStatus;
-  accessStartAt?: string | null;
-  accessEndAt?: string | null;
+  accessStartAt?: string | Date | FirestoreLikeTimestamp | null;
+  accessEndAt?: string | Date | FirestoreLikeTimestamp | null;
   role?: 'admin' | 'client';
 };
 
-export const formatDateTimeIL = (value?: string | null) => {
-  if (!value) return 'לא הוגדר';
-  const date = new Date(value);
+const ACCESS_GRACE_MS = 10 * 1000; // 10 שניות מרווח ביטחון
 
-  if (Number.isNaN(date.getTime())) return 'לא הוגדר';
+export const parseAccessDate = (
+  value?: string | Date | FirestoreLikeTimestamp | null
+) => {
+  if (!value) return null;
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+
+  if (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof value.toDate === 'function'
+  ) {
+    const date = value.toDate();
+    return date instanceof Date && !Number.isNaN(date.getTime()) ? date : null;
+  }
+
+  if (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof value.seconds === 'number'
+  ) {
+    const date = new Date(value.seconds * 1000);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+
+    const date = new Date(trimmed);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  return null;
+};
+
+export const formatDateTimeIL = (
+  value?: string | Date | FirestoreLikeTimestamp | null
+) => {
+  const date = parseAccessDate(value);
+  if (!date) return 'ללא הגבלה';
 
   return new Intl.DateTimeFormat('he-IL', {
     dateStyle: 'medium',
@@ -55,24 +101,39 @@ export const getAccessState = (userData?: UserAccessData | null) => {
     };
   }
 
-  if (!userData.accessEndAt) {
+  const startDate = parseAccessDate(userData.accessStartAt);
+  if (userData.accessStartAt && !startDate) {
     return {
       allowed: false,
-      reason: 'missing_access_end' as const,
+      reason: 'invalid_access_start' as const,
     };
   }
 
   const now = Date.now();
-  const end = new Date(userData.accessEndAt).getTime();
 
-  if (Number.isNaN(end)) {
+  if (startDate && now + ACCESS_GRACE_MS < startDate.getTime()) {
+    return {
+      allowed: false,
+      reason: 'not_started_yet' as const,
+    };
+  }
+
+  if (!userData.accessEndAt) {
+    return {
+      allowed: true,
+      reason: 'approved_unlimited' as const,
+    };
+  }
+
+  const endDate = parseAccessDate(userData.accessEndAt);
+  if (!endDate) {
     return {
       allowed: false,
       reason: 'invalid_access_end' as const,
     };
   }
 
-  if (now > end) {
+  if (now - ACCESS_GRACE_MS > endDate.getTime()) {
     return {
       allowed: false,
       reason: 'expired' as const,
@@ -85,14 +146,25 @@ export const getAccessState = (userData?: UserAccessData | null) => {
   };
 };
 
-export const getRemainingTimeParts = (accessEndAt?: string | null) => {
+export const getRemainingTimeParts = (
+  accessEndAt?: string | Date | FirestoreLikeTimestamp | null
+) => {
   if (!accessEndAt) return null;
 
-  const end = new Date(accessEndAt).getTime();
-  const now = Date.now();
-  const diff = end - now;
+  const endDate = parseAccessDate(accessEndAt);
+  if (!endDate) {
+    return {
+      totalMs: 0,
+      days: 0,
+      hours: 0,
+      minutes: 0,
+    };
+  }
 
-  if (Number.isNaN(end) || diff <= 0) {
+  const now = Date.now();
+  const diff = endDate.getTime() - now;
+
+  if (diff <= 0) {
     return {
       totalMs: 0,
       days: 0,
@@ -113,10 +185,12 @@ export const getRemainingTimeParts = (accessEndAt?: string | null) => {
   };
 };
 
-export const getRemainingTimeLabel = (accessEndAt?: string | null) => {
+export const getRemainingTimeLabel = (
+  accessEndAt?: string | Date | FirestoreLikeTimestamp | null
+) => {
   const parts = getRemainingTimeParts(accessEndAt);
 
-  if (!parts) return 'לא הוגדר';
+  if (!parts) return 'ללא הגבלה';
   if (parts.totalMs <= 0) return 'הגישה הסתיימה';
 
   const chunks: string[] = [];

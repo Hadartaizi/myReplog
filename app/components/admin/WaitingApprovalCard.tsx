@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { formatDateTimeIL } from './accessUtils';
 
@@ -13,6 +13,12 @@ export default function WaitingApprovalCard({
   approvalStatus = 'pending',
   accessEndAt,
 }: Props) {
+  const [isHydrated, setIsHydrated] = useState(false);
+
+  useEffect(() => {
+    setIsHydrated(true);
+  }, []);
+
   const title =
     approvalStatus === 'blocked'
       ? 'הגישה למערכת חסומה כרגע'
@@ -49,7 +55,9 @@ export default function WaitingApprovalCard({
 
       <View style={styles.infoBox}>
         <Text style={styles.infoLabel}>תאריך סיום גישה:</Text>
-        <Text style={styles.infoValue}>{formatDateTimeIL(accessEndAt)}</Text>
+        <Text style={styles.infoValue}>
+          {isHydrated ? formatDateTimeIL(accessEndAt) : '...'}
+        </Text>
       </View>
     </View>
   );

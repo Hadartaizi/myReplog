@@ -15,9 +15,13 @@ import {
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { useFonts } from 'expo-font';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
+import {
+  createUserWithEmailAndPassword,
+  deleteUser,
+  signOut,
+} from 'firebase/auth';
 import { auth, db } from '../database/firebase.js';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import Svg, { Path, Circle } from 'react-native-svg';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
@@ -173,7 +177,7 @@ export default function Register() {
     }
   };
 
-  const handleRegister = async () => {
+  const validateForm = () => {
     const newErrors: FormErrors = {};
 
     const trimmedName = name.trim();
@@ -194,9 +198,21 @@ export default function Register() {
 
     setErrors(newErrors);
 
-    if (Object.keys(newErrors).length > 0) return;
+    return {
+      isValid: Object.keys(newErrors).length === 0,
+      trimmedName,
+      trimmedEmail,
+    };
+  };
+
+  const handleRegister = async () => {
+    const { isValid, trimmedName, trimmedEmail } = validateForm();
+    if (!isValid) return;
 
     setLoading(true);
+    setErrors({});
+
+    let createdAuthUser = null;
 
     try {
       const userCredential = await createUserWithEmailAndPassword(
@@ -205,26 +221,23 @@ export default function Register() {
         password
       );
 
-      const user = userCredential.user;
+      createdAuthUser = userCredential.user;
+
       const isAdmin = trimmedEmail === ADMIN_EMAIL.toLowerCase();
       const role = isAdmin ? 'admin' : 'client';
-
       const nowIso = new Date().toISOString();
 
-      await setDoc(doc(db, 'users', user.uid), {
-        uid: user.uid,
+      await setDoc(doc(db, 'users', createdAuthUser.uid), {
+        uid: createdAuthUser.uid,
         name: trimmedName,
         email: trimmedEmail,
         role,
-        createdAt: nowIso,
-
         approvalStatus: isAdmin ? 'approved' : 'pending',
         accessStartAt: isAdmin ? nowIso : null,
         accessEndAt: isAdmin ? '2099-12-31T23:59:59.000Z' : null,
         approvedAt: isAdmin ? nowIso : null,
+        createdAt: serverTimestamp(),
       });
-
-      setLoading(false);
 
       if (isAdmin) {
         showSuccessAlert('ההרשמה בוצעה בהצלחה');
@@ -232,11 +245,27 @@ export default function Register() {
         return;
       }
 
-      showSuccessAlert('ההרשמה התקבלה. החשבון ממתין לאישור מנהל.');
+      await signOut(auth);
+      showSuccessAlert('ההרשמה בוצעה בהצלחה, יש להמתין לאישור סופי');
       router.replace('/');
     } catch (error: any) {
-      setLoading(false);
       console.error('שגיאה בהרשמה:', error);
+
+      if (
+        createdAuthUser &&
+        error?.code !== 'auth/email-already-in-use' &&
+        error?.code !== 'auth/invalid-email' &&
+        error?.code !== 'auth/weak-password'
+      ) {
+        try {
+          await deleteUser(createdAuthUser);
+        } catch (deleteError) {
+          console.error(
+            'שגיאה במחיקת משתמש Auth אחרי כשל בשמירה ל-Firestore:',
+            deleteError
+          );
+        }
+      }
 
       if (error.code === 'auth/email-already-in-use') {
         setErrors({ email: 'כתובת המייל כבר רשומה במערכת' });
@@ -244,10 +273,22 @@ export default function Register() {
         setErrors({ email: 'כתובת מייל לא תקינה' });
       } else if (error.code === 'auth/weak-password') {
         setErrors({ password: 'הסיסמה חלשה מדי' });
+      } else if (
+        error.code === 'permission-denied' ||
+        error.code === 'firestore/permission-denied'
+      ) {
+        setErrors({
+          general: 'אין הרשאה לשמור את הלקוחה בבסיס הנתונים',
+        });
+        showErrorAlert(
+          'המשתמש נוצר אך השמירה למסד הנתונים נחסמה. צריך לבדוק את חוקי Firestore.'
+        );
       } else {
         setErrors({ general: 'אירעה שגיאה בהרשמה, אנא נסי שוב' });
         showErrorAlert('אירעה שגיאה בהרשמה, אנא נסי שוב');
       }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -289,9 +330,7 @@ export default function Register() {
                   textAlign="right"
                 />
               </View>
-              {errors.name ? (
-                <Text style={styles.errorText}>{errors.name}</Text>
-              ) : null}
+              {errors.name ? <Text style={styles.errorText}>{errors.name}</Text> : null}
 
               <Text style={styles.label}>אימייל</Text>
               <View style={styles.inputBox}>
@@ -311,9 +350,7 @@ export default function Register() {
                   textAlign="right"
                 />
               </View>
-              {errors.email ? (
-                <Text style={styles.errorText}>{errors.email}</Text>
-              ) : null}
+              {errors.email ? <Text style={styles.errorText}>{errors.email}</Text> : null}
 
               <Text style={styles.label}>סיסמה</Text>
               <View style={styles.inputBox}>
@@ -345,9 +382,7 @@ export default function Register() {
                   autoCorrect={false}
                 />
               </View>
-              {errors.password ? (
-                <Text style={styles.errorText}>{errors.password}</Text>
-              ) : null}
+              {errors.password ? <Text style={styles.errorText}>{errors.password}</Text> : null}
 
               <Text style={styles.label}>אישור סיסמה</Text>
               <View style={styles.inputBox}>
