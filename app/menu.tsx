@@ -29,6 +29,7 @@ import {
 import { auth, db } from "../database/firebase";
 import AppLayout from "./components/AppLayout";
 import ClientAccessManager from "./components/admin/ClientAccessManager";
+import ClientCardManager from "./components/admin/ClientCardManager";
 import ClientProgressTracker from "./components/clientWorkout/ClientProgressTracker";
 import {
   formatDateTimeIL,
@@ -250,12 +251,22 @@ function WorkoutTrackingIcon({ size = 20, color = "#0F172A" }) {
       <Line x1="7" y1="12" x2="17" y2="12" stroke={color} strokeWidth={2.4} />
       <Line x1="3" y1="8" x2="3" y2="16" stroke={color} strokeWidth={2.4} />
       <Line x1="21" y1="8" x2="21" y2="16" stroke={color} strokeWidth={2.4} />
+      <Path d="M8 6h8" stroke={color} strokeWidth={2} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+function CardTicketIcon({ size = 20, color = "#0F172A" }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
       <Path
-        d="M8 6h8"
+        d="M5 7.5A2.5 2.5 0 017.5 5H18a2 2 0 012 2v2a2 2 0 000 4v2a2 2 0 01-2 2H7.5A2.5 2.5 0 015 14.5v-1a2 2 0 000-4v-2z"
         stroke={color}
         strokeWidth={2}
-        strokeLinecap="round"
+        fill="none"
+        strokeLinejoin="round"
       />
+      <Line x1="12" y1="7" x2="12" y2="17" stroke={color} strokeWidth={2} strokeDasharray="2 2" />
     </Svg>
   );
 }
@@ -278,6 +289,9 @@ type CurrentUserData = {
   approvalStatus?: "pending" | "approved" | "blocked";
   accessStartAt?: string | null;
   accessEndAt?: string | null;
+  cardsPurchased?: number;
+  cardsUsed?: number;
+  cardUsageDates?: string[];
 };
 
 export default function Menu() {
@@ -325,7 +339,9 @@ export default function Menu() {
   const [deleteClientsOpen, setDeleteClientsOpen] = useState(false);
   const [accessManagementOpen, setAccessManagementOpen] = useState(false);
   const [clientWorkoutTrackingOpen, setClientWorkoutTrackingOpen] = useState(false);
+  const [clientCardManagerOpen, setClientCardManagerOpen] = useState(false);
   const [accessInfoOpen, setAccessInfoOpen] = useState(false);
+  const [cardHistoryOpen, setCardHistoryOpen] = useState(false);
   const [currentUserData, setCurrentUserData] = useState<CurrentUserData | null>(null);
 
   const fetchMenuData = useCallback(async () => {
@@ -487,6 +503,18 @@ export default function Menu() {
       ? "חסום"
       : "ממתין לאישור";
 
+  const cardsPurchased = Number(currentUserData?.cardsPurchased || 0);
+
+  const cardUsageDates = Array.isArray(currentUserData?.cardUsageDates)
+    ? [...currentUserData.cardUsageDates].sort(
+        (a, b) => (new Date(b).getTime() || 0) - (new Date(a).getTime() || 0)
+      )
+    : [];
+
+  const cardsUsed = cardUsageDates.length;
+  const cardsRemaining = Math.max(cardsPurchased - cardsUsed, 0);
+  const lastCardUsage = cardUsageDates[0] || null;
+
   if (loading) {
     return (
       <SafeAreaView style={styles.safeArea}>
@@ -613,6 +641,110 @@ export default function Menu() {
                         </View>
                       </View>
                     )}
+
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.accessToggleButton,
+                        { minHeight: dynamic.buttonHeight },
+                        pressed && styles.pressedLight,
+                      ]}
+                      onPress={() => setCardHistoryOpen((prev) => !prev)}
+                    >
+                      <View style={styles.buttonRow}>
+                        <View style={styles.leftSlot}>
+                          {cardHistoryOpen ? (
+                            <ArrowUpIcon size={20} color="#1E293B" />
+                          ) : (
+                            <ArrowDownIcon size={20} color="#1E293B" />
+                          )}
+                        </View>
+
+                        <View style={styles.centerContent}>
+                          <Text
+                            style={[
+                              styles.accessToggleButtonText,
+                              { fontSize: dynamic.textSize },
+                            ]}
+                            numberOfLines={1}
+                          >
+                            היסטוריית כרטיסיות
+                          </Text>
+                        </View>
+
+                        <View style={styles.rightSlot} />
+                      </View>
+                    </Pressable>
+
+                      {cardHistoryOpen && (
+                        <View style={styles.clientCardsInfoCard}>
+                          <View style={styles.clientCardsHeader}>
+                            <Text style={styles.clientCardsInfoTitle}>היסטוריית כרטיסיות</Text>
+                            <Text style={styles.clientCardsInfoSubtitle}>
+                              כאן אפשר לראות את מצב הכרטיסייה והמימושים שבוצעו
+                            </Text>
+                          </View>
+
+                          <View style={styles.clientCardsTopStatsRow}>
+                            <View style={styles.clientCardsMiniStatBox}>
+                              <Text style={styles.clientCardsMiniValue}>{cardsPurchased}</Text>
+                              <Text style={styles.clientCardsMiniLabel}>נרכשו</Text>
+                            </View>
+
+                            <View style={styles.clientCardsMiniStatBox}>
+                              <Text style={styles.clientCardsMiniValue}>{cardsUsed}</Text>
+                              <Text style={styles.clientCardsMiniLabel}>מומשו</Text>
+                            </View>
+
+                            <View style={styles.clientCardsMiniStatBox}>
+                              <Text style={styles.clientCardsMiniValue}>{cardsRemaining}</Text>
+                              <Text style={styles.clientCardsMiniLabel}>נותרו</Text>
+                            </View>
+                          </View>
+
+                          <View style={styles.clientCardsHighlightBox}>
+                            <View style={styles.clientCardsHighlightTextWrap}>
+                              <Text style={styles.clientCardsHighlightLabel}>מימוש אחרון</Text>
+                              <Text style={styles.clientCardsHighlightValue}>
+                                {lastCardUsage ? formatDateTimeIL(lastCardUsage) : "עדיין לא בוצע מימוש"}
+                              </Text>
+                            </View>
+                          </View>
+
+                          <View style={styles.cardUsageHistoryBox}>
+                            <View style={styles.cardUsageHistoryHeader}>
+                              <Text style={styles.cardUsageHistoryTitle}>רשימת מימושים</Text>
+                              <Text style={styles.cardUsageHistoryCount}>
+                                {cardUsageDates.length} מימושים
+                              </Text>
+                            </View>
+
+                            {cardUsageDates.length === 0 ? (
+                              <View style={styles.emptyCardHistoryBox}>
+                                <Text style={styles.emptyCardHistoryText}>עדיין לא בוצעו מימושים</Text>
+                              </View>
+                            ) : (
+                              <View style={styles.cardUsageList}>
+                                {cardUsageDates.map((usageDate, index) => (
+                                  <View key={`${usageDate}-${index}`} style={styles.cardUsageRow}>
+                                    <View style={styles.cardUsageOrderBadge}>
+                                      <Text style={styles.cardUsageOrderBadgeText}>
+                                        {cardUsageDates.length - index}
+                                      </Text>
+                                    </View>
+
+                                    <View style={styles.cardUsageContent}>
+                                      <Text style={styles.cardUsageMainText}>מימוש כרטיסייה</Text>
+                                      <Text style={styles.cardUsageSubText}>
+                                        {formatDateTimeIL(usageDate)}
+                                      </Text>
+                                    </View>
+                                  </View>
+                                ))}
+                              </View>
+                            )}
+                          </View>
+                        </View>
+                      )}
                   </View>
                 )}
 
@@ -823,9 +955,7 @@ export default function Menu() {
                                     <Text style={styles.emptyClientsText}>אין לקוחות להצגה</Text>
                                   </View>
                                 ) : (
-                                  <ClientAccessManager
-                                    onAfterUpdate={fetchMenuData}
-                                  />
+                                  <ClientAccessManager onAfterUpdate={fetchMenuData} />
                                 )}
                               </View>
                             )}
@@ -873,14 +1003,60 @@ export default function Menu() {
                                 )}
                               </View>
                             )}
+
+                            <Pressable
+                              style={({ pressed }) => [
+                                styles.adminSubButton,
+                                { minHeight: dynamic.buttonHeight - 6 },
+                                pressed && styles.pressedLight,
+                              ]}
+                              onPress={() =>
+                                setClientCardManagerOpen((prev) => !prev)
+                              }
+                            >
+                              <View style={styles.buttonRow}>
+                                <View style={styles.leftSlot}>
+                                  {clientCardManagerOpen ? (
+                                    <ArrowUpIcon size={20} color="#0F172A" />
+                                  ) : (
+                                    <ArrowDownIcon size={20} color="#0F172A" />
+                                  )}
+                                </View>
+
+                                <View style={styles.centerContent}>
+                                  <View style={styles.iconWrap}>
+                                    <CardTicketIcon size={18} color="#0F172A" />
+                                  </View>
+                                  <Text style={styles.adminSubButtonText} numberOfLines={1}>
+                                    מימוש כרטיסייה
+                                  </Text>
+                                </View>
+
+                                <View style={styles.rightSlot} />
+                              </View>
+                            </Pressable>
+
+                            {clientCardManagerOpen && (
+                              <View style={styles.clientsInnerBox}>
+                                {clients.length === 0 ? (
+                                  <View style={styles.emptyClientsBox}>
+                                    <Text style={styles.emptyClientsText}>אין לקוחות להצגה</Text>
+                                  </View>
+                                ) : (
+                                  <ClientCardManager
+                                    clients={clients}
+                                    onAfterUpdate={fetchMenuData}
+                                  />
+                                )}
+                              </View>
+                            )}
                           </View>
                         )}
                       </View>
                     )}
                   </View>
                 )}
-
-                <Pressable
+                                <Pressable
                   style={({ pressed }) => [
                     styles.logoutButton,
                     { minHeight: dynamic.buttonHeight },
@@ -1002,7 +1178,6 @@ export default function Menu() {
     </SafeAreaView>
   );
 }
-
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -1130,6 +1305,201 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     textAlign: "right",
     writingDirection: "rtl",
+  },
+
+  clientCardsInfoCard: {
+    width: "100%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    padding: 16,
+    gap: 14,
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 2,
+  },
+
+  clientCardsHeader: {
+    alignItems: "flex-end",
+    gap: 4,
+  },
+
+  clientCardsInfoTitle: {
+    color: "#0F172A",
+    fontSize: 18,
+    fontWeight: "800",
+    textAlign: "right",
+  },
+
+  clientCardsInfoSubtitle: {
+    color: "#64748B",
+    fontSize: 13,
+    lineHeight: 20,
+    textAlign: "right",
+  },
+
+  clientCardsTopStatsRow: {
+    flexDirection: "row-reverse",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+
+  clientCardsMiniStatBox: {
+    flex: 1,
+    minHeight: 96,
+    backgroundColor: "#F8FAFC",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 14,
+    paddingHorizontal: 8,
+  },
+
+  clientCardsMiniValue: {
+    color: "#0F172A",
+    fontSize: 22,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+
+  clientCardsMiniLabel: {
+    marginTop: 6,
+    color: "#64748B",
+    fontSize: 13,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+
+  clientCardsHighlightBox: {
+    width: "100%",
+    backgroundColor: "#EFF6FF",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+  },
+
+  clientCardsHighlightTextWrap: {
+    alignItems: "flex-end",
+    gap: 6,
+  },
+
+  clientCardsHighlightLabel: {
+    color: "#1D4ED8",
+    fontSize: 13,
+    fontWeight: "700",
+    textAlign: "right",
+  },
+
+  clientCardsHighlightValue: {
+    color: "#0F172A",
+    fontSize: 15,
+    fontWeight: "800",
+    textAlign: "right",
+    lineHeight: 22,
+  },
+
+  cardUsageHistoryBox: {
+    marginTop: 2,
+    gap: 12,
+  },
+
+  cardUsageHistoryHeader: {
+    flexDirection: "row-reverse",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+
+  cardUsageHistoryTitle: {
+    color: "#0F172A",
+    fontSize: 16,
+    fontWeight: "800",
+    textAlign: "right",
+  },
+
+  cardUsageHistoryCount: {
+    color: "#64748B",
+    fontSize: 13,
+    fontWeight: "600",
+    textAlign: "left",
+  },
+
+  cardUsageList: {
+    gap: 10,
+  },
+
+  cardUsageRow: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    gap: 12,
+  },
+
+  cardUsageOrderBadge: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "#E0E7FF",
+    borderWidth: 1,
+    borderColor: "#C7D2FE",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  cardUsageOrderBadgeText: {
+    color: "#3730A3",
+    fontSize: 14,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+
+  cardUsageContent: {
+    flex: 1,
+    alignItems: "flex-end",
+    gap: 3,
+  },
+
+  cardUsageMainText: {
+    color: "#0F172A",
+    fontSize: 14,
+    fontWeight: "700",
+    textAlign: "right",
+  },
+
+  cardUsageSubText: {
+    color: "#64748B",
+    fontSize: 13,
+    fontWeight: "500",
+    textAlign: "right",
+  },
+
+  emptyCardHistoryBox: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    paddingVertical: 22,
+    paddingHorizontal: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  emptyCardHistoryText: {
+    color: "#64748B",
+    fontSize: 14,
+    fontWeight: "600",
+    textAlign: "center",
   },
 
   buttonRow: {
