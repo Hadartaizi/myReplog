@@ -13,19 +13,69 @@ import {
 import Svg, { Circle, Line, Path, Rect } from "react-native-svg";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "../../../database/firebase";
-import { ClientItem, ExerciseItem, WorkoutItem } from "./types";
-import {
-  buildClientSummary,
-  formatDateIL,
-  getExerciseName,
-  getNumericValue,
-  getWorkoutDisplayDate,
-  getWorkoutSortTime,
-  getWorkoutTitle,
-  groupExercisesByWorkout,
-  hasMeaningfulExerciseData,
-  hasMeaningfulWorkoutData,
-} from "./clientProgressUtils";
+
+type ClientItem = {
+  id: string;
+  uid?: string;
+  name?: string;
+  email?: string;
+  role?: "admin" | "client";
+};
+
+type WorkoutItem = {
+  id: string;
+  uid?: string;
+  title?: string;
+  name?: string;
+  date?: string | any;
+  dateKey?: string;
+  createdAt?: any;
+  updatedAt?: any;
+  note?: string;
+  notes?: string;
+  exercises?: any[];
+  exerciseName?: string;
+  numSets?: number | string;
+  repsPerSet?: Record<string, { reps?: string | number; weight?: string | number }>;
+  [key: string]: any;
+};
+
+type ExerciseItem = {
+  id: string;
+  uid?: string;
+  workoutId?: string;
+  exerciseName?: string;
+  name?: string;
+  sets?: number | string;
+  reps?: number | string;
+  weight?: number | string;
+  date?: string | any;
+  createdAt?: any;
+  updatedAt?: any;
+  sourceType?: "exercise_doc" | "embedded_exercise" | "legacy_workout";
+  [key: string]: any;
+};
+
+type Props = {
+  clients?: ClientItem[];
+};
+
+type DayGroup = {
+  dayKey: string;
+  displayDate: string;
+  sortTime: number;
+  workouts: WorkoutItem[];
+  exercises: ExerciseItem[];
+  notes: string[];
+  latestCreatedAt: any;
+};
+
+type GroupedExercise = {
+  key: string;
+  name: string;
+  rows: ExerciseItem[];
+  latestCreatedAt: any;
+};
 
 function ArrowDownIcon({ size = 20, color = "#1E293B" }) {
   return (
@@ -92,9 +142,553 @@ function WorkoutIcon({ size = 18, color = "#0F172A" }) {
   );
 }
 
-type Props = {
-  clients?: ClientItem[];
-};
+function getDateFromAny(value: any): Date | null {
+  if (!value) return null;
+
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value;
+  }
+
+  if (value?.toDate && typeof value.toDate === "function") {
+    const date = value.toDate();
+    return date instanceof Date && !Number.isNaN(date.getTime()) ? date : null;
+  }
+
+  if (typeof value === "object" && typeof value?.seconds === "number") {
+    return new Date(value.seconds * 1000);
+  }
+
+  if (typeof value === "string" || typeof value === "number") {
+    const date = new Date(value);
+    if (!Number.isNaN(date.getTime())) return date;
+  }
+
+  return null;
+}
+
+function formatDateIL(value: any): string {
+  const date = getDateFromAny(value);
+  if (!date) return "אין תאריך";
+
+  return new Intl.DateTimeFormat("he-IL", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(date);
+}
+
+function formatDateTimeIL(value: any): string {
+  const date = getDateFromAny(value);
+  if (!date) return "אין תאריך";
+
+  return new Intl.DateTimeFormat("he-IL", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function getNumericValue(value: any): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  return Number.isNaN(n) ? null : n;
+}
+
+function getExerciseName(exercise: ExerciseItem | WorkoutItem): string {
+  const raw = String(
+    exercise.exerciseName || exercise.name || exercise.title || ""
+  ).trim();
+
+  return raw || "תרגיל ללא שם";
+}
+
+function hasSetLikeData(exercise: Partial<ExerciseItem>): boolean {
+  return (
+    getNumericValue(exercise.sets) !== null ||
+    getNumericValue(exercise.reps) !== null ||
+    getNumericValue(exercise.weight) !== null
+  );
+}
+
+function hasMeaningfulExerciseData(exercise: Partial<ExerciseItem>): boolean {
+  const hasName = !!String(exercise.exerciseName || exercise.name || "").trim();
+  return hasName || hasSetLikeData(exercise);
+}
+
+function getWorkoutSortTime(workout: WorkoutItem): number {
+  const date =
+    getDateFromAny(workout.date) ||
+    getDateFromAny(workout.createdAt) ||
+    getDateFromAny(workout.updatedAt);
+
+  return date ? date.getTime() : 0;
+}
+
+function getWorkoutBaseDate(workout: WorkoutItem): Date | null {
+  return (
+    getDateFromAny(workout.date) ||
+    getDateFromAny(workout.createdAt) ||
+    getDateFromAny(workout.updatedAt)
+  );
+}
+
+function getExerciseBaseDate(exercise: ExerciseItem): Date | null {
+  return (
+    getDateFromAny(exercise.date) ||
+    getDateFromAny(exercise.createdAt) ||
+    getDateFromAny(exercise.updatedAt)
+  );
+}
+
+function getDayKeyFromDate(date: Date | null): string {
+  if (!date) return "unknown";
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function getLatestTimeFromItems(values: any[]): number {
+  return values.reduce((max, value) => {
+    const time = getDateFromAny(value)?.getTime() || 0;
+    return Math.max(max, time);
+  }, 0);
+}
+
+function normalizeRepsPerSetToRows(params: {
+  baseId: string;
+  uid?: string;
+  workoutId?: string;
+  exerciseName?: string;
+  date?: any;
+  createdAt?: any;
+  updatedAt?: any;
+  repsPerSet?: Record<string, { reps?: string | number; weight?: string | number }>;
+  numSets?: number | string;
+  sourceType: "embedded_exercise" | "legacy_workout";
+}): ExerciseItem[] {
+  const {
+    baseId,
+    uid,
+    workoutId,
+    exerciseName,
+    date,
+    createdAt,
+    updatedAt,
+    repsPerSet,
+    numSets,
+    sourceType,
+  } = params;
+
+  const name = String(exerciseName || "").trim() || "תרגיל ללא שם";
+  const map = repsPerSet || {};
+  const keys = Object.keys(map)
+    .filter((key) => map[key] !== undefined && map[key] !== null)
+    .sort((a, b) => Number(a) - Number(b));
+
+  if (keys.length > 0) {
+    return keys.map((setKey, idx) => {
+      const setData = map[setKey] || {};
+      return {
+        id: `${baseId}-set-${idx}`,
+        uid,
+        workoutId,
+        exerciseName: name,
+        name,
+        sets: Number(setKey) + 1,
+        reps: setData?.reps ?? "",
+        weight: setData?.weight ?? "",
+        date,
+        createdAt,
+        updatedAt,
+        sourceType,
+      };
+    });
+  }
+
+  const totalSets = getNumericValue(numSets) || 0;
+
+  if (totalSets > 0) {
+    return Array.from({ length: totalSets }).map((_, idx) => ({
+      id: `${baseId}-set-${idx}`,
+      uid,
+      workoutId,
+      exerciseName: name,
+      name,
+      sets: idx + 1,
+      reps: "",
+      weight: "",
+      date,
+      createdAt,
+      updatedAt,
+      sourceType,
+    }));
+  }
+
+  return [];
+}
+
+function normalizeEmbeddedExercises(workout: WorkoutItem): ExerciseItem[] {
+  if (!Array.isArray(workout.exercises)) return [];
+
+  return workout.exercises.flatMap((exercise: any, index: number) => {
+    const normalizedFromMap = normalizeRepsPerSetToRows({
+      baseId: `${workout.id}-embedded-${index}`,
+      uid: workout.uid,
+      workoutId: workout.id,
+      exerciseName: exercise?.exerciseName || exercise?.name,
+      date: exercise?.date || workout.date,
+      createdAt: exercise?.createdAt || workout.createdAt,
+      updatedAt: exercise?.updatedAt || workout.updatedAt,
+      repsPerSet: exercise?.repsPerSet,
+      numSets: exercise?.numSets,
+      sourceType: "embedded_exercise",
+    });
+
+    if (normalizedFromMap.length > 0) {
+      return normalizedFromMap;
+    }
+
+    const singleRow: ExerciseItem = {
+      id: `${workout.id}-embedded-${index}`,
+      uid: workout.uid,
+      workoutId: workout.id,
+      name: exercise?.exerciseName || exercise?.name,
+      exerciseName: exercise?.exerciseName || exercise?.name,
+      sets: exercise?.sets,
+      reps: exercise?.reps,
+      weight: exercise?.weight,
+      date: exercise?.date || workout.date,
+      createdAt: exercise?.createdAt || workout.createdAt,
+      updatedAt: exercise?.updatedAt || workout.updatedAt,
+      sourceType: "embedded_exercise",
+      ...exercise,
+    };
+
+    return hasMeaningfulExerciseData(singleRow) ? [singleRow] : [];
+  });
+}
+
+function normalizeLegacyWorkoutToExercises(workout: WorkoutItem): ExerciseItem[] {
+  const hasLegacyMap =
+    !!workout.exerciseName ||
+    !!workout.repsPerSet ||
+    getNumericValue(workout.numSets) !== null;
+
+  if (!hasLegacyMap) return [];
+
+  const rows = normalizeRepsPerSetToRows({
+    baseId: `${workout.id}-legacy`,
+    uid: workout.uid,
+    workoutId: workout.id,
+    exerciseName: workout.exerciseName || workout.title || workout.name,
+    date: workout.date,
+    createdAt: workout.createdAt,
+    updatedAt: workout.updatedAt,
+    repsPerSet: workout.repsPerSet,
+    numSets: workout.numSets,
+    sourceType: "legacy_workout",
+  });
+
+  if (rows.length > 0) {
+    return rows;
+  }
+
+  const fallback: ExerciseItem = {
+    id: `${workout.id}-legacy-fallback`,
+    uid: workout.uid,
+    workoutId: workout.id,
+    exerciseName: workout.exerciseName || workout.title || workout.name,
+    name: workout.exerciseName || workout.title || workout.name,
+    sets: workout.numSets || "",
+    reps: "",
+    weight: "",
+    date: workout.date,
+    createdAt: workout.createdAt,
+    updatedAt: workout.updatedAt,
+    sourceType: "legacy_workout",
+  };
+
+  return hasMeaningfulExerciseData(fallback) ? [fallback] : [];
+}
+
+function mergeExercises(
+  workouts: WorkoutItem[],
+  exercisesFromCollection: ExerciseItem[]
+): ExerciseItem[] {
+  const workoutIdsWithExerciseDocs = new Set(
+    exercisesFromCollection
+      .map((exercise) => exercise.workoutId)
+      .filter(Boolean) as string[]
+  );
+
+  const workoutIdsWithEmbeddedExercises = new Set(
+    workouts
+      .filter((workout) => Array.isArray(workout.exercises) && workout.exercises.length > 0)
+      .map((workout) => workout.id)
+  );
+
+  const embeddedExercises = workouts
+    .filter((workout) => !workoutIdsWithExerciseDocs.has(workout.id))
+    .flatMap((workout) => normalizeEmbeddedExercises(workout));
+
+  const legacyWorkoutExercises = workouts
+    .filter(
+      (workout) =>
+        !workoutIdsWithExerciseDocs.has(workout.id) &&
+        !workoutIdsWithEmbeddedExercises.has(workout.id)
+    )
+    .flatMap((workout) => normalizeLegacyWorkoutToExercises(workout));
+
+  const all = [...exercisesFromCollection, ...embeddedExercises, ...legacyWorkoutExercises];
+  const seen = new Set<string>();
+
+  return all.filter((exercise, index) => {
+    const fallbackKey = [
+      exercise.id || "no-id",
+      exercise.workoutId || "no-workout",
+      getExerciseName(exercise),
+      getNumericValue(exercise.sets) ?? "no-sets",
+      getNumericValue(exercise.reps) ?? "no-reps",
+      getNumericValue(exercise.weight) ?? "no-weight",
+      getDayKeyFromDate(getExerciseBaseDate(exercise)),
+      exercise.sourceType || "unknown",
+      index,
+    ].join("|");
+
+    const key = exercise.id || fallbackKey;
+
+    if (seen.has(key)) return false;
+    seen.add(key);
+
+    return hasMeaningfulExerciseData(exercise);
+  });
+}
+
+function groupExercisesByWorkout(
+  workouts: WorkoutItem[],
+  exercises: ExerciseItem[]
+): Record<string, ExerciseItem[]> {
+  const grouped: Record<string, ExerciseItem[]> = {};
+
+  workouts.forEach((workout) => {
+    grouped[workout.id] = exercises
+      .filter((exercise) => exercise.workoutId === workout.id)
+      .sort((a, b) => {
+        const aTime =
+          getDateFromAny(a.createdAt)?.getTime() ||
+          getDateFromAny(a.updatedAt)?.getTime() ||
+          getDateFromAny(a.date)?.getTime() ||
+          0;
+
+        const bTime =
+          getDateFromAny(b.createdAt)?.getTime() ||
+          getDateFromAny(b.updatedAt)?.getTime() ||
+          getDateFromAny(b.date)?.getTime() ||
+          0;
+
+        return aTime - bTime;
+      });
+  });
+
+  return grouped;
+}
+
+function buildDayGroups(
+  workouts: WorkoutItem[],
+  exercises: ExerciseItem[]
+): DayGroup[] {
+  const map: Record<string, DayGroup> = {};
+  const exercisesByWorkout = groupExercisesByWorkout(workouts, exercises);
+
+  const ensureGroup = (date: Date | null): DayGroup => {
+    const dayKey = getDayKeyFromDate(date);
+
+    if (!map[dayKey]) {
+      map[dayKey] = {
+        dayKey,
+        displayDate: formatDateIL(date),
+        sortTime: date?.getTime() || 0,
+        workouts: [],
+        exercises: [],
+        notes: [],
+        latestCreatedAt: date || null,
+      };
+    }
+
+    return map[dayKey];
+  };
+
+  workouts.forEach((workout) => {
+    const workoutDate = getWorkoutBaseDate(workout);
+    const group = ensureGroup(workoutDate);
+    const workoutExercises = exercisesByWorkout[workout.id] || [];
+
+    group.workouts.push(workout);
+    group.exercises.push(...workoutExercises);
+
+    const noteText = String(workout.note || workout.notes || "").trim();
+    if (noteText) {
+      group.notes.push(noteText);
+    }
+
+    group.sortTime = Math.max(group.sortTime, workoutDate?.getTime() || 0);
+
+    const latestWorkoutTime = getLatestTimeFromItems([
+      workout.createdAt,
+      workout.updatedAt,
+      workout.date,
+      ...workoutExercises.flatMap((exercise) => [
+        exercise.createdAt,
+        exercise.updatedAt,
+        exercise.date,
+      ]),
+    ]);
+
+    const currentLatest = getDateFromAny(group.latestCreatedAt)?.getTime() || 0;
+    if (latestWorkoutTime > currentLatest) {
+      group.latestCreatedAt = workout.createdAt || workout.updatedAt || workout.date;
+    }
+  });
+
+  exercises
+    .filter((exercise) => !exercise.workoutId)
+    .forEach((exercise) => {
+      const exerciseDate = getExerciseBaseDate(exercise);
+      const group = ensureGroup(exerciseDate);
+
+      group.exercises.push(exercise);
+      group.sortTime = Math.max(group.sortTime, exerciseDate?.getTime() || 0);
+
+      const exerciseLatest = getLatestTimeFromItems([
+        exercise.createdAt,
+        exercise.updatedAt,
+        exercise.date,
+      ]);
+
+      const currentLatest = getDateFromAny(group.latestCreatedAt)?.getTime() || 0;
+      if (exerciseLatest > currentLatest) {
+        group.latestCreatedAt =
+          exercise.createdAt || exercise.updatedAt || exercise.date;
+      }
+    });
+
+  return Object.values(map)
+    .map((group) => {
+      const seenExerciseKeys = new Set<string>();
+
+      const dedupedExercises = group.exercises.filter((exercise, index) => {
+        const key = [
+          exercise.id || "no-id",
+          exercise.workoutId || "no-workout",
+          getExerciseName(exercise),
+          getNumericValue(exercise.sets) ?? "no-sets",
+          getNumericValue(exercise.reps) ?? "no-reps",
+          getNumericValue(exercise.weight) ?? "no-weight",
+          getDayKeyFromDate(getExerciseBaseDate(exercise)),
+          exercise.sourceType || "unknown",
+          index,
+        ].join("|");
+
+        if (seenExerciseKeys.has(key)) return false;
+        seenExerciseKeys.add(key);
+        return true;
+      });
+
+      return {
+        ...group,
+        notes: Array.from(new Set(group.notes)),
+        exercises: dedupedExercises.sort((a, b) => {
+          const aTime =
+            getDateFromAny(a.createdAt)?.getTime() ||
+            getDateFromAny(a.updatedAt)?.getTime() ||
+            getDateFromAny(a.date)?.getTime() ||
+            0;
+
+          const bTime =
+            getDateFromAny(b.createdAt)?.getTime() ||
+            getDateFromAny(b.updatedAt)?.getTime() ||
+            getDateFromAny(b.date)?.getTime() ||
+            0;
+
+          return aTime - bTime;
+        }),
+      };
+    })
+    .sort((a, b) => b.sortTime - a.sortTime);
+}
+
+function groupExercisesInsideDay(
+  exercises: ExerciseItem[],
+  dayKey: string
+): GroupedExercise[] {
+  const map: Record<string, GroupedExercise> = {};
+
+  exercises.forEach((exercise) => {
+    const exerciseName = getExerciseName(exercise);
+    const groupKey = `${dayKey}-${exerciseName}`;
+
+    if (!map[groupKey]) {
+      map[groupKey] = {
+        key: groupKey,
+        name: exerciseName,
+        rows: [],
+        latestCreatedAt: exercise.createdAt || exercise.updatedAt || exercise.date,
+      };
+    }
+
+    map[groupKey].rows.push(exercise);
+
+    const currentLatest = getDateFromAny(map[groupKey].latestCreatedAt)?.getTime() || 0;
+    const candidateLatest =
+      getLatestTimeFromItems([exercise.createdAt, exercise.updatedAt, exercise.date]) || 0;
+
+    if (candidateLatest > currentLatest) {
+      map[groupKey].latestCreatedAt =
+        exercise.createdAt || exercise.updatedAt || exercise.date;
+    }
+  });
+
+  const grouped = Object.values(map).map((group) => {
+    const sortedRows = [...group.rows].sort((a, b) => {
+      const aSet = getNumericValue(a.sets);
+      const bSet = getNumericValue(b.sets);
+
+      if (aSet !== null && bSet !== null && aSet !== bSet) {
+        return aSet - bSet;
+      }
+
+      const aTime =
+        getDateFromAny(a.createdAt)?.getTime() ||
+        getDateFromAny(a.updatedAt)?.getTime() ||
+        getDateFromAny(a.date)?.getTime() ||
+        0;
+
+      const bTime =
+        getDateFromAny(b.createdAt)?.getTime() ||
+        getDateFromAny(b.updatedAt)?.getTime() ||
+        getDateFromAny(b.date)?.getTime() ||
+        0;
+
+      return aTime - bTime;
+    });
+
+    const hasRealRows = sortedRows.some((row) => hasSetLikeData(row));
+
+    const filteredRows = hasRealRows
+      ? sortedRows.filter((row) => hasSetLikeData(row))
+      : sortedRows;
+
+    return {
+      ...group,
+      rows: filteredRows,
+    };
+  });
+
+  return grouped.sort((a, b) => a.name.localeCompare(b.name, "he"));
+}
 
 export default function ClientProgressTracker({ clients: initialClients = [] }: Props) {
   const { width } = useWindowDimensions();
@@ -119,7 +713,8 @@ export default function ClientProgressTracker({ clients: initialClients = [] }: 
   const [loadingData, setLoadingData] = useState(false);
   const [workouts, setWorkouts] = useState<WorkoutItem[]>([]);
   const [exercises, setExercises] = useState<ExerciseItem[]>([]);
-  const [openWorkoutIds, setOpenWorkoutIds] = useState<Record<string, boolean>>({});
+  const [openDayIds, setOpenDayIds] = useState<Record<string, boolean>>({});
+  const [openExerciseIds, setOpenExerciseIds] = useState<Record<string, boolean>>({});
 
   const loadClients = useCallback(async () => {
     if (initialClients.length > 0) {
@@ -131,6 +726,7 @@ export default function ClientProgressTracker({ clients: initialClients = [] }: 
 
     try {
       setLoadingClients(true);
+
       const q = query(collection(db, "users"), where("role", "==", "client"));
       const snap = await getDocs(q);
 
@@ -178,15 +774,16 @@ export default function ClientProgressTracker({ clients: initialClients = [] }: 
         }))
         .sort((a, b) => getWorkoutSortTime(b) - getWorkoutSortTime(a));
 
-      const exercisesList: ExerciseItem[] = exercisesSnap.docs
-        .map((docSnap) => ({
-          id: docSnap.id,
-          ...(docSnap.data() as Omit<ExerciseItem, "id">),
-        }))
-        .filter((exercise) => hasMeaningfulExerciseData(exercise));
+      const exercisesFromCollection: ExerciseItem[] = exercisesSnap.docs.map((docSnap) => ({
+        id: docSnap.id,
+        ...(docSnap.data() as Omit<ExerciseItem, "id">),
+        sourceType: "exercise_doc",
+      }));
+
+      const mergedExercises = mergeExercises(workoutsList, exercisesFromCollection);
 
       setWorkouts(workoutsList);
-      setExercises(exercisesList);
+      setExercises(mergedExercises);
     } catch (error) {
       console.error("שגיאה בטעינת נתוני לקוח:", error);
       Alert.alert("שגיאה", "לא ניתן לטעון את נתוני הלקוח");
@@ -205,68 +802,53 @@ export default function ClientProgressTracker({ clients: initialClients = [] }: 
     loadClientData(selectedClient);
   }, [selectedClient, loadClientData]);
 
-  const exercisesByWorkout = useMemo(
-    () => groupExercisesByWorkout(workouts, exercises),
-    [workouts, exercises]
-  );
+  const dayGroups = useMemo(() => buildDayGroups(workouts, exercises), [workouts, exercises]);
 
-  const visibleWorkouts = useMemo(() => {
-    return workouts.filter((workout) =>
-      hasMeaningfulWorkoutData(workout, exercisesByWorkout[workout.id] || [])
+  const summary = useMemo(() => {
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+
+    const workoutsThisMonth = dayGroups.filter((group) => {
+      const d = new Date(group.sortTime);
+      return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+    }).length;
+
+    const latestWorkout = dayGroups[0];
+
+    const uniqueExerciseNames = new Set(
+      exercises.map((exercise) => getExerciseName(exercise)).filter(Boolean)
     );
-  }, [workouts, exercisesByWorkout]);
 
-  const visibleExercises = useMemo(() => {
-    const validWorkoutIds = new Set(visibleWorkouts.map((workout) => workout.id));
-    return exercises.filter(
-      (exercise) =>
-        !!exercise.workoutId &&
-        validWorkoutIds.has(exercise.workoutId)
-    );
-  }, [exercises, visibleWorkouts]);
-
-  const visibleExercisesByWorkout = useMemo(
-    () => groupExercisesByWorkout(visibleWorkouts, visibleExercises),
-    [visibleWorkouts, visibleExercises]
-  );
-
-  const summary = useMemo(
-    () => buildClientSummary(visibleWorkouts, visibleExercises),
-    [visibleWorkouts, visibleExercises]
-  );
-
-  const exerciseVolumeMap = useMemo(() => {
-    const map: Record<string, { count: number; totalWeight: number }> = {};
-
-    visibleExercises.forEach((exercise) => {
-      const name = getExerciseName(exercise);
-      const weight = getNumericValue(exercise.weight) || 0;
-
-      if (!map[name]) {
-        map[name] = { count: 0, totalWeight: 0 };
-      }
-
-      map[name].count += 1;
-      map[name].totalWeight += weight;
-    });
-
-    return Object.entries(map)
-      .sort((a, b) => b[1].count - a[1].count)
-      .slice(0, 6);
-  }, [visibleExercises]);
+    return {
+      totalWorkouts: dayGroups.length,
+      totalExercises: exercises.length,
+      uniqueExercises: uniqueExerciseNames.size,
+      workoutsThisMonth,
+      latestWorkoutLabel: latestWorkout ? latestWorkout.displayDate : "אין נתונים",
+    };
+  }, [dayGroups, exercises]);
 
   useEffect(() => {
-    if (visibleWorkouts.length > 0) {
-      setOpenWorkoutIds({ [visibleWorkouts[0].id]: true });
+    if (dayGroups.length > 0) {
+      setOpenDayIds({ [dayGroups[0].dayKey]: true });
     } else {
-      setOpenWorkoutIds({});
+      setOpenDayIds({});
     }
-  }, [visibleWorkouts]);
+    setOpenExerciseIds({});
+  }, [dayGroups]);
 
-  const toggleWorkout = (workoutId: string) => {
-    setOpenWorkoutIds((prev) => ({
+  const toggleDay = (dayKey: string) => {
+    setOpenDayIds((prev) => ({
       ...prev,
-      [workoutId]: !prev[workoutId],
+      [dayKey]: !prev[dayKey],
+    }));
+  };
+
+  const toggleExercise = (exerciseKey: string) => {
+    setOpenExerciseIds((prev) => ({
+      ...prev,
+      [exerciseKey]: !prev[exerciseKey],
     }));
   };
 
@@ -290,7 +872,7 @@ export default function ClientProgressTracker({ clients: initialClients = [] }: 
         </View>
 
         <Text style={[styles.headerSubtitle, { fontSize: dynamic.subTextSize }]}>
-          בחירת לקוח, צפייה בהזנות ובמעקב התקדמות במקום אחד
+          כל ההזנות של אותו יום נחשבות כאימון אחד
         </Text>
       </View>
 
@@ -371,13 +953,13 @@ export default function ClientProgressTracker({ clients: initialClients = [] }: 
                 </View>
 
                 <View style={[styles.summaryCard, { padding: dynamic.cardPadding }]}>
-                  <Text style={styles.summaryValue}>{summary.workoutsThisMonth}</Text>
-                  <Text style={styles.summaryLabel}>אימונים החודש</Text>
+                  <Text style={styles.summaryValue}>{summary.totalExercises}</Text>
+                  <Text style={styles.summaryLabel}>סה״כ תרגילים</Text>
                 </View>
 
                 <View style={[styles.summaryCard, { padding: dynamic.cardPadding }]}>
-                  <Text style={styles.summaryValue}>{summary.uniqueExercises}</Text>
-                  <Text style={styles.summaryLabel}>תרגילים שונים</Text>
+                  <Text style={styles.summaryValue}>{summary.workoutsThisMonth}</Text>
+                  <Text style={styles.summaryLabel}>אימונים החודש</Text>
                 </View>
 
                 <View style={[styles.summaryCard, { padding: dynamic.cardPadding }]}>
@@ -389,49 +971,25 @@ export default function ClientProgressTracker({ clients: initialClients = [] }: 
               <View style={styles.section}>
                 <View style={styles.sectionHeader}>
                   <WorkoutIcon size={18} color="#0F172A" />
-                  <Text style={styles.sectionTitle}>מבט כללי על ההתקדמות</Text>
+                  <Text style={styles.sectionTitle}>כל האימונים וההזנות</Text>
                 </View>
 
-                {exerciseVolumeMap.length === 0 ? (
-                  <View style={styles.emptyBox}>
-                    <Text style={styles.emptyText}>עדיין אין הזנות להצגה</Text>
-                  </View>
-                ) : (
-                  <View style={styles.progressList}>
-                    {exerciseVolumeMap.map(([name, data]) => (
-                      <View key={name} style={styles.progressRow}>
-                        <View style={styles.progressRowTextBox}>
-                          <Text style={styles.progressName}>{name}</Text>
-                          <Text style={styles.progressSubText}>
-                            בוצע {data.count} פעמים
-                            {data.totalWeight > 0 ? ` • סך משקל מדווח ${data.totalWeight}` : ""}
-                          </Text>
-                        </View>
-                      </View>
-                    ))}
-                  </View>
-                )}
-              </View>
-
-              <View style={styles.section}>
-                <View style={styles.sectionHeader}>
-                  <WorkoutIcon size={18} color="#0F172A" />
-                  <Text style={styles.sectionTitle}>הזנות לפי אימון</Text>
-                </View>
-
-                {visibleWorkouts.length === 0 ? (
+                {dayGroups.length === 0 ? (
                   <View style={styles.emptyBox}>
                     <Text style={styles.emptyText}>אין אימונים להצגה</Text>
                   </View>
                 ) : (
-                  visibleWorkouts.map((workout) => {
-                    const workoutExercises = visibleExercisesByWorkout[workout.id] || [];
-                    const isOpen = !!openWorkoutIds[workout.id];
+                  dayGroups.map((group) => {
+                    const isOpen = !!openDayIds[group.dayKey];
+                    const groupedExercises = groupExercisesInsideDay(
+                      group.exercises,
+                      group.dayKey
+                    );
 
                     return (
-                      <View key={workout.id} style={styles.workoutCard}>
+                      <View key={group.dayKey} style={styles.workoutCard}>
                         <Pressable
-                          onPress={() => toggleWorkout(workout.id)}
+                          onPress={() => toggleDay(group.dayKey)}
                           style={({ pressed }) => [
                             styles.workoutHeaderButton,
                             pressed && styles.pressed,
@@ -448,10 +1006,19 @@ export default function ClientProgressTracker({ clients: initialClients = [] }: 
 
                             <View style={styles.workoutHeaderTextBox}>
                               <Text style={styles.workoutTitle}>
-                                {getWorkoutTitle(workout)}
+                                אימון מתאריך {group.displayDate}
                               </Text>
+
                               <Text style={styles.workoutMeta}>
-                                {getWorkoutDisplayDate(workout)} • {workoutExercises.length} תרגילים
+                                {groupedExercises.length} תרגילים
+                              </Text>
+
+                              <Text style={styles.workoutMeta}>
+                                {group.workouts.length} רשומות אימון באותו היום
+                              </Text>
+
+                              <Text style={styles.workoutMeta}>
+                                הוזן למערכת: {formatDateTimeIL(group.latestCreatedAt)}
                               </Text>
                             </View>
                           </View>
@@ -459,59 +1026,107 @@ export default function ClientProgressTracker({ clients: initialClients = [] }: 
 
                         {isOpen && (
                           <View style={styles.workoutBody}>
-                            {workout.note || workout.notes ? (
+                            {group.notes.length > 0 && (
                               <View style={styles.noteBox}>
-                                <Text style={styles.noteTitle}>הערות</Text>
-                                <Text style={styles.noteText}>
-                                  {workout.note || workout.notes}
-                                </Text>
+                                <Text style={styles.noteTitle}>הערות לאימון</Text>
+                                {group.notes.map((note, index) => (
+                                  <Text
+                                    key={`${group.dayKey}-note-${index}`}
+                                    style={styles.noteText}
+                                  >
+                                    {note}
+                                  </Text>
+                                ))}
                               </View>
-                            ) : null}
+                            )}
 
-                            {workoutExercises.length === 0 ? (
+                            {groupedExercises.length === 0 ? (
                               <View style={styles.emptyInnerBox}>
-                                <Text style={styles.emptyText}>לא נמצאו תרגילים לאימון הזה</Text>
+                                <Text style={styles.emptyText}>לא נמצאו תרגילים לאותו יום</Text>
                               </View>
                             ) : (
-                              workoutExercises.map((exercise) => (
-                                <View key={exercise.id} style={styles.exerciseRow}>
-                                  <Text style={styles.exerciseName}>
-                                    {getExerciseName(exercise)}
-                                  </Text>
+                              groupedExercises.map((exerciseGroup) => {
+                                const isExerciseOpen = !!openExerciseIds[exerciseGroup.key];
 
-                                  <View style={styles.exerciseMetaRow}>
-                                    {getNumericValue(exercise.sets) !== null && (
-                                      <Text style={styles.exerciseMetaText}>
-                                        סטים: {getNumericValue(exercise.sets)}
-                                      </Text>
-                                    )}
+                                return (
+                                  <View key={exerciseGroup.key} style={styles.exerciseCard}>
+                                    <Pressable
+                                      onPress={() => toggleExercise(exerciseGroup.key)}
+                                      style={({ pressed }) => [
+                                        styles.exerciseHeaderButton,
+                                        pressed && styles.pressed,
+                                      ]}
+                                    >
+                                      <View style={styles.exerciseHeaderRow}>
+                                        <View style={styles.workoutHeaderArrow}>
+                                          {isExerciseOpen ? (
+                                            <ArrowUpIcon size={18} color="#1E293B" />
+                                          ) : (
+                                            <ArrowDownIcon size={18} color="#1E293B" />
+                                          )}
+                                        </View>
 
-                                    {getNumericValue(exercise.reps) !== null && (
-                                      <Text style={styles.exerciseMetaText}>
-                                        חזרות: {getNumericValue(exercise.reps)}
-                                      </Text>
-                                    )}
+                                        <View style={styles.exerciseHeaderTextBox}>
+                                          <Text style={styles.exerciseName}>
+                                            {exerciseGroup.name}
+                                          </Text>
 
-                                    {getNumericValue(exercise.weight) !== null && (
-                                      <Text style={styles.exerciseMetaText}>
-                                        משקל: {getNumericValue(exercise.weight)}
-                                      </Text>
-                                    )}
+                                          <Text style={styles.exerciseTapHint}>
+                                            לחצי לצפייה בסטים, חזרות ומשקל
+                                          </Text>
+                                        </View>
+                                      </View>
+                                    </Pressable>
 
-                                    {getNumericValue(exercise.sets) === null &&
-                                      getNumericValue(exercise.reps) === null &&
-                                      getNumericValue(exercise.weight) === null && (
-                                        <Text style={styles.exerciseMetaText}>
-                                          אין פירוט נוסף
+                                    {isExerciseOpen && (
+                                      <View style={styles.exerciseDetailsBox}>
+                                        {exerciseGroup.rows.map((row, rowIndex) => {
+                                          const setNumber = getNumericValue(row.sets);
+                                          const repsValue = getNumericValue(row.reps);
+                                          const weightValue = getNumericValue(row.weight);
+
+                                          return (
+                                            <View
+                                              key={row.id || `${exerciseGroup.key}-row-${rowIndex}`}
+                                              style={styles.setRow}
+                                            >
+                                              <Text style={styles.setRowText}>
+                                                {setNumber !== null
+                                                  ? `סט ${setNumber}`
+                                                  : `סט ${rowIndex + 1}`}
+                                              </Text>
+
+                                              <Text style={styles.setRowText}>
+                                                {repsValue !== null
+                                                  ? `חזרות: ${repsValue}`
+                                                  : "חזרות: לא הוזן"}
+                                              </Text>
+
+                                              <Text style={styles.setRowText}>
+                                                {weightValue !== null
+                                                  ? `משקל: ${weightValue}`
+                                                  : "משקל: לא הוזן"}
+                                              </Text>
+                                            </View>
+                                          );
+                                        })}
+
+                                        <Text style={styles.exerciseDate}>
+                                          תאריך תרגיל:{" "}
+                                          {formatDateIL(
+                                            exerciseGroup.rows[0]?.date || group.sortTime
+                                          )}
                                         </Text>
-                                      )}
-                                  </View>
 
-                                  <Text style={styles.exerciseDate}>
-                                    {formatDateIL(exercise.date || exercise.createdAt)}
-                                  </Text>
-                                </View>
-                              ))
+                                        <Text style={styles.exerciseDate}>
+                                          הוזן למערכת:{" "}
+                                          {formatDateTimeIL(exerciseGroup.latestCreatedAt)}
+                                        </Text>
+                                      </View>
+                                    )}
+                                  </View>
+                                );
+                              })
                             )}
                           </View>
                         )}
@@ -685,36 +1300,6 @@ const styles = StyleSheet.create({
     textAlign: "right",
   },
 
-  progressList: {
-    gap: 10,
-  },
-
-  progressRow: {
-    backgroundColor: "#F8FAFC",
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    padding: 12,
-  },
-
-  progressRowTextBox: {
-    alignItems: "flex-end",
-  },
-
-  progressName: {
-    color: "#0F172A",
-    fontSize: 15,
-    fontWeight: "700",
-    textAlign: "right",
-  },
-
-  progressSubText: {
-    color: "#64748B",
-    fontSize: 13,
-    marginTop: 4,
-    textAlign: "right",
-  },
-
   workoutCard: {
     backgroundColor: "#F8FAFC",
     borderRadius: 16,
@@ -778,22 +1363,38 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "800",
     textAlign: "right",
+    marginBottom: 6,
   },
 
   noteText: {
-    marginTop: 6,
     color: "#475569",
     fontSize: 13,
     lineHeight: 20,
     textAlign: "right",
+    width: "100%",
+    marginTop: 4,
   },
 
-  exerciseRow: {
+  exerciseCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 12,
     borderWidth: 1,
     borderColor: "#E2E8F0",
-    padding: 12,
+    overflow: "hidden",
+  },
+
+  exerciseHeaderButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+
+  exerciseHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  exerciseHeaderTextBox: {
+    flex: 1,
     alignItems: "flex-end",
   },
 
@@ -804,29 +1405,45 @@ const styles = StyleSheet.create({
     textAlign: "right",
   },
 
-  exerciseMetaRow: {
-    flexDirection: "row-reverse",
-    flexWrap: "wrap",
-    gap: 8,
-    marginTop: 8,
-    justifyContent: "flex-end",
-  },
-
-  exerciseMetaText: {
-    color: "#334155",
-    fontSize: 12,
-    backgroundColor: "#F1F5F9",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    overflow: "hidden",
-  },
-
-  exerciseDate: {
-    marginTop: 8,
+  exerciseTapHint: {
+    marginTop: 4,
     color: "#64748B",
     fontSize: 12,
     textAlign: "right",
+  },
+
+  exerciseDetailsBox: {
+    borderTopWidth: 1,
+    borderTopColor: "#E2E8F0",
+    paddingHorizontal: 12,
+    paddingBottom: 12,
+    paddingTop: 10,
+    alignItems: "stretch",
+    gap: 8,
+  },
+
+  setRow: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    alignItems: "flex-end",
+    gap: 4,
+  },
+
+  setRowText: {
+    color: "#334155",
+    fontSize: 13,
+    textAlign: "right",
+  },
+
+  exerciseDate: {
+    color: "#64748B",
+    fontSize: 12,
+    textAlign: "right",
+    marginTop: 4,
   },
 
   emptyBox: {

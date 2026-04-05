@@ -3,11 +3,20 @@ import { ClientSummary, ExerciseItem, WorkoutItem } from "./types";
 export function getDateFromAny(value: any): Date | null {
   if (!value) return null;
 
-  if (value?.toDate && typeof value.toDate === "function") {
-    return value.toDate();
+  if (value instanceof Date && !isNaN(value.getTime())) {
+    return value;
   }
 
-  if (value?.seconds) {
+  if (value?.toDate && typeof value.toDate === "function") {
+    const d = value.toDate();
+    return d instanceof Date && !isNaN(d.getTime()) ? d : null;
+  }
+
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    typeof value.seconds === "number"
+  ) {
     return new Date(value.seconds * 1000);
   }
 
@@ -30,39 +39,61 @@ export function formatDateIL(value: any): string {
   }).format(date);
 }
 
-export function getWorkoutDisplayDate(workout: WorkoutItem): string {
-  return formatDateIL(
-    workout.date ||
-      workout.createdAt ||
-      workout.updatedAt
+export function formatDateTimeIL(value: any): string {
+  const date = getDateFromAny(value);
+  if (!date) return "אין תאריך";
+
+  return new Intl.DateTimeFormat("he-IL", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+export function getWorkoutDate(workout: WorkoutItem): Date | null {
+  return (
+    getDateFromAny(workout.date) ||
+    getDateFromAny(workout.createdAt) ||
+    getDateFromAny(workout.updatedAt)
   );
 }
 
-export function getWorkoutSortTime(workout: WorkoutItem): number {
-  const date =
-    getDateFromAny(workout.date) ||
-    getDateFromAny(workout.createdAt) ||
-    getDateFromAny(workout.updatedAt);
+export function getWorkoutDisplayDate(workout: WorkoutItem): string {
+  return formatDateIL(workout.date || workout.createdAt || workout.updatedAt);
+}
 
+export function getWorkoutCreatedLabel(workout: WorkoutItem): string {
+  return formatDateTimeIL(workout.createdAt || workout.updatedAt || workout.date);
+}
+
+export function getWorkoutSortTime(workout: WorkoutItem): number {
+  const date = getWorkoutDate(workout);
   return date ? date.getTime() : 0;
 }
 
 export function getWorkoutTitle(workout: WorkoutItem): string {
-  return workout.title || workout.name || "אימון";
+  return String(workout.title || workout.name || "אימון").trim() || "אימון";
 }
 
 export function getExerciseName(exercise: ExerciseItem): string {
-  return exercise.exerciseName || exercise.name || "תרגיל ללא שם";
+  return String(exercise.exerciseName || exercise.name || "").trim();
+}
+
+export function getExerciseDisplayName(exercise: ExerciseItem): string {
+  const name = getExerciseName(exercise);
+  return name || "תרגיל ללא שם";
 }
 
 export function getNumericValue(value: any): number | null {
   if (value === null || value === undefined || value === "") return null;
   const n = Number(value);
-  return isNaN(n) ? null : n;
+  return Number.isNaN(n) ? null : n;
 }
 
 export function hasMeaningfulExerciseData(exercise: ExerciseItem): boolean {
-  const hasName = !!getExerciseName(exercise).trim();
+  const hasName = !!getExerciseName(exercise);
   const hasSets = getNumericValue(exercise.sets) !== null;
   const hasReps = getNumericValue(exercise.reps) !== null;
   const hasWeight = getNumericValue(exercise.weight) !== null;
@@ -74,12 +105,13 @@ export function hasMeaningfulWorkoutData(
   workout: WorkoutItem,
   workoutExercises: ExerciseItem[] = []
 ): boolean {
+  const hasTitle = !!getWorkoutTitle(workout).trim();
   const hasNotes = !!String(workout.note || workout.notes || "").trim();
   const hasRealExercises = workoutExercises.some((exercise) =>
     hasMeaningfulExerciseData(exercise)
   );
 
-  return hasNotes || hasRealExercises;
+  return hasTitle || hasNotes || hasRealExercises;
 }
 
 export function buildClientSummary(
@@ -91,11 +123,7 @@ export function buildClientSummary(
   const currentYear = now.getFullYear();
 
   const workoutsThisMonth = workouts.filter((workout) => {
-    const d =
-      getDateFromAny(workout.date) ||
-      getDateFromAny(workout.createdAt) ||
-      getDateFromAny(workout.updatedAt);
-
+    const d = getWorkoutDate(workout);
     if (!d) return false;
 
     return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
@@ -107,7 +135,7 @@ export function buildClientSummary(
 
   const uniqueNames = new Set(
     exercises
-      .map((exercise) => getExerciseName(exercise).trim())
+      .map((exercise) => getExerciseName(exercise))
       .filter(Boolean)
   );
 
@@ -129,10 +157,67 @@ export function groupExercisesByWorkout(
   const grouped: Record<string, ExerciseItem[]> = {};
 
   workouts.forEach((workout) => {
-    grouped[workout.id] = exercises.filter(
-      (exercise) => exercise.workoutId === workout.id
-    );
+    grouped[workout.id] = exercises
+      .filter((exercise) => exercise.workoutId === workout.id)
+      .sort((a, b) => {
+        const aTime =
+          getDateFromAny(a.createdAt)?.getTime() ||
+          getDateFromAny(a.updatedAt)?.getTime() ||
+          getDateFromAny(a.date)?.getTime() ||
+          0;
+
+        const bTime =
+          getDateFromAny(b.createdAt)?.getTime() ||
+          getDateFromAny(b.updatedAt)?.getTime() ||
+          getDateFromAny(b.date)?.getTime() ||
+          0;
+
+        return aTime - bTime;
+      });
   });
 
   return grouped;
+}
+
+export function normalizeEmbeddedExercises(
+  workout: WorkoutItem
+): ExerciseItem[] {
+  if (!Array.isArray(workout.exercises)) return [];
+
+  return workout.exercises
+    .map((exercise: any, index: number) => ({
+      id: `${workout.id}-embedded-${index}`,
+      uid: workout.uid,
+      workoutId: workout.id,
+      name: exercise?.name,
+      exerciseName: exercise?.exerciseName || exercise?.name,
+      sets: exercise?.sets,
+      reps: exercise?.reps,
+      weight: exercise?.weight,
+      date: exercise?.date || workout.date,
+      createdAt: exercise?.createdAt || workout.createdAt,
+      updatedAt: exercise?.updatedAt || workout.updatedAt,
+      ...exercise,
+    }))
+    .filter(hasMeaningfulExerciseData);
+}
+
+export function mergeExercises(
+  workouts: WorkoutItem[],
+  exercisesFromCollection: ExerciseItem[]
+): ExerciseItem[] {
+  const embeddedExercises = workouts.flatMap((workout) =>
+    normalizeEmbeddedExercises(workout)
+  );
+
+  const all = [...exercisesFromCollection, ...embeddedExercises];
+
+  const seen = new Set<string>();
+
+  return all.filter((exercise, index) => {
+    const key = exercise.id || `${exercise.workoutId || "none"}-${index}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return hasMeaningfulExerciseData(exercise);
+  });
 }

@@ -79,14 +79,39 @@ type ExerciseType = {
   error: string;
 };
 
+type ExerciseDocType = {
+  uid: string;
+  workoutId?: string;
+  exerciseName: string;
+  name?: string;
+  sets?: number;
+  reps?: number;
+  weight?: number;
+  date?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
 type WorkoutDocType = {
   uid: string;
+  title: string;
+  name?: string;
   date: string;
   dateKey: string;
-  exerciseName: string;
-  numSets: number;
-  repsPerSet: RepsPerSetType;
   createdAt: string;
+  updatedAt: string;
+  note?: string;
+  notes?: string;
+  exercises: Array<{
+    exerciseName: string;
+    name: string;
+    sets: number;
+    reps: number;
+    weight: number;
+    createdAt: string;
+    updatedAt: string;
+    date: string;
+  }>;
 };
 
 function SaveIcon({ size = 20, color = '#FFFFFF' }) {
@@ -179,7 +204,7 @@ export default function Home() {
   const [existingExercises, setExistingExercises] = useState<string[]>([]);
   const [addError, setAddError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
-  const [lastExerciseData, setLastExerciseData] = useState<Record<string, WorkoutDocType>>({});
+  const [lastExerciseData, setLastExerciseData] = useState<Record<string, ExerciseDocType[]>>({});
   const [selectedExerciseForModal, setSelectedExerciseForModal] = useState<string | null>(null);
 
   const [exercise, setExercise] = useState<ExerciseType>({
@@ -209,7 +234,11 @@ export default function Home() {
         const snapshot = await getDocs(q);
 
         const uniqueNames = Array.from(
-          new Set(snapshot.docs.map((item) => item.data().exerciseName).filter(Boolean))
+          new Set(
+            snapshot.docs
+              .map((item) => item.data().exerciseName || item.data().name)
+              .filter(Boolean)
+          )
         );
 
         setExistingExercises(uniqueNames);
@@ -227,7 +256,7 @@ export default function Home() {
       if (!user) return;
 
       const q = query(
-        collection(db, 'workouts'),
+        collection(db, 'exercises'),
         where('uid', '==', user.uid),
         where('exerciseName', '==', exerciseName)
       );
@@ -236,14 +265,15 @@ export default function Home() {
 
       if (!snapshot.empty) {
         const sorted = snapshot.docs
-          .map((item) => item.data() as WorkoutDocType)
+          .map((item) => item.data() as ExerciseDocType)
           .sort(
-            (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+            (a, b) =>
+              new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
           );
 
         setLastExerciseData((prev) => ({
           ...prev,
-          [exerciseName]: sorted[0],
+          [exerciseName]: sorted,
         }));
       }
     } catch (error) {
@@ -392,7 +422,43 @@ export default function Home() {
     return true;
   };
 
+  const buildExerciseRows = () => {
+    const rows: Array<{
+      exerciseName: string;
+      name: string;
+      sets: number;
+      reps: number;
+      weight: number;
+      createdAt: string;
+      updatedAt: string;
+      date: string;
+    }> = [];
+
+    const trimmedName = exercise.name.trim();
+    const setsCount = parseInt(exercise.numSets, 10);
+    const nowIso = new Date().toISOString();
+    const workoutDateIso = date.toISOString();
+
+    for (let i = 0; i < setsCount; i++) {
+      const currentSet = exercise.repsPerSet[i];
+
+      rows.push({
+        exerciseName: trimmedName,
+        name: trimmedName,
+        sets: i + 1,
+        reps: Number(currentSet.reps),
+        weight: Number(currentSet.weight),
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        date: workoutDateIso,
+      });
+    }
+
+    return rows;
+  };
+
   const handleAddPress = async () => {
+    console.log("SAVE SCREEN NEW CODE RUNNING");
     if (isSaving) return;
 
     if (!isExerciseValid(exercise)) {
@@ -411,31 +477,65 @@ export default function Home() {
       }
 
       const trimmedExerciseName = exercise.name.trim();
-      const dateKey = date.toLocaleDateString('he-IL');
+      const dateKey = formatDateForInput(date);
+      const nowIso = new Date().toISOString();
+      const workoutDateIso = date.toISOString();
 
-      await addDoc(collection(db, 'workouts'), {
+      const exerciseRows = buildExerciseRows();
+
+      const workoutPayload: WorkoutDocType = {
         uid: user.uid,
-        date: date.toISOString(),
+        title: trimmedExerciseName,
+        name: trimmedExerciseName,
+        date: workoutDateIso,
         dateKey,
-        exerciseName: trimmedExerciseName,
-        numSets: parseInt(exercise.numSets, 10),
-        repsPerSet: exercise.repsPerSet,
-        createdAt: new Date().toISOString(),
-      });
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        exercises: exerciseRows,
+      };
+
+      const workoutRef = await addDoc(collection(db, 'workouts'), workoutPayload);
+
+      await Promise.all(
+        exerciseRows.map((row) =>
+          addDoc(collection(db, 'exercises'), {
+            uid: user.uid,
+            workoutId: workoutRef.id,
+            exerciseName: row.exerciseName,
+            name: row.name,
+            sets: row.sets,
+            reps: row.reps,
+            weight: row.weight,
+            date: row.date,
+            createdAt: row.createdAt,
+            updatedAt: row.updatedAt,
+          })
+        )
+      );
 
       const alreadyExists = existingExercises.some(
         (name) => normalizeText(name) === normalizeText(trimmedExerciseName)
       );
 
       if (!alreadyExists) {
-        await addDoc(collection(db, 'exercises'), {
-          uid: user.uid,
-          exerciseName: trimmedExerciseName,
-          createdAt: new Date().toISOString(),
-        });
-
         setExistingExercises((prev) => [...new Set([...prev, trimmedExerciseName])]);
       }
+
+      setLastExerciseData((prev) => ({
+        ...prev,
+        [trimmedExerciseName]: exerciseRows.map((row) => ({
+          uid: user.uid,
+          workoutId: workoutRef.id,
+          exerciseName: row.exerciseName,
+          name: row.name,
+          sets: row.sets,
+          reps: row.reps,
+          weight: row.weight,
+          date: row.date,
+          createdAt: row.createdAt,
+          updatedAt: row.updatedAt,
+        })),
+      }));
 
       setExercise({
         name: '',
@@ -842,7 +942,7 @@ export default function Home() {
                 <CloseIcon size={24} color="#222222" />
               </Pressable>
 
-              {selectedLastExercise ? (
+              {selectedLastExercise && selectedLastExercise.length > 0 ? (
                 <>
                   <Text style={styles.modalTitle}>
                     הביצוע האחרון של{'\n'}
@@ -851,11 +951,11 @@ export default function Home() {
 
                   <View style={styles.modalDivider} />
 
-                  {Object.entries(selectedLastExercise.repsPerSet).map(([setKey, val]) => (
-                    <View key={setKey} style={styles.modalRow}>
-                      <Text style={styles.modalText}>סט {parseInt(setKey, 10) + 1}</Text>
-                      <Text style={styles.modalText}>{val.reps} חזרות</Text>
-                      <Text style={styles.modalText}>{val.weight} ק״ג</Text>
+                  {selectedLastExercise.map((item, index) => (
+                    <View key={`${item.sets}-${index}`} style={styles.modalRow}>
+                      <Text style={styles.modalText}>סט {item.sets}</Text>
+                      <Text style={styles.modalText}>{item.reps} חזרות</Text>
+                      <Text style={styles.modalText}>{item.weight} ק״ג</Text>
                     </View>
                   ))}
                 </>

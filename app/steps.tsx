@@ -38,6 +38,17 @@ const normalizeDateOnly = (date: Date) => {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 };
 
+const getExerciseDisplayName = (workout: any) => {
+  return (
+    String(
+      workout?.exerciseName ||
+        workout?.name ||
+        workout?.title ||
+        ''
+    ).trim() || 'תרגיל ללא שם'
+  );
+};
+
 export default function Steps() {
   const { width, height } = useWindowDimensions();
 
@@ -145,10 +156,19 @@ export default function Steps() {
         const snapshot = await getDocs(q);
 
         const workouts = snapshot.docs
-          .map((docSnap) => ({
-            id: docSnap.id,
-            ...docSnap.data(),
-          }))
+          .map((docSnap) => {
+            const data = docSnap.data();
+
+            return {
+              id: docSnap.id,
+              ...data,
+              exerciseName:
+                data.exerciseName ||
+                data.name ||
+                data.title ||
+                '',
+            };
+          })
           .sort((a: any, b: any) => {
             const aTime = parseWorkoutDate(a.date)?.getTime() || 0;
             const bTime = parseWorkoutDate(b.date)?.getTime() || 0;
@@ -527,7 +547,7 @@ export default function Steps() {
                                   minHeight: dynamic.inputHeight,
                                 },
                               ]}
-                              value={workout.exerciseName || ''}
+                              value={workout.exerciseName || workout.name || workout.title || ''}
                               onChangeText={(val) =>
                                 handleFieldChange(workout.id, 'exerciseName', val)
                               }
@@ -538,7 +558,7 @@ export default function Steps() {
                             />
                           ) : (
                             <Text style={[styles.cardTitle, { fontSize: dynamic.textSize + 1 }]}>
-                              {workout.exerciseName || 'תרגיל ללא שם'}
+                              {getExerciseDisplayName(workout)}
                             </Text>
                           )}
                         </View>
