@@ -246,12 +246,60 @@ function PhoneIcon({ size = 20, color = "#1E293B" }) {
 function WorkoutTrackingIcon({ size = 20, color = "#0F172A" }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Rect x="3" y="10" width="4" height="4" rx="1" fill={color} />
-      <Rect x="17" y="10" width="4" height="4" rx="1" fill={color} />
-      <Line x1="7" y1="12" x2="17" y2="12" stroke={color} strokeWidth={2.4} />
-      <Line x1="3" y1="8" x2="3" y2="16" stroke={color} strokeWidth={2.4} />
-      <Line x1="21" y1="8" x2="21" y2="16" stroke={color} strokeWidth={2.4} />
-      <Path d="M8 6h8" stroke={color} strokeWidth={2} strokeLinecap="round" />
+      <Rect
+        x="4"
+        y="5"
+        width="16"
+        height="15"
+        rx="2.5"
+        stroke={color}
+        strokeWidth={2}
+        fill="none"
+      />
+      <Line
+        x1="8"
+        y1="3.5"
+        x2="8"
+        y2="7"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+      />
+      <Line
+        x1="16"
+        y1="3.5"
+        x2="16"
+        y2="7"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+      />
+      <Line
+        x1="4"
+        y1="9"
+        x2="20"
+        y2="9"
+        stroke={color}
+        strokeWidth={2}
+      />
+      <Line
+        x1="8"
+        y1="13"
+        x2="11"
+        y2="13"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+      />
+      <Line
+        x1="8"
+        y1="16"
+        x2="14"
+        y2="16"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+      />
     </Svg>
   );
 }
@@ -338,6 +386,7 @@ export default function Menu() {
   const [clientsSectionOpen, setClientsSectionOpen] = useState(false);
   const [deleteClientsOpen, setDeleteClientsOpen] = useState(false);
   const [accessManagementOpen, setAccessManagementOpen] = useState(false);
+  const [trainingManagementOpen, setTrainingManagementOpen] = useState(false);
   const [clientWorkoutTrackingOpen, setClientWorkoutTrackingOpen] = useState(false);
   const [clientCardManagerOpen, setClientCardManagerOpen] = useState(false);
   const [accessInfoOpen, setAccessInfoOpen] = useState(false);
@@ -675,76 +724,76 @@ export default function Menu() {
                       </View>
                     </Pressable>
 
-                      {cardHistoryOpen && (
-                        <View style={styles.clientCardsInfoCard}>
-                          <View style={styles.clientCardsHeader}>
-                            <Text style={styles.clientCardsInfoTitle}>היסטוריית כרטיסיות</Text>
-                            <Text style={styles.clientCardsInfoSubtitle}>
-                              כאן אפשר לראות את מצב הכרטיסייה והמימושים שבוצעו
+                    {cardHistoryOpen && (
+                      <View style={styles.clientCardsInfoCard}>
+                        <View style={styles.clientCardsHeader}>
+                          <Text style={styles.clientCardsInfoTitle}>היסטוריית כרטיסיות</Text>
+                          <Text style={styles.clientCardsInfoSubtitle}>
+                            כאן אפשר לראות את מצב הכרטיסייה והמימושים שבוצעו
+                          </Text>
+                        </View>
+
+                        <View style={styles.clientCardsTopStatsRow}>
+                          <View style={styles.clientCardsMiniStatBox}>
+                            <Text style={styles.clientCardsMiniValue}>{cardsPurchased}</Text>
+                            <Text style={styles.clientCardsMiniLabel}>נרכשו</Text>
+                          </View>
+
+                          <View style={styles.clientCardsMiniStatBox}>
+                            <Text style={styles.clientCardsMiniValue}>{cardsUsed}</Text>
+                            <Text style={styles.clientCardsMiniLabel}>מומשו</Text>
+                          </View>
+
+                          <View style={styles.clientCardsMiniStatBox}>
+                            <Text style={styles.clientCardsMiniValue}>{cardsRemaining}</Text>
+                            <Text style={styles.clientCardsMiniLabel}>נותרו</Text>
+                          </View>
+                        </View>
+
+                        <View style={styles.clientCardsHighlightBox}>
+                          <View style={styles.clientCardsHighlightTextWrap}>
+                            <Text style={styles.clientCardsHighlightLabel}>מימוש אחרון</Text>
+                            <Text style={styles.clientCardsHighlightValue}>
+                              {lastCardUsage ? formatDateTimeIL(lastCardUsage) : "עדיין לא בוצע מימוש"}
+                            </Text>
+                          </View>
+                        </View>
+
+                        <View style={styles.cardUsageHistoryBox}>
+                          <View style={styles.cardUsageHistoryHeader}>
+                            <Text style={styles.cardUsageHistoryTitle}>רשימת מימושים</Text>
+                            <Text style={styles.cardUsageHistoryCount}>
+                              {cardUsageDates.length} מימושים
                             </Text>
                           </View>
 
-                          <View style={styles.clientCardsTopStatsRow}>
-                            <View style={styles.clientCardsMiniStatBox}>
-                              <Text style={styles.clientCardsMiniValue}>{cardsPurchased}</Text>
-                              <Text style={styles.clientCardsMiniLabel}>נרכשו</Text>
+                          {cardUsageDates.length === 0 ? (
+                            <View style={styles.emptyCardHistoryBox}>
+                              <Text style={styles.emptyCardHistoryText}>עדיין לא בוצעו מימושים</Text>
                             </View>
-
-                            <View style={styles.clientCardsMiniStatBox}>
-                              <Text style={styles.clientCardsMiniValue}>{cardsUsed}</Text>
-                              <Text style={styles.clientCardsMiniLabel}>מומשו</Text>
-                            </View>
-
-                            <View style={styles.clientCardsMiniStatBox}>
-                              <Text style={styles.clientCardsMiniValue}>{cardsRemaining}</Text>
-                              <Text style={styles.clientCardsMiniLabel}>נותרו</Text>
-                            </View>
-                          </View>
-
-                          <View style={styles.clientCardsHighlightBox}>
-                            <View style={styles.clientCardsHighlightTextWrap}>
-                              <Text style={styles.clientCardsHighlightLabel}>מימוש אחרון</Text>
-                              <Text style={styles.clientCardsHighlightValue}>
-                                {lastCardUsage ? formatDateTimeIL(lastCardUsage) : "עדיין לא בוצע מימוש"}
-                              </Text>
-                            </View>
-                          </View>
-
-                          <View style={styles.cardUsageHistoryBox}>
-                            <View style={styles.cardUsageHistoryHeader}>
-                              <Text style={styles.cardUsageHistoryTitle}>רשימת מימושים</Text>
-                              <Text style={styles.cardUsageHistoryCount}>
-                                {cardUsageDates.length} מימושים
-                              </Text>
-                            </View>
-
-                            {cardUsageDates.length === 0 ? (
-                              <View style={styles.emptyCardHistoryBox}>
-                                <Text style={styles.emptyCardHistoryText}>עדיין לא בוצעו מימושים</Text>
-                              </View>
-                            ) : (
-                              <View style={styles.cardUsageList}>
-                                {cardUsageDates.map((usageDate, index) => (
-                                  <View key={`${usageDate}-${index}`} style={styles.cardUsageRow}>
-                                    <View style={styles.cardUsageOrderBadge}>
-                                      <Text style={styles.cardUsageOrderBadgeText}>
-                                        {cardUsageDates.length - index}
-                                      </Text>
-                                    </View>
-
-                                    <View style={styles.cardUsageContent}>
-                                      <Text style={styles.cardUsageMainText}>מימוש כרטיסייה</Text>
-                                      <Text style={styles.cardUsageSubText}>
-                                        {formatDateTimeIL(usageDate)}
-                                      </Text>
-                                    </View>
+                          ) : (
+                            <View style={styles.cardUsageList}>
+                              {cardUsageDates.map((usageDate, index) => (
+                                <View key={`${usageDate}-${index}`} style={styles.cardUsageRow}>
+                                  <View style={styles.cardUsageOrderBadge}>
+                                    <Text style={styles.cardUsageOrderBadgeText}>
+                                      {cardUsageDates.length - index}
+                                    </Text>
                                   </View>
-                                ))}
-                              </View>
-                            )}
-                          </View>
+
+                                  <View style={styles.cardUsageContent}>
+                                    <Text style={styles.cardUsageMainText}>מימוש כרטיסייה</Text>
+                                    <Text style={styles.cardUsageSubText}>
+                                      {formatDateTimeIL(usageDate)}
+                                    </Text>
+                                  </View>
+                                </View>
+                              ))}
+                            </View>
+                          )}
                         </View>
-                      )}
+                      </View>
+                    )}
                   </View>
                 )}
 
@@ -959,16 +1008,48 @@ export default function Menu() {
                                 )}
                               </View>
                             )}
+                          </View>
+                        )}
 
+                        <Pressable
+                          style={({ pressed }) => [
+                            styles.adminSubButton,
+                            { minHeight: dynamic.buttonHeight - 2 },
+                            pressed && styles.pressedLight,
+                          ]}
+                          onPress={() => setTrainingManagementOpen((prev) => !prev)}
+                        >
+                          <View style={styles.buttonRow}>
+                            <View style={styles.leftSlot}>
+                              {trainingManagementOpen ? (
+                                <ArrowUpIcon size={20} color="#0F172A" />
+                              ) : (
+                                <ArrowDownIcon size={20} color="#0F172A" />
+                              )}
+                            </View>
+
+                            <View style={styles.centerContent}>
+                              <View style={styles.iconWrap}>
+                                <WorkoutTrackingIcon size={20} color="#0F172A" />
+                              </View>
+                              <Text style={styles.adminSubButtonText} numberOfLines={1}>
+                                ניהול אימונים וכרטיסיות
+                              </Text>
+                            </View>
+
+                            <View style={styles.rightSlot} />
+                          </View>
+                        </Pressable>
+
+                        {trainingManagementOpen && (
+                          <View style={styles.clientsBox}>
                             <Pressable
                               style={({ pressed }) => [
                                 styles.adminSubButton,
                                 { minHeight: dynamic.buttonHeight - 6 },
                                 pressed && styles.pressedLight,
                               ]}
-                              onPress={() =>
-                                setClientWorkoutTrackingOpen((prev) => !prev)
-                              }
+                              onPress={() => setClientWorkoutTrackingOpen((prev) => !prev)}
                             >
                               <View style={styles.buttonRow}>
                                 <View style={styles.leftSlot}>
@@ -1010,9 +1091,7 @@ export default function Menu() {
                                 { minHeight: dynamic.buttonHeight - 6 },
                                 pressed && styles.pressedLight,
                               ]}
-                              onPress={() =>
-                                setClientCardManagerOpen((prev) => !prev)
-                              }
+                              onPress={() => setClientCardManagerOpen((prev) => !prev)}
                             >
                               <View style={styles.buttonRow}>
                                 <View style={styles.leftSlot}>
@@ -1056,7 +1135,8 @@ export default function Menu() {
                     )}
                   </View>
                 )}
-                                <Pressable
+
+                <Pressable
                   style={({ pressed }) => [
                     styles.logoutButton,
                     { minHeight: dynamic.buttonHeight },
@@ -1178,6 +1258,7 @@ export default function Menu() {
     </SafeAreaView>
   );
 }
+
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -1582,6 +1663,7 @@ const styles = StyleSheet.create({
     borderColor: "#E2E8F0",
     padding: 12,
     width: "100%",
+    gap: 10,
   },
 
   adminSubButton: {
@@ -1604,7 +1686,6 @@ const styles = StyleSheet.create({
   },
 
   clientsBox: {
-    marginTop: 12,
     gap: 10,
   },
 
