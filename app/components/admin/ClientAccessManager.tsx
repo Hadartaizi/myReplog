@@ -15,6 +15,7 @@ import {
   onSnapshot,
   updateDoc,
   doc,
+  deleteDoc,
 } from 'firebase/firestore';
 import { db } from '../../../database/firebase';
 import {
@@ -22,12 +23,14 @@ import {
   getRemainingTimeLabel,
 } from './accessUtils';
 
+type ApprovalStatus = 'pending' | 'approved' | 'blocked';
+
 type ClientItem = {
   id: string;
   uid?: string;
   name?: string;
   email?: string;
-  approvalStatus?: 'pending' | 'approved' | 'blocked';
+  approvalStatus?: ApprovalStatus;
   accessStartAt?: string | null;
   accessEndAt?: string | null;
   role?: 'admin' | 'client';
@@ -39,9 +42,7 @@ type Props = {
 
 type SelectedAction = 'extend' | 'reduce' | 'unlimited' | 'toggleBlock';
 
-const normalizeStatus = (
-  status?: string | null
-): 'pending' | 'approved' | 'blocked' => {
+const normalizeStatus = (status?: string | null): ApprovalStatus => {
   const clean = String(status ?? '').trim().toLowerCase();
 
   if (clean === 'approved') return 'approved';
@@ -77,6 +78,27 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
     }
   };
 
+  const confirmAction = async (title: string, message: string) => {
+    if (Platform.OS === 'web') {
+      return window.confirm(`${title}\n\n${message}`);
+    }
+
+    return new Promise<boolean>((resolve) => {
+      Alert.alert(title, message, [
+        {
+          text: 'ביטול',
+          style: 'cancel',
+          onPress: () => resolve(false),
+        },
+        {
+          text: 'אישור',
+          style: 'destructive',
+          onPress: () => resolve(true),
+        },
+      ]);
+    });
+  };
+
   useEffect(() => {
     const unsubscribe = onSnapshot(
       collection(db, 'users'),
@@ -99,6 +121,13 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
           .filter(isClientLikeUser);
 
         setClients(nextClients);
+
+        setSelectedClientId((prev) => {
+          if (!prev) return prev;
+          const stillExists = nextClients.some((client) => client.id === prev);
+          return stillExists ? prev : null;
+        });
+
         setLoadingClients(false);
       },
       (error) => {
@@ -171,9 +200,42 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
     }
   };
 
+  const deletePendingClientById = async (clientId: string) => {
+    const confirmed = await confirmAction(
+      'מחיקת בקשה',
+      'האם את בטוחה שברצונך למחוק לגמרי את בקשת הלקוח? פעולה זו תמחק את מסמך המשתמש מ־Firestore.'
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setSavingId(clientId);
+
+      await deleteDoc(doc(db, 'users', clientId));
+
+      if (selectedClientId === clientId) {
+        setSelectedClientId(null);
+      }
+
+      await onAfterUpdate?.();
+
+      showMessage('הצלחה', 'בקשת הלקוח נמחקה לגמרי');
+    } catch (error) {
+      console.error('שגיאה במחיקת בקשת לקוח:', error);
+      showMessage('שגיאה', 'לא ניתן למחוק את בקשת הלקוח');
+    } finally {
+      setSavingId(null);
+    }
+  };
+
   const extendClient = async () => {
     if (!selectedClient) {
       showMessage('שגיאה', 'יש לבחור לקוח');
+      return;
+    }
+
+    if (selectedClient.approvalStatus === 'pending') {
+      showMessage('שגיאה', 'לא ניתן להאריך גישה ללקוח שעדיין ממתין לאישור');
       return;
     }
 
@@ -218,6 +280,11 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
   const reduceClient = async () => {
     if (!selectedClient) {
       showMessage('שגיאה', 'יש לבחור לקוח');
+      return;
+    }
+
+    if (selectedClient.approvalStatus === 'pending') {
+      showMessage('שגיאה', 'לא ניתן להפחית גישה ללקוח שעדיין ממתין לאישור');
       return;
     }
 
@@ -268,6 +335,11 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
       return;
     }
 
+    if (selectedClient.approvalStatus === 'pending') {
+      showMessage('שגיאה', 'לא ניתן להגדיר גישה לפני אישור הלקוח');
+      return;
+    }
+
     try {
       setSavingId(selectedClient.id);
 
@@ -291,6 +363,11 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
   const blockOrUnblockClient = async () => {
     if (!selectedClient) {
       showMessage('שגיאה', 'יש לבחור לקוח');
+      return;
+    }
+
+    if (selectedClient.approvalStatus === 'pending') {
+      showMessage('שגיאה', 'לא ניתן לחסום לקוח לפני אישור. ניתן למחוק את הבקשה מרשימת ההמתנה.');
       return;
     }
 
@@ -336,6 +413,11 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
       return;
     }
 
+    if (selectedClient.approvalStatus === 'pending') {
+      showMessage('שגיאה', 'על לקוח שממתין לאישור ניתן לפעול דרך רשימת ההמתנה בלבד');
+      return;
+    }
+
     if (selectedAction === 'extend') {
       await extendClient();
       return;
@@ -370,12 +452,14 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
   const renderEndDate = (client: ClientItem) => {
     if (!isHydrated) return '...';
     if (client.approvalStatus === 'blocked') return 'חסום עד לביטול';
+    if (client.approvalStatus === 'pending') return 'ממתין לאישור';
     return formatDateTimeIL(client.accessEndAt);
   };
 
   const renderRemainingTime = (client: ClientItem) => {
     if (!isHydrated) return '...';
     if (client.approvalStatus === 'blocked') return 'חסום';
+    if (client.approvalStatus === 'pending') return 'ממתין לאישור';
     return getRemainingTimeLabel(client.accessEndAt);
   };
 
@@ -384,7 +468,7 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
       <Text style={styles.sectionTitle}>אישור לקוחות והגדרת תקופת גישה</Text>
 
       <View style={styles.pendingBox}>
-        <Text style={styles.pendingTitle}>לקוחות שממתינות לאישור</Text>
+        <Text style={styles.pendingTitle}>לקוחות שממתינים לאישור</Text>
 
         {loadingClients ? (
           <View style={styles.emptyBox}>
@@ -409,21 +493,39 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
                   <Text style={styles.pendingStatusText}>סטטוס: ממתין לאישור</Text>
                 </View>
 
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.approvePendingButton,
-                    pressed && styles.pressed,
-                    isSaving && styles.disabled,
-                  ]}
-                  onPress={() => approveClientById(client.id)}
-                  disabled={isSaving}
-                >
-                  {isSaving ? (
-                    <ActivityIndicator color="#FFFFFF" />
-                  ) : (
-                    <Text style={styles.approvePendingButtonText}>אשר לקוח</Text>
-                  )}
-                </Pressable>
+                <View style={styles.pendingButtonsRow}>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.pendingDeleteButton,
+                      pressed && styles.pressed,
+                      isSaving && styles.disabled,
+                    ]}
+                    onPress={() => deletePendingClientById(client.id)}
+                    disabled={isSaving}
+                  >
+                    {isSaving ? (
+                      <ActivityIndicator color="#B91C1C" />
+                    ) : (
+                      <Text style={styles.pendingDeleteButtonText}>מחק בקשה</Text>
+                    )}
+                  </Pressable>
+
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.approvePendingButton,
+                      pressed && styles.pressed,
+                      isSaving && styles.disabled,
+                    ]}
+                    onPress={() => approveClientById(client.id)}
+                    disabled={isSaving}
+                  >
+                    {isSaving ? (
+                      <ActivityIndicator color="#FFFFFF" />
+                    ) : (
+                      <Text style={styles.approvePendingButtonText}>אשר לקוח</Text>
+                    )}
+                  </Pressable>
+                </View>
               </View>
             );
           })
@@ -493,6 +595,11 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
               <Text style={styles.selectedClientMeta}>
                 {selectedClient.email || 'ללא אימייל'}
               </Text>
+              {selectedClient.approvalStatus === 'pending' && (
+                <Text style={styles.pendingHintText}>
+                  לקוח זה עדיין ממתין לאישור. ניתן לאשר או למחוק את הבקשה מרשימת ההמתנה למעלה.
+                </Text>
+              )}
             </>
           ) : (
             <Text style={styles.selectedClientPlaceholder}>
@@ -511,7 +618,7 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
             onValueChange={(value) =>
               setSelectedAction(value as SelectedAction)
             }
-            enabled={!savingId}
+            enabled={!savingId && selectedClient?.approvalStatus !== 'pending'}
             style={styles.picker}
             itemStyle={styles.pickerItem}
           >
@@ -529,7 +636,7 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
           </Picker>
         </View>
 
-        {actionNeedsDays && (
+        {actionNeedsDays && selectedClient?.approvalStatus !== 'pending' && (
           <View style={styles.controlBox}>
             <Text style={styles.label}>מספר ימים</Text>
             <TextInput
@@ -548,15 +655,22 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
           style={({ pressed }) => [
             styles.mainActionButton,
             pressed && styles.pressed,
-            (!selectedClient || !!savingId) && styles.disabled,
+            (!selectedClient ||
+              !!savingId ||
+              selectedClient.approvalStatus === 'pending') &&
+              styles.disabled,
           ]}
           onPress={runSelectedAction}
-          disabled={!selectedClient || !!savingId}
+          disabled={
+            !selectedClient ||
+            !!savingId ||
+            selectedClient.approvalStatus === 'pending'
+          }
         >
           {savingId === selectedClient?.id ? (
             <ActivityIndicator color="#FFFFFF" />
           ) : (
-            <Text style={styles.mainActionButtonText}>בצעי פעולה</Text>
+            <Text style={styles.mainActionButtonText}>{selectedActionLabel}</Text>
           )}
         </Pressable>
       </View>
@@ -614,7 +728,13 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
 
+  pendingButtonsRow: {
+    flexDirection: 'row-reverse',
+    gap: 10,
+  },
+
   approvePendingButton: {
+    flex: 1,
     minHeight: 46,
     borderRadius: 14,
     backgroundColor: '#0F172A',
@@ -625,6 +745,24 @@ const styles = StyleSheet.create({
 
   approvePendingButtonText: {
     color: '#FFFFFF',
+    fontWeight: '800',
+    fontSize: 15,
+  },
+
+  pendingDeleteButton: {
+    flex: 1,
+    minHeight: 46,
+    borderRadius: 14,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+  },
+
+  pendingDeleteButtonText: {
+    color: '#B91C1C',
     fontWeight: '800',
     fontSize: 15,
   },
@@ -723,6 +861,14 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
 
+  pendingHintText: {
+    marginTop: 8,
+    fontSize: 13,
+    color: '#B45309',
+    fontWeight: '700',
+    textAlign: 'right',
+  },
+
   selectedClientPlaceholder: {
     fontSize: 14,
     color: '#64748B',
@@ -742,27 +888,27 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
 
-    pickerWrapper: {
+  pickerWrapper: {
     borderWidth: 1,
     borderColor: '#CBD5E1',
     borderRadius: 14,
     backgroundColor: '#F8FAFC',
     overflow: 'hidden',
-    },
+  },
 
-    picker: {
+  picker: {
     width: '100%',
     color: '#0F172A',
     backgroundColor: '#F8FAFC',
     fontSize: 18,
     textAlign: 'right',
     writingDirection: 'rtl',
-    },
+  },
 
-    pickerItem: {
+  pickerItem: {
     fontSize: 18,
     textAlign: 'right',
-    },
+  },
 
   controlBox: {
     backgroundColor: '#FFFFFF',

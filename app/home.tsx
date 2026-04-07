@@ -33,7 +33,7 @@ import AppLayout from './components/AppLayout';
 const APP_BG = '#F4F7FB';
 
 const normalizeText = (text: string) =>
-  text
+  String(text || '')
     .toLowerCase()
     .normalize('NFKD')
     .replace(/[֑-ׇ]/g, '')
@@ -63,6 +63,26 @@ const formatDateForInput = (value: Date) => {
   return `${year}-${month}-${day}`;
 };
 
+const parseDateSafe = (value: any): Date | null => {
+  if (!value) return null;
+
+  if (value?.toDate && typeof value.toDate === 'function') {
+    const date = value.toDate();
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+
+  if (typeof value === 'string') {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  return null;
+};
+
 type RepsPerSetType = {
   [key: string]: {
     reps: string;
@@ -79,6 +99,19 @@ type ExerciseType = {
   error: string;
 };
 
+type WorkoutDocType = {
+  uid: string;
+  title?: string;
+  name?: string;
+  exerciseName: string;
+  date: string;
+  dateKey: string;
+  createdAt: string;
+  updatedAt: string;
+  numSets: number;
+  repsPerSet: RepsPerSetType;
+};
+
 type ExerciseDocType = {
   uid: string;
   workoutId?: string;
@@ -92,26 +125,10 @@ type ExerciseDocType = {
   updatedAt?: string;
 };
 
-type WorkoutDocType = {
-  uid: string;
-  title: string;
-  name?: string;
-  date: string;
-  dateKey: string;
-  createdAt: string;
-  updatedAt: string;
-  note?: string;
-  notes?: string;
-  exercises: Array<{
-    exerciseName: string;
-    name: string;
-    sets: number;
-    reps: number;
-    weight: number;
-    createdAt: string;
-    updatedAt: string;
-    date: string;
-  }>;
+type LastExerciseRow = {
+  sets: number;
+  reps: string;
+  weight: string;
 };
 
 function SaveIcon({ size = 20, color = '#FFFFFF' }) {
@@ -204,7 +221,8 @@ export default function Home() {
   const [existingExercises, setExistingExercises] = useState<string[]>([]);
   const [addError, setAddError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
-  const [lastExerciseData, setLastExerciseData] = useState<Record<string, ExerciseDocType[]>>({});
+  const [isLoadingLastExercise, setIsLoadingLastExercise] = useState(false);
+  const [lastExerciseData, setLastExerciseData] = useState<Record<string, LastExerciseRow[]>>({});
   const [selectedExerciseForModal, setSelectedExerciseForModal] = useState<string | null>(null);
 
   const [exercise, setExercise] = useState<ExerciseType>({
@@ -230,13 +248,21 @@ export default function Home() {
           setUserName((data?.name || '').trim());
         }
 
-        const q = query(collection(db, 'exercises'), where('uid', '==', user.uid));
+        const q = query(collection(db, 'workouts'), where('uid', '==', user.uid));
         const snapshot = await getDocs(q);
 
         const uniqueNames = Array.from(
           new Set(
             snapshot.docs
-              .map((item) => item.data().exerciseName || item.data().name)
+              .map((item) => {
+                const data = item.data();
+                return String(
+                  data?.exerciseName ||
+                    data?.title ||
+                    data?.name ||
+                    ''
+                ).trim();
+              })
               .filter(Boolean)
           )
         );
@@ -250,34 +276,115 @@ export default function Home() {
     fetchUserData();
   }, []);
 
+  const buildRepsPerSetForWorkout = () => {
+    const result: RepsPerSetType = {};
+    const setsCount = parseInt(exercise.numSets, 10);
+
+    for (let i = 0; i < setsCount; i++) {
+      result[String(i)] = {
+        reps: exercise.repsPerSet[i]?.reps || '',
+        weight: exercise.repsPerSet[i]?.weight || '',
+      };
+    }
+
+    return result;
+  };
+
+  const buildExerciseRows = () => {
+    const rows: ExerciseDocType[] = [];
+    const trimmedName = exercise.name.trim();
+    const setsCount = parseInt(exercise.numSets, 10);
+    const nowIso = new Date().toISOString();
+    const workoutDateIso = date.toISOString();
+
+    for (let i = 0; i < setsCount; i++) {
+      const currentSet = exercise.repsPerSet[i];
+
+      rows.push({
+        uid: '',
+        exerciseName: trimmedName,
+        name: trimmedName,
+        sets: i + 1,
+        reps: Number(currentSet?.reps || 0),
+        weight: Number(currentSet?.weight || 0),
+        date: workoutDateIso,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      });
+    }
+
+    return rows;
+  };
+
   const fetchLastExercise = async (exerciseName: string) => {
     try {
       const user = auth.currentUser;
-      if (!user) return;
+      if (!user) return [];
 
-      const q = query(
-        collection(db, 'exercises'),
-        where('uid', '==', user.uid),
-        where('exerciseName', '==', exerciseName)
-      );
+      setIsLoadingLastExercise(true);
 
+      const q = query(collection(db, 'workouts'), where('uid', '==', user.uid));
       const snapshot = await getDocs(q);
 
-      if (!snapshot.empty) {
-        const sorted = snapshot.docs
-          .map((item) => item.data() as ExerciseDocType)
-          .sort(
-            (a, b) =>
-              new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
-          );
+      const normalizedTarget = normalizeText(exerciseName);
 
+      const matchingWorkouts = snapshot.docs
+        .map((docSnap) => {
+          const data = docSnap.data();
+          return { id: docSnap.id, ...data };
+        })
+        .filter((item: any) => {
+          const docName = item?.exerciseName || item?.title || item?.name || '';
+          return normalizeText(String(docName)) === normalizedTarget;
+        })
+        .sort((a: any, b: any) => {
+          const aTime =
+            parseDateSafe(a.updatedAt)?.getTime() ||
+            parseDateSafe(a.createdAt)?.getTime() ||
+            parseDateSafe(a.date)?.getTime() ||
+            0;
+
+          const bTime =
+            parseDateSafe(b.updatedAt)?.getTime() ||
+            parseDateSafe(b.createdAt)?.getTime() ||
+            parseDateSafe(b.date)?.getTime() ||
+            0;
+
+          return bTime - aTime;
+        });
+
+      if (matchingWorkouts.length === 0) {
         setLastExerciseData((prev) => ({
           ...prev,
-          [exerciseName]: sorted,
+          [exerciseName]: [],
         }));
+        return [];
       }
+
+      const latestWorkout: any = matchingWorkouts[0];
+      let rows: LastExerciseRow[] = [];
+
+      if (latestWorkout?.repsPerSet && typeof latestWorkout.repsPerSet === 'object') {
+        rows = Object.keys(latestWorkout.repsPerSet)
+          .sort((a, b) => Number(a) - Number(b))
+          .map((key) => ({
+            sets: Number(key) + 1,
+            reps: String(latestWorkout.repsPerSet[key]?.reps ?? ''),
+            weight: String(latestWorkout.repsPerSet[key]?.weight ?? ''),
+          }));
+      }
+
+      setLastExerciseData((prev) => ({
+        ...prev,
+        [exerciseName]: rows,
+      }));
+
+      return rows;
     } catch (error) {
       console.error('שגיאה בשליפת האימון האחרון:', error);
+      return [];
+    } finally {
+      setIsLoadingLastExercise(false);
     }
   };
 
@@ -403,8 +510,6 @@ export default function Home() {
       suggestions: [],
       showSuggestions: false,
     }));
-
-    await fetchLastExercise(suggestion);
   };
 
   const isExerciseValid = (ex: ExerciseType) => {
@@ -422,43 +527,7 @@ export default function Home() {
     return true;
   };
 
-  const buildExerciseRows = () => {
-    const rows: Array<{
-      exerciseName: string;
-      name: string;
-      sets: number;
-      reps: number;
-      weight: number;
-      createdAt: string;
-      updatedAt: string;
-      date: string;
-    }> = [];
-
-    const trimmedName = exercise.name.trim();
-    const setsCount = parseInt(exercise.numSets, 10);
-    const nowIso = new Date().toISOString();
-    const workoutDateIso = date.toISOString();
-
-    for (let i = 0; i < setsCount; i++) {
-      const currentSet = exercise.repsPerSet[i];
-
-      rows.push({
-        exerciseName: trimmedName,
-        name: trimmedName,
-        sets: i + 1,
-        reps: Number(currentSet.reps),
-        weight: Number(currentSet.weight),
-        createdAt: nowIso,
-        updatedAt: nowIso,
-        date: workoutDateIso,
-      });
-    }
-
-    return rows;
-  };
-
   const handleAddPress = async () => {
-    console.log("SAVE SCREEN NEW CODE RUNNING");
     if (isSaving) return;
 
     if (!isExerciseValid(exercise)) {
@@ -481,17 +550,20 @@ export default function Home() {
       const nowIso = new Date().toISOString();
       const workoutDateIso = date.toISOString();
 
+      const repsPerSetForWorkout = buildRepsPerSetForWorkout();
       const exerciseRows = buildExerciseRows();
 
       const workoutPayload: WorkoutDocType = {
         uid: user.uid,
         title: trimmedExerciseName,
         name: trimmedExerciseName,
+        exerciseName: trimmedExerciseName,
         date: workoutDateIso,
         dateKey,
         createdAt: nowIso,
         updatedAt: nowIso,
-        exercises: exerciseRows,
+        numSets: parseInt(exercise.numSets, 10),
+        repsPerSet: repsPerSetForWorkout,
       };
 
       const workoutRef = await addDoc(collection(db, 'workouts'), workoutPayload);
@@ -523,18 +595,13 @@ export default function Home() {
 
       setLastExerciseData((prev) => ({
         ...prev,
-        [trimmedExerciseName]: exerciseRows.map((row) => ({
-          uid: user.uid,
-          workoutId: workoutRef.id,
-          exerciseName: row.exerciseName,
-          name: row.name,
-          sets: row.sets,
-          reps: row.reps,
-          weight: row.weight,
-          date: row.date,
-          createdAt: row.createdAt,
-          updatedAt: row.updatedAt,
-        })),
+        [trimmedExerciseName]: Object.keys(repsPerSetForWorkout)
+          .sort((a, b) => Number(a) - Number(b))
+          .map((key) => ({
+            sets: Number(key) + 1,
+            reps: repsPerSetForWorkout[key].reps,
+            weight: repsPerSetForWorkout[key].weight,
+          })),
       }));
 
       setExercise({
@@ -713,16 +780,25 @@ export default function Home() {
                       editable={!isSaving}
                     />
 
-                    {exercise.name.trim() !== '' && lastExerciseData[exercise.name] && (
+                    {exercise.name.trim() !== '' && (
                       <Pressable
                         style={[
                           styles.iconButton,
                           { minHeight: dynamic.inputHeight },
                           isVerySmall && styles.fullWidthButtonOnSmall,
                         ]}
-                        onPress={() => setSelectedExerciseForModal(exercise.name)}
+                        onPress={async () => {
+                          const trimmedName = exercise.name.trim();
+                          await fetchLastExercise(trimmedName);
+                          setSelectedExerciseForModal(trimmedName);
+                        }}
+                        disabled={isLoadingLastExercise}
                       >
-                        <DumbbellIcon size={26} color="#FFFFFF" />
+                        {isLoadingLastExercise ? (
+                          <ActivityIndicator color="#FFFFFF" />
+                        ) : (
+                          <DumbbellIcon size={26} color="#FFFFFF" />
+                        )}
                       </Pressable>
                     )}
                   </View>
@@ -960,7 +1036,14 @@ export default function Home() {
                   ))}
                 </>
               ) : (
-                <Text style={styles.modalText}>אין מידע זמין</Text>
+                <>
+                  <Text style={styles.modalTitle}>
+                    הביצוע האחרון של{'\n'}
+                    {selectedExerciseForModal}
+                  </Text>
+                  <View style={styles.modalDivider} />
+                  <Text style={styles.modalText}>אין מידע זמין</Text>
+                </>
               )}
             </View>
           </View>

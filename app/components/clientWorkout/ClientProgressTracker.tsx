@@ -6,12 +6,21 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
+  TextInput,
   useWindowDimensions,
   View,
 } from "react-native";
 import Svg, { Circle, Line, Path, Rect } from "react-native-svg";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  getDocs,
+  query,
+  updateDoc,
+  where,
+} from "firebase/firestore";
 import { db } from "../../../database/firebase";
 
 type ClientItem = {
@@ -20,6 +29,7 @@ type ClientItem = {
   name?: string;
   email?: string;
   role?: "admin" | "client";
+  showInTracker?: boolean;
 };
 
 type WorkoutItem = {
@@ -36,7 +46,10 @@ type WorkoutItem = {
   exercises?: any[];
   exerciseName?: string;
   numSets?: number | string;
-  repsPerSet?: Record<string, { reps?: string | number; weight?: string | number }>;
+  repsPerSet?: Record<
+    string,
+    { reps?: string | number; weight?: string | number }
+  >;
   [key: string]: any;
 };
 
@@ -111,7 +124,14 @@ function UsersIcon({ size = 18, color = "#0F172A" }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
       <Circle cx="9" cy="9" r="3" stroke={color} strokeWidth={2} fill="none" />
-      <Circle cx="16.5" cy="10" r="2.5" stroke={color} strokeWidth={2} fill="none" />
+      <Circle
+        cx="16.5"
+        cy="10"
+        r="2.5"
+        stroke={color}
+        strokeWidth={2}
+        fill="none"
+      />
       <Path
         d="M3.5 18a5.5 5.5 0 0111 0"
         stroke={color}
@@ -138,6 +158,34 @@ function WorkoutIcon({ size = 18, color = "#0F172A" }) {
       <Line x1="7" y1="12" x2="17" y2="12" stroke={color} strokeWidth={2.4} />
       <Line x1="3" y1="8" x2="3" y2="16" stroke={color} strokeWidth={2.4} />
       <Line x1="21" y1="8" x2="21" y2="16" stroke={color} strokeWidth={2.4} />
+    </Svg>
+  );
+}
+
+function SearchIcon({ size = 18, color = "#64748B" }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Circle cx="11" cy="11" r="6.5" stroke={color} strokeWidth={2} fill="none" />
+      <Line
+        x1="16"
+        y1="16"
+        x2="21"
+        y2="21"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+      />
+    </Svg>
+  );
+}
+
+function StarIcon({ size = 16, color = "#FFFFFF" }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M12 3.8l2.3 4.67 5.15.75-3.72 3.63.88 5.13L12 15.54 7.39 18l.88-5.13L4.55 9.22l5.15-.75L12 3.8z"
+        fill={color}
+      />
     </Svg>
   );
 }
@@ -257,6 +305,10 @@ function getLatestTimeFromItems(values: any[]): number {
   }, 0);
 }
 
+function normalizeText(value: string): string {
+  return String(value || "").trim().toLowerCase();
+}
+
 function normalizeRepsPerSetToRows(params: {
   baseId: string;
   uid?: string;
@@ -265,7 +317,10 @@ function normalizeRepsPerSetToRows(params: {
   date?: any;
   createdAt?: any;
   updatedAt?: any;
-  repsPerSet?: Record<string, { reps?: string | number; weight?: string | number }>;
+  repsPerSet?: Record<
+    string,
+    { reps?: string | number; weight?: string | number }
+  >;
   numSets?: number | string;
   sourceType: "embedded_exercise" | "legacy_workout";
 }): ExerciseItem[] {
@@ -426,7 +481,9 @@ function mergeExercises(
 
   const workoutIdsWithEmbeddedExercises = new Set(
     workouts
-      .filter((workout) => Array.isArray(workout.exercises) && workout.exercises.length > 0)
+      .filter(
+        (workout) => Array.isArray(workout.exercises) && workout.exercises.length > 0
+      )
       .map((workout) => workout.id)
   );
 
@@ -496,10 +553,7 @@ function groupExercisesByWorkout(
   return grouped;
 }
 
-function buildDayGroups(
-  workouts: WorkoutItem[],
-  exercises: ExerciseItem[]
-): DayGroup[] {
+function buildDayGroups(workouts: WorkoutItem[], exercises: ExerciseItem[]): DayGroup[] {
   const map: Record<string, DayGroup> = {};
   const exercisesByWorkout = groupExercisesByWorkout(workouts, exercises);
 
@@ -570,8 +624,7 @@ function buildDayGroups(
 
       const currentLatest = getDateFromAny(group.latestCreatedAt)?.getTime() || 0;
       if (exerciseLatest > currentLatest) {
-        group.latestCreatedAt =
-          exercise.createdAt || exercise.updatedAt || exercise.date;
+        group.latestCreatedAt = exercise.createdAt || exercise.updatedAt || exercise.date;
       }
     });
 
@@ -711,15 +764,28 @@ export default function ClientProgressTracker({ clients: initialClients = [] }: 
     initialClients[0] || null
   );
   const [loadingData, setLoadingData] = useState(false);
+  const [savingTrackerFlag, setSavingTrackerFlag] = useState(false);
   const [workouts, setWorkouts] = useState<WorkoutItem[]>([]);
   const [exercises, setExercises] = useState<ExerciseItem[]>([]);
   const [openDayIds, setOpenDayIds] = useState<Record<string, boolean>>({});
   const [openExerciseIds, setOpenExerciseIds] = useState<Record<string, boolean>>({});
+  const [searchText, setSearchText] = useState("");
 
   const loadClients = useCallback(async () => {
     if (initialClients.length > 0) {
-      setClients(initialClients);
-      setSelectedClient((prev) => prev || initialClients[0] || null);
+      const normalizedInitial = [...initialClients].sort((a, b) =>
+        (a.name || "").localeCompare(b.name || "", "he")
+      );
+
+      setClients(normalizedInitial);
+      setSelectedClient((prev) => {
+        if (prev) {
+          const freshSelected =
+            normalizedInitial.find((c) => c.id === prev.id) || prev;
+          return freshSelected;
+        }
+        return normalizedInitial[0] || null;
+      });
       setLoadingClients(false);
       return;
     }
@@ -738,7 +804,13 @@ export default function ClientProgressTracker({ clients: initialClients = [] }: 
         .sort((a, b) => (a.name || "").localeCompare(b.name || "", "he"));
 
       setClients(list);
-      setSelectedClient((prev) => prev || list[0] || null);
+      setSelectedClient((prev) => {
+        if (prev) {
+          const freshSelected = list.find((c) => c.id === prev.id) || prev;
+          return freshSelected;
+        }
+        return list.find((c) => !!c.showInTracker) || list[0] || null;
+      });
     } catch (error) {
       console.error("שגיאה בטעינת לקוחות:", error);
       Alert.alert("שגיאה", "לא ניתן לטעון את רשימת הלקוחות");
@@ -751,6 +823,13 @@ export default function ClientProgressTracker({ clients: initialClients = [] }: 
     if (!client) {
       setWorkouts([]);
       setExercises([]);
+      return;
+    }
+
+    if (!client.showInTracker) {
+      setWorkouts([]);
+      setExercises([]);
+      setLoadingData(false);
       return;
     }
 
@@ -802,6 +881,24 @@ export default function ClientProgressTracker({ clients: initialClients = [] }: 
     loadClientData(selectedClient);
   }, [selectedClient, loadClientData]);
 
+  const trackedClients = useMemo(
+    () => clients.filter((client) => !!client.showInTracker),
+    [clients]
+  );
+
+  const visibleClients = useMemo(() => {
+    const term = normalizeText(searchText);
+
+    if (!term) {
+      return trackedClients;
+    }
+
+    return clients.filter((client) => {
+      const name = normalizeText(client.name || "");
+      return name.startsWith(term);
+    });
+  }, [clients, trackedClients, searchText]);
+
   const dayGroups = useMemo(() => buildDayGroups(workouts, exercises), [workouts, exercises]);
 
   const summary = useMemo(() => {
@@ -852,6 +949,49 @@ export default function ClientProgressTracker({ clients: initialClients = [] }: 
     }));
   };
 
+  const toggleClientTrackerFlag = useCallback(async () => {
+    if (!selectedClient) return;
+
+    const nextValue = !selectedClient.showInTracker;
+
+    try {
+      setSavingTrackerFlag(true);
+
+      await updateDoc(doc(db, "users", selectedClient.id), {
+        showInTracker: nextValue,
+      });
+
+      setClients((prev) =>
+        prev.map((client) =>
+          client.id === selectedClient.id
+            ? { ...client, showInTracker: nextValue }
+            : client
+        )
+      );
+
+      setSelectedClient((prev) =>
+        prev ? { ...prev, showInTracker: nextValue } : prev
+      );
+
+      if (!nextValue) {
+        setWorkouts([]);
+        setExercises([]);
+      }
+
+      Alert.alert(
+        "עודכן בהצלחה",
+        nextValue
+          ? "הלקוח נוסף למעקב וכל האימונים שלו יוצגו."
+          : "הלקוח הוסר מהמעקב והאימונים שלו לא יוצגו עד שתפעילי שוב."
+      );
+    } catch (error) {
+      console.error("שגיאה בעדכון מעקב לקוח:", error);
+      Alert.alert("שגיאה", "לא ניתן לעדכן את הגדרת המעקב עבור הלקוח");
+    } finally {
+      setSavingTrackerFlag(false);
+    }
+  }, [selectedClient]);
+
   if (loadingClients) {
     return (
       <View style={styles.loadingBox}>
@@ -867,12 +1007,32 @@ export default function ClientProgressTracker({ clients: initialClients = [] }: 
         <View style={styles.headerTitleRow}>
           <UsersIcon size={18} color="#0F172A" />
           <Text style={[styles.headerTitle, { fontSize: dynamic.titleSize }]}>
-            מעקב לקוח
+            מעקב לקוחות
           </Text>
         </View>
 
         <Text style={[styles.headerSubtitle, { fontSize: dynamic.subTextSize }]}>
-          כל ההזנות של אותו יום נחשבות כאימון אחד
+          חיפוש לפי תחילת שם. בלי חיפוש יוצגו רק לקוחות שסומנו למעקב.
+        </Text>
+      </View>
+
+      <View style={styles.searchCard}>
+        <View style={styles.searchInputWrap}>
+          <SearchIcon size={18} color="#64748B" />
+          <TextInput
+            value={searchText}
+            onChangeText={setSearchText}
+            placeholder="חפשי לפי תחילת שם הלקוח..."
+            placeholderTextColor="#94A3B8"
+            style={styles.searchInput}
+            textAlign="right"
+          />
+        </View>
+
+        <Text style={styles.searchInfoText}>
+          {searchText.trim()
+            ? `נמצאו ${visibleClients.length} לקוחות לפי החיפוש`
+            : `לקוחות במעקב: ${trackedClients.length}`}
         </Text>
       </View>
 
@@ -882,260 +1042,316 @@ export default function ClientProgressTracker({ clients: initialClients = [] }: 
         </View>
       ) : (
         <>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.clientsScrollContent}
-          >
-            {clients.map((client) => {
-              const isSelected =
-                (selectedClient?.uid || selectedClient?.id) === (client.uid || client.id);
-
-              return (
-                <Pressable
-                  key={client.id}
-                  onPress={() => setSelectedClient(client)}
-                  style={({ pressed }) => [
-                    styles.clientPill,
-                    { minHeight: dynamic.pillHeight },
-                    isSelected && styles.clientPillActive,
-                    pressed && styles.pressed,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.clientPillName,
-                      { fontSize: dynamic.textSize },
-                      isSelected && styles.clientPillNameActive,
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {client.name || "ללא שם"}
-                  </Text>
-
-                  <Text
-                    style={[
-                      styles.clientPillEmail,
-                      { fontSize: dynamic.subTextSize },
-                      isSelected && styles.clientPillEmailActive,
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {client.email || "ללא אימייל"}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-
-          {selectedClient && (
-            <View style={styles.selectedClientCard}>
-              <Text style={styles.selectedClientTitle}>
-                {selectedClient.name || "ללא שם"}
-              </Text>
-              <Text style={styles.selectedClientEmail}>
-                {selectedClient.email || "ללא אימייל"}
+          {visibleClients.length === 0 ? (
+            <View style={styles.emptyBox}>
+              <Text style={styles.emptyText}>
+                {searchText.trim()
+                  ? "לא נמצאו לקוחות שמתחילים באותיות האלו"
+                  : "עדיין לא סומנו לקוחות למעקב"}
               </Text>
             </View>
+          ) : (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.clientsScrollContent}
+            >
+              {visibleClients.map((client) => {
+                const isSelected =
+                  (selectedClient?.uid || selectedClient?.id) === (client.uid || client.id);
+
+                return (
+                  <Pressable
+                    key={client.id}
+                    onPress={() => setSelectedClient(client)}
+                    style={({ pressed }) => [
+                      styles.clientPill,
+                      { minHeight: dynamic.pillHeight },
+                      isSelected && styles.clientPillActive,
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <View style={styles.clientPillTopRow}>
+                      {!!client.showInTracker && (
+                        <View style={styles.trackedBadge}>
+                          <StarIcon size={12} color="#FFFFFF" />
+                          <Text style={styles.trackedBadgeText}>במעקב</Text>
+                        </View>
+                      )}
+                    </View>
+
+                    <Text
+                      style={[
+                        styles.clientPillName,
+                        { fontSize: dynamic.textSize },
+                        isSelected && styles.clientPillNameActive,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {client.name || "ללא שם"}
+                    </Text>
+
+                    <Text
+                      style={[
+                        styles.clientPillEmail,
+                        { fontSize: dynamic.subTextSize },
+                        isSelected && styles.clientPillEmailActive,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {client.email || "ללא אימייל"}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
           )}
 
-          {loadingData ? (
+            {selectedClient && (
+            <View style={styles.selectedClientCard}>
+                <View style={styles.selectedClientTopRow}>
+                <View style={styles.selectedClientTextWrap}>
+                    <Text style={styles.selectedClientTitle}>
+                    {selectedClient.name || "ללא שם"}
+                    </Text>
+                    <Text style={styles.selectedClientEmail}>
+                    {selectedClient.email || "ללא אימייל"}
+                    </Text>
+                </View>
+
+                <View style={styles.switchBlock}>
+                    <Text style={styles.switchLabel}>
+                    {savingTrackerFlag
+                        ? "שומר..."
+                        : selectedClient.showInTracker
+                        ? "במעקב"
+                        : "לא במעקב"}
+                    </Text>
+
+                    <Switch
+                    value={!!selectedClient.showInTracker}
+                    onValueChange={toggleClientTrackerFlag}
+                    disabled={savingTrackerFlag}
+                    trackColor={{ false: "#CBD5E1", true: "#0F172A" }}
+                    thumbColor={"#FFFFFF"}
+                    />
+                </View>
+                </View>
+
+                <Text style={styles.selectedClientStatusText}>
+                {selectedClient.showInTracker
+                    ? "הלקוח מסומן למעקב וכל האימונים שלו מוצגים."
+                    : "הלקוח לא מסומן למעקב כרגע."}
+                </Text>
+            </View>
+            )}
+
+          {selectedClient && !selectedClient.showInTracker ? (
+            <View style={styles.emptyBox}>
+              <Text style={styles.emptyText}>
+                הלקוח הזה לא מסומן למעקב. לחצי על "הוסף למעקב" כדי להציג את כל האימונים שלו.
+              </Text>
+            </View>
+          ) : loadingData ? (
             <View style={styles.loadingBox}>
               <ActivityIndicator size="large" color="#0F172A" />
               <Text style={styles.loadingText}>טוען נתוני לקוח...</Text>
             </View>
           ) : (
-            <>
-              <View style={styles.summaryGrid}>
-                <View style={[styles.summaryCard, { padding: dynamic.cardPadding }]}>
-                  <Text style={styles.summaryValue}>{summary.totalWorkouts}</Text>
-                  <Text style={styles.summaryLabel}>סה״כ אימונים</Text>
-                </View>
-
-                <View style={[styles.summaryCard, { padding: dynamic.cardPadding }]}>
-                  <Text style={styles.summaryValue}>{summary.totalExercises}</Text>
-                  <Text style={styles.summaryLabel}>סה״כ תרגילים</Text>
-                </View>
-
-                <View style={[styles.summaryCard, { padding: dynamic.cardPadding }]}>
-                  <Text style={styles.summaryValue}>{summary.workoutsThisMonth}</Text>
-                  <Text style={styles.summaryLabel}>אימונים החודש</Text>
-                </View>
-
-                <View style={[styles.summaryCard, { padding: dynamic.cardPadding }]}>
-                  <Text style={styles.summaryValue}>{summary.latestWorkoutLabel}</Text>
-                  <Text style={styles.summaryLabel}>אימון אחרון</Text>
-                </View>
-              </View>
-
-              <View style={styles.section}>
-                <View style={styles.sectionHeader}>
-                  <WorkoutIcon size={18} color="#0F172A" />
-                  <Text style={styles.sectionTitle}>כל האימונים וההזנות</Text>
-                </View>
-
-                {dayGroups.length === 0 ? (
-                  <View style={styles.emptyBox}>
-                    <Text style={styles.emptyText}>אין אימונים להצגה</Text>
+            selectedClient && (
+              <>
+                <View style={styles.summaryGrid}>
+                  <View style={[styles.summaryCard, { padding: dynamic.cardPadding }]}>
+                    <Text style={styles.summaryValue}>{summary.totalWorkouts}</Text>
+                    <Text style={styles.summaryLabel}>סה״כ אימונים</Text>
                   </View>
-                ) : (
-                  dayGroups.map((group) => {
-                    const isOpen = !!openDayIds[group.dayKey];
-                    const groupedExercises = groupExercisesInsideDay(
-                      group.exercises,
-                      group.dayKey
-                    );
 
-                    return (
-                      <View key={group.dayKey} style={styles.workoutCard}>
-                        <Pressable
-                          onPress={() => toggleDay(group.dayKey)}
-                          style={({ pressed }) => [
-                            styles.workoutHeaderButton,
-                            pressed && styles.pressed,
-                          ]}
-                        >
-                          <View style={styles.workoutHeaderRow}>
-                            <View style={styles.workoutHeaderArrow}>
-                              {isOpen ? (
-                                <ArrowUpIcon size={20} color="#1E293B" />
+                  <View style={[styles.summaryCard, { padding: dynamic.cardPadding }]}>
+                    <Text style={styles.summaryValue}>{summary.totalExercises}</Text>
+                    <Text style={styles.summaryLabel}>סה״כ תרגילים</Text>
+                  </View>
+
+                  <View style={[styles.summaryCard, { padding: dynamic.cardPadding }]}>
+                    <Text style={styles.summaryValue}>{summary.workoutsThisMonth}</Text>
+                    <Text style={styles.summaryLabel}>אימונים החודש</Text>
+                  </View>
+
+                  <View style={[styles.summaryCard, { padding: dynamic.cardPadding }]}>
+                    <Text style={styles.summaryValue}>{summary.latestWorkoutLabel}</Text>
+                    <Text style={styles.summaryLabel}>אימון אחרון</Text>
+                  </View>
+                </View>
+
+                <View style={styles.section}>
+                  <View style={styles.sectionHeader}>
+                    <WorkoutIcon size={18} color="#0F172A" />
+                    <Text style={styles.sectionTitle}>כל האימונים וההזנות</Text>
+                  </View>
+
+                  {dayGroups.length === 0 ? (
+                    <View style={styles.emptyBox}>
+                      <Text style={styles.emptyText}>אין אימונים להצגה</Text>
+                    </View>
+                  ) : (
+                    dayGroups.map((group) => {
+                      const isOpen = !!openDayIds[group.dayKey];
+                      const groupedExercises = groupExercisesInsideDay(
+                        group.exercises,
+                        group.dayKey
+                      );
+
+                      return (
+                        <View key={group.dayKey} style={styles.workoutCard}>
+                          <Pressable
+                            onPress={() => toggleDay(group.dayKey)}
+                            style={({ pressed }) => [
+                              styles.workoutHeaderButton,
+                              pressed && styles.pressed,
+                            ]}
+                          >
+                            <View style={styles.workoutHeaderRow}>
+                              <View style={styles.workoutHeaderArrow}>
+                                {isOpen ? (
+                                  <ArrowUpIcon size={20} color="#1E293B" />
+                                ) : (
+                                  <ArrowDownIcon size={20} color="#1E293B" />
+                                )}
+                              </View>
+
+                              <View style={styles.workoutHeaderTextBox}>
+                                <Text style={styles.workoutTitle}>
+                                  אימון מתאריך {group.displayDate}
+                                </Text>
+
+                                <Text style={styles.workoutMeta}>
+                                  {groupedExercises.length} תרגילים
+                                </Text>
+
+                                <Text style={styles.workoutMeta}>
+                                  הוזן למערכת: {formatDateTimeIL(group.latestCreatedAt)}
+                                </Text>
+                              </View>
+                            </View>
+                          </Pressable>
+
+                          {isOpen && (
+                            <View style={styles.workoutBody}>
+                              {group.notes.length > 0 && (
+                                <View style={styles.noteBox}>
+                                  <Text style={styles.noteTitle}>הערות לאימון</Text>
+                                  {group.notes.map((note, index) => (
+                                    <Text
+                                      key={`${group.dayKey}-note-${index}`}
+                                      style={styles.noteText}
+                                    >
+                                      {note}
+                                    </Text>
+                                  ))}
+                                </View>
+                              )}
+
+                              {groupedExercises.length === 0 ? (
+                                <View style={styles.emptyInnerBox}>
+                                  <Text style={styles.emptyText}>
+                                    לא נמצאו תרגילים לאותו יום
+                                  </Text>
+                                </View>
                               ) : (
-                                <ArrowDownIcon size={20} color="#1E293B" />
+                                groupedExercises.map((exerciseGroup) => {
+                                  const isExerciseOpen = !!openExerciseIds[exerciseGroup.key];
+
+                                  return (
+                                    <View key={exerciseGroup.key} style={styles.exerciseCard}>
+                                      <Pressable
+                                        onPress={() => toggleExercise(exerciseGroup.key)}
+                                        style={({ pressed }) => [
+                                          styles.exerciseHeaderButton,
+                                          pressed && styles.pressed,
+                                        ]}
+                                      >
+                                        <View style={styles.exerciseHeaderRow}>
+                                          <View style={styles.workoutHeaderArrow}>
+                                            {isExerciseOpen ? (
+                                              <ArrowUpIcon size={18} color="#1E293B" />
+                                            ) : (
+                                              <ArrowDownIcon size={18} color="#1E293B" />
+                                            )}
+                                          </View>
+
+                                          <View style={styles.exerciseHeaderTextBox}>
+                                            <Text style={styles.exerciseName}>
+                                              {exerciseGroup.name}
+                                            </Text>
+
+                                            <Text style={styles.exerciseTapHint}>
+                                              לחצי לצפייה בסטים, חזרות ומשקל
+                                            </Text>
+                                          </View>
+                                        </View>
+                                      </Pressable>
+
+                                      {isExerciseOpen && (
+                                        <View style={styles.exerciseDetailsBox}>
+                                          {exerciseGroup.rows.map((row, rowIndex) => {
+                                            const setNumber = getNumericValue(row.sets);
+                                            const repsValue = getNumericValue(row.reps);
+                                            const weightValue = getNumericValue(row.weight);
+
+                                            return (
+                                              <View
+                                                key={
+                                                  row.id ||
+                                                  `${exerciseGroup.key}-row-${rowIndex}`
+                                                }
+                                                style={styles.setRow}
+                                              >
+                                                <Text style={styles.setRowText}>
+                                                  {setNumber !== null
+                                                    ? `סט ${setNumber}`
+                                                    : `סט ${rowIndex + 1}`}
+                                                </Text>
+
+                                                <Text style={styles.setRowText}>
+                                                  {repsValue !== null
+                                                    ? `חזרות: ${repsValue}`
+                                                    : "חזרות: לא הוזן"}
+                                                </Text>
+
+                                                <Text style={styles.setRowText}>
+                                                  {weightValue !== null
+                                                    ? `משקל: ${weightValue}`
+                                                    : "משקל: לא הוזן"}
+                                                </Text>
+                                              </View>
+                                            );
+                                          })}
+
+                                          <Text style={styles.exerciseDate}>
+                                            תאריך תרגיל:{" "}
+                                            {formatDateIL(
+                                              exerciseGroup.rows[0]?.date || group.sortTime
+                                            )}
+                                          </Text>
+
+                                          <Text style={styles.exerciseDate}>
+                                            הוזן למערכת:{" "}
+                                            {formatDateTimeIL(exerciseGroup.latestCreatedAt)}
+                                          </Text>
+                                        </View>
+                                      )}
+                                    </View>
+                                  );
+                                })
                               )}
                             </View>
-
-                            <View style={styles.workoutHeaderTextBox}>
-                              <Text style={styles.workoutTitle}>
-                                אימון מתאריך {group.displayDate}
-                              </Text>
-
-                              <Text style={styles.workoutMeta}>
-                                {groupedExercises.length} תרגילים
-                              </Text>
-
-                              <Text style={styles.workoutMeta}>
-                                {group.workouts.length} רשומות אימון באותו היום
-                              </Text>
-
-                              <Text style={styles.workoutMeta}>
-                                הוזן למערכת: {formatDateTimeIL(group.latestCreatedAt)}
-                              </Text>
-                            </View>
-                          </View>
-                        </Pressable>
-
-                        {isOpen && (
-                          <View style={styles.workoutBody}>
-                            {group.notes.length > 0 && (
-                              <View style={styles.noteBox}>
-                                <Text style={styles.noteTitle}>הערות לאימון</Text>
-                                {group.notes.map((note, index) => (
-                                  <Text
-                                    key={`${group.dayKey}-note-${index}`}
-                                    style={styles.noteText}
-                                  >
-                                    {note}
-                                  </Text>
-                                ))}
-                              </View>
-                            )}
-
-                            {groupedExercises.length === 0 ? (
-                              <View style={styles.emptyInnerBox}>
-                                <Text style={styles.emptyText}>לא נמצאו תרגילים לאותו יום</Text>
-                              </View>
-                            ) : (
-                              groupedExercises.map((exerciseGroup) => {
-                                const isExerciseOpen = !!openExerciseIds[exerciseGroup.key];
-
-                                return (
-                                  <View key={exerciseGroup.key} style={styles.exerciseCard}>
-                                    <Pressable
-                                      onPress={() => toggleExercise(exerciseGroup.key)}
-                                      style={({ pressed }) => [
-                                        styles.exerciseHeaderButton,
-                                        pressed && styles.pressed,
-                                      ]}
-                                    >
-                                      <View style={styles.exerciseHeaderRow}>
-                                        <View style={styles.workoutHeaderArrow}>
-                                          {isExerciseOpen ? (
-                                            <ArrowUpIcon size={18} color="#1E293B" />
-                                          ) : (
-                                            <ArrowDownIcon size={18} color="#1E293B" />
-                                          )}
-                                        </View>
-
-                                        <View style={styles.exerciseHeaderTextBox}>
-                                          <Text style={styles.exerciseName}>
-                                            {exerciseGroup.name}
-                                          </Text>
-
-                                          <Text style={styles.exerciseTapHint}>
-                                            לחצי לצפייה בסטים, חזרות ומשקל
-                                          </Text>
-                                        </View>
-                                      </View>
-                                    </Pressable>
-
-                                    {isExerciseOpen && (
-                                      <View style={styles.exerciseDetailsBox}>
-                                        {exerciseGroup.rows.map((row, rowIndex) => {
-                                          const setNumber = getNumericValue(row.sets);
-                                          const repsValue = getNumericValue(row.reps);
-                                          const weightValue = getNumericValue(row.weight);
-
-                                          return (
-                                            <View
-                                              key={row.id || `${exerciseGroup.key}-row-${rowIndex}`}
-                                              style={styles.setRow}
-                                            >
-                                              <Text style={styles.setRowText}>
-                                                {setNumber !== null
-                                                  ? `סט ${setNumber}`
-                                                  : `סט ${rowIndex + 1}`}
-                                              </Text>
-
-                                              <Text style={styles.setRowText}>
-                                                {repsValue !== null
-                                                  ? `חזרות: ${repsValue}`
-                                                  : "חזרות: לא הוזן"}
-                                              </Text>
-
-                                              <Text style={styles.setRowText}>
-                                                {weightValue !== null
-                                                  ? `משקל: ${weightValue}`
-                                                  : "משקל: לא הוזן"}
-                                              </Text>
-                                            </View>
-                                          );
-                                        })}
-
-                                        <Text style={styles.exerciseDate}>
-                                          תאריך תרגיל:{" "}
-                                          {formatDateIL(
-                                            exerciseGroup.rows[0]?.date || group.sortTime
-                                          )}
-                                        </Text>
-
-                                        <Text style={styles.exerciseDate}>
-                                          הוזן למערכת:{" "}
-                                          {formatDateTimeIL(exerciseGroup.latestCreatedAt)}
-                                        </Text>
-                                      </View>
-                                    )}
-                                  </View>
-                                );
-                              })
-                            )}
-                          </View>
-                        )}
-                      </View>
-                    );
-                  })
-                )}
-              </View>
-            </>
+                          )}
+                        </View>
+                      );
+                    })
+                  )}
+                </View>
+              </>
+            )
           )}
         </>
       )}
@@ -1177,14 +1393,50 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 
+  searchCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    padding: 14,
+    gap: 10,
+  },
+
+  searchInputWrap: {
+    minHeight: 48,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    backgroundColor: "#F8FAFC",
+    paddingHorizontal: 12,
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    gap: 8,
+  },
+
+    searchInput: {
+    flex: 1,
+    color: "#0F172A",
+    fontSize: 14,
+    textAlign: "right",
+    writingDirection: "rtl",
+    flexDirection: "row-reverse",
+    },
+
+  searchInfoText: {
+    color: "#64748B",
+    fontSize: 12,
+    textAlign: "right",
+  },
+
   clientsScrollContent: {
     gap: 10,
     paddingVertical: 2,
   },
 
   clientPill: {
-    minWidth: 150,
-    maxWidth: 220,
+    minWidth: 170,
+    maxWidth: 230,
     backgroundColor: "#FFFFFF",
     borderWidth: 1,
     borderColor: "#E2E8F0",
@@ -1197,6 +1449,32 @@ const styles = StyleSheet.create({
   clientPillActive: {
     backgroundColor: "#EEF2FF",
     borderColor: "#C7D2FE",
+  },
+
+  clientPillTopRow: {
+    flexDirection: "row-reverse",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 6,
+    minHeight: 20,
+  },
+
+  trackedBadge: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#0F172A",
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    alignSelf: "flex-end",
+  },
+
+  trackedBadgeText: {
+    color: "#FFFFFF",
+    fontSize: 10,
+    fontWeight: "700",
+    textAlign: "center",
   },
 
   clientPillName: {
@@ -1226,6 +1504,18 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E2E8F0",
     padding: 16,
+    gap: 10,
+  },
+
+  selectedClientTopRow: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+
+  selectedClientTextWrap: {
+    flex: 1,
     alignItems: "flex-end",
   },
 
@@ -1241,6 +1531,31 @@ const styles = StyleSheet.create({
     color: "#64748B",
     fontSize: 13,
     textAlign: "right",
+  },
+
+  selectedClientStatusText: {
+    color: "#475569",
+    fontSize: 13,
+    textAlign: "right",
+    lineHeight: 20,
+  },
+
+  switchBlock: {
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    minWidth: 90,
+  },
+
+  switchLabel: {
+    color: "#334155",
+    fontSize: 12,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+
+  disabledButton: {
+    opacity: 0.6,
   },
 
   summaryGrid: {

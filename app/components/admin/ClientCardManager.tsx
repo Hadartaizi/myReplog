@@ -1,8 +1,9 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   I18nManager,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -77,6 +78,32 @@ function PlusUserIcon({ size = 18, color = "#0F172A" }) {
   );
 }
 
+function ChevronIcon({
+  size = 16,
+  color = "#334155",
+  direction = "down",
+}: {
+  size?: number;
+  color?: string;
+  direction?: "down" | "up";
+}) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      {direction === "down" ? (
+        <>
+          <Line x1="6" y1="9" x2="12" y2="15" stroke={color} strokeWidth={2.2} strokeLinecap="round" />
+          <Line x1="18" y1="9" x2="12" y2="15" stroke={color} strokeWidth={2.2} strokeLinecap="round" />
+        </>
+      ) : (
+        <>
+          <Line x1="6" y1="15" x2="12" y2="9" stroke={color} strokeWidth={2.2} strokeLinecap="round" />
+          <Line x1="18" y1="15" x2="12" y2="9" stroke={color} strokeWidth={2.2} strokeLinecap="round" />
+        </>
+      )}
+    </Svg>
+  );
+}
+
 function getDateFromAny(value: any): Date | null {
   if (!value) return null;
 
@@ -114,47 +141,18 @@ function formatDateTimeIL(value?: string | null) {
   }).format(date);
 }
 
-function parseDateAndTime(dateInput: string, timeInput: string): Date | null {
-  const dateRaw = String(dateInput || "").trim();
-  const timeRaw = String(timeInput || "").trim();
+function pad2(value: number) {
+  return String(value).padStart(2, "0");
+}
 
-  if (!dateRaw) return null;
-
-  let day: number;
-  let month: number;
-  let year: number;
-
-  const isoMatch = dateRaw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  const ilMatch = dateRaw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-
-  if (isoMatch) {
-    year = Number(isoMatch[1]);
-    month = Number(isoMatch[2]);
-    day = Number(isoMatch[3]);
-  } else if (ilMatch) {
-    day = Number(ilMatch[1]);
-    month = Number(ilMatch[2]);
-    year = Number(ilMatch[3]);
-  } else {
-    return null;
-  }
-
-  let hours = 0;
-  let minutes = 0;
-
-  if (timeRaw) {
-    const timeMatch = timeRaw.match(/^(\d{2}):(\d{2})$/);
-    if (!timeMatch) return null;
-
-    hours = Number(timeMatch[1]);
-    minutes = Number(timeMatch[2]);
-
-    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
-      return null;
-    }
-  }
-
-  const date = new Date(year, month - 1, day, hours, minutes, 0, 0);
+function buildDateFromParts(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number
+): Date | null {
+  const date = new Date(year, month - 1, day, hour, minute, 0, 0);
 
   if (
     Number.isNaN(date.getTime()) ||
@@ -166,6 +164,175 @@ function parseDateAndTime(dateInput: string, timeInput: string): Date | null {
   }
 
   return date;
+}
+
+function getDaysInMonth(year: number, month: number) {
+  return new Date(year, month, 0).getDate();
+}
+
+function NumberWheel({
+  label,
+  values,
+  selectedValue,
+  onSelect,
+}: {
+  label: string;
+  values: number[];
+  selectedValue: number;
+  onSelect: (value: number) => void;
+}) {
+  const scrollRef = useRef<ScrollView | null>(null);
+  const ITEM_HEIGHT = 46;
+
+  useEffect(() => {
+    const index = values.findIndex((item) => item === selectedValue);
+    if (index >= 0) {
+      const timer = setTimeout(() => {
+        scrollRef.current?.scrollTo({
+          y: index * ITEM_HEIGHT,
+          animated: true,
+        });
+      }, 80);
+
+      return () => clearTimeout(timer);
+    }
+  }, [selectedValue, values]);
+
+  return (
+    <View style={styles.wheelWrap}>
+      <Text style={styles.wheelLabel}>{label}</Text>
+
+      <View style={styles.wheelOuter}>
+        <ScrollView
+          ref={scrollRef}
+          showsVerticalScrollIndicator={false}
+          snapToInterval={ITEM_HEIGHT}
+          decelerationRate="fast"
+          contentContainerStyle={styles.wheelScrollContent}
+        >
+          {values.map((value) => {
+            const selected = value === selectedValue;
+            return (
+              <Pressable
+                key={`${label}-${value}`}
+                onPress={() => onSelect(value)}
+                style={[styles.wheelItem, selected && styles.wheelItemSelected]}
+              >
+                <Text style={[styles.wheelItemText, selected && styles.wheelItemTextSelected]}>
+                  {pad2(value)}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      </View>
+    </View>
+  );
+}
+
+function DateTimeWheelPickerModal({
+  visible,
+  onClose,
+  onConfirm,
+  initialDate,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onConfirm: (date: Date) => void;
+  initialDate?: Date;
+}) {
+  const baseDate = initialDate && !Number.isNaN(initialDate.getTime()) ? initialDate : new Date();
+
+  const [year, setYear] = useState(baseDate.getFullYear());
+  const [month, setMonth] = useState(baseDate.getMonth() + 1);
+  const [day, setDay] = useState(baseDate.getDate());
+  const [hour, setHour] = useState(baseDate.getHours());
+  const [minute, setMinute] = useState(baseDate.getMinutes() - (baseDate.getMinutes() % 5));
+
+  useEffect(() => {
+    if (visible) {
+      const date = initialDate && !Number.isNaN(initialDate.getTime()) ? initialDate : new Date();
+      setYear(date.getFullYear());
+      setMonth(date.getMonth() + 1);
+      setDay(date.getDate());
+      setHour(date.getHours());
+      setMinute(date.getMinutes() - (date.getMinutes() % 5));
+    }
+  }, [visible, initialDate]);
+
+  const years = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    const list: number[] = [];
+    for (let y = currentYear - 3; y <= currentYear + 3; y += 1) list.push(y);
+    return list;
+  }, []);
+
+  const months = useMemo(() => Array.from({ length: 12 }, (_, i) => i + 1), []);
+  const days = useMemo(() => {
+    const total = getDaysInMonth(year, month);
+    return Array.from({ length: total }, (_, i) => i + 1);
+  }, [year, month]);
+  const hours = useMemo(() => Array.from({ length: 24 }, (_, i) => i), []);
+  const minutes = useMemo(() => Array.from({ length: 12 }, (_, i) => i * 5), []);
+
+  useEffect(() => {
+    const maxDay = getDaysInMonth(year, month);
+    if (day > maxDay) {
+      setDay(maxDay);
+    }
+  }, [day, month, year]);
+
+  const previewDate = buildDateFromParts(year, month, day, hour, minute);
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.modalBackdrop}>
+        <View style={styles.modalCard}>
+          <Text style={styles.modalTitle}>בחירת תאריך ושעה למימוש</Text>
+
+          <Text style={styles.modalPreviewText}>
+            {previewDate
+              ? new Intl.DateTimeFormat("he-IL", {
+                  day: "2-digit",
+                  month: "2-digit",
+                  year: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                }).format(previewDate)
+              : "תאריך לא תקין"}
+          </Text>
+
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.wheelsRow}>
+            <NumberWheel label="דקות" values={minutes} selectedValue={minute} onSelect={setMinute} />
+            <NumberWheel label="שעה" values={hours} selectedValue={hour} onSelect={setHour} />
+            <NumberWheel label="יום" values={days} selectedValue={day} onSelect={setDay} />
+            <NumberWheel label="חודש" values={months} selectedValue={month} onSelect={setMonth} />
+            <NumberWheel label="שנה" values={years} selectedValue={year} onSelect={setYear} />
+          </ScrollView>
+
+          <View style={styles.modalActionsRow}>
+            <Pressable onPress={onClose} style={({ pressed }) => [styles.modalSecondaryButton, pressed && styles.pressed]}>
+              <Text style={styles.modalSecondaryButtonText}>ביטול</Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => {
+                const result = buildDateFromParts(year, month, day, hour, minute);
+                if (!result) {
+                  Alert.alert("שגיאה", "התאריך או השעה אינם תקינים");
+                  return;
+                }
+                onConfirm(result);
+              }}
+              style={({ pressed }) => [styles.modalPrimaryButton, pressed && styles.pressed]}
+            >
+              <Text style={styles.modalPrimaryButtonText}>אישור</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
 }
 
 export default function ClientCardManager({
@@ -181,16 +348,13 @@ export default function ClientCardManager({
       titleSize: isSmallScreen ? 18 : isTablet ? 22 : 20,
       textSize: isSmallScreen ? 13 : 14,
       subTextSize: isSmallScreen ? 12 : 13,
-      pillHeight: isSmallScreen ? 46 : 50,
       cardPadding: isSmallScreen ? 14 : 16,
     };
   }, [isSmallScreen, isTablet]);
 
   const [clients, setClients] = useState<ClientItem[]>(initialClients);
   const [loadingClients, setLoadingClients] = useState(initialClients.length === 0);
-  const [selectedClient, setSelectedClient] = useState<ClientItem | null>(
-    initialClients[0] || null
-  );
+  const [selectedClient, setSelectedClient] = useState<ClientItem | null>(initialClients[0] || null);
   const [loadingData, setLoadingData] = useState(false);
   const [savingCards, setSavingCards] = useState(false);
   const [redeemingCard, setRedeemingCard] = useState(false);
@@ -198,10 +362,14 @@ export default function ClientCardManager({
   const [creatingClient, setCreatingClient] = useState(false);
 
   const [cardsPurchasedInput, setCardsPurchasedInput] = useState("");
-  const [redeemDateInput, setRedeemDateInput] = useState("");
-  const [redeemTimeInput, setRedeemTimeInput] = useState("");
   const [manualName, setManualName] = useState("");
   const [manualEmail, setManualEmail] = useState("");
+  const [searchQueryText, setSearchQueryText] = useState("");
+  const [searchTouched, setSearchTouched] = useState(false);
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [manualSectionOpen, setManualSectionOpen] = useState(false);
+  const [pickerVisible, setPickerVisible] = useState(false);
+  const [selectedRedeemDate, setSelectedRedeemDate] = useState<Date | null>(new Date());
 
   const [cardData, setCardData] = useState<ClientCardData>({
     cardsPurchased: 0,
@@ -214,14 +382,13 @@ export default function ClientCardManager({
       setClients(initialClients);
       setSelectedClient((prev) => {
         if (!prev && initialClients[0]) return initialClients[0];
-
         if (!prev) return null;
 
         const matched = initialClients.find(
           (item) => (item.uid || item.id) === (prev.uid || prev.id)
         );
 
-        return matched || initialClients[0] || null;
+        return matched || null;
       });
       setLoadingClients(false);
       return;
@@ -242,13 +409,13 @@ export default function ClientCardManager({
 
       setClients(list);
       setSelectedClient((prev) => {
-        if (!prev) return list[0] || null;
+        if (!prev) return null;
 
         const matched = list.find(
           (item) => (item.uid || item.id) === (prev.uid || prev.id)
         );
 
-        return matched || list[0] || null;
+        return matched || null;
       });
     } catch (error) {
       console.error("שגיאה בטעינת לקוחות:", error);
@@ -266,8 +433,6 @@ export default function ClientCardManager({
         cardUsageDates: [],
       });
       setCardsPurchasedInput("");
-      setRedeemDateInput("");
-      setRedeemTimeInput("");
       return;
     }
 
@@ -285,8 +450,6 @@ export default function ClientCardManager({
           cardUsageDates: [],
         });
         setCardsPurchasedInput("0");
-        setRedeemDateInput("");
-        setRedeemTimeInput("");
         return;
       }
 
@@ -307,8 +470,6 @@ export default function ClientCardManager({
       });
 
       setCardsPurchasedInput(String(cardsPurchased));
-      setRedeemDateInput("");
-      setRedeemTimeInput("");
     } catch (error) {
       console.error("שגיאה בטעינת נתוני כרטיסיות:", error);
       Alert.alert("שגיאה", "לא ניתן לטעון את נתוני הכרטיסיות");
@@ -329,6 +490,17 @@ export default function ClientCardManager({
   const usageDates = Array.isArray(cardData.cardUsageDates) ? cardData.cardUsageDates : [];
   const used = usageDates.length;
   const remaining = Math.max(purchased - used, 0);
+
+  const normalizedSearch = searchQueryText.trim().toLowerCase();
+
+  const searchedClients = useMemo(() => {
+    if (!normalizedSearch) return [];
+
+    return clients.filter((client) => {
+      const name = (client.name || "").trim().toLowerCase();
+      return name.includes(normalizedSearch);
+    });
+  }, [clients, normalizedSearch]);
 
   const createManualClient = async () => {
     const cleanName = manualName.trim();
@@ -383,8 +555,12 @@ export default function ClientCardManager({
       );
 
       setSelectedClient(newClient);
+      setSearchQueryText(cleanName);
+      setSearchTouched(true);
+      setSearchFocused(false);
       setManualName("");
       setManualEmail("");
+      setManualSectionOpen(false);
 
       setCardData({
         cardsPurchased: 0,
@@ -392,8 +568,6 @@ export default function ClientCardManager({
         cardUsageDates: [],
       });
       setCardsPurchasedInput("0");
-      setRedeemDateInput("");
-      setRedeemTimeInput("");
 
       if (Platform.OS === "web") {
         window.alert("הלקוח נוסף בהצלחה");
@@ -489,9 +663,6 @@ export default function ClientCardManager({
         cardUsageDates: nextUsageDates,
       }));
 
-      setRedeemDateInput("");
-      setRedeemTimeInput("");
-
       if (Platform.OS === "web") {
         window.alert("בוצע מימוש כרטיסייה");
       } else {
@@ -505,24 +676,6 @@ export default function ClientCardManager({
     } finally {
       setRedeemingCard(false);
     }
-  };
-
-  const redeemNow = async () => {
-    await redeemCardAtDate(new Date());
-  };
-
-  const redeemByChosenDateTime = async () => {
-    const parsedDate = parseDateAndTime(redeemDateInput, redeemTimeInput);
-
-    if (!parsedDate) {
-      Alert.alert(
-        "שגיאה",
-        "יש להזין תאריך ושעה תקינים.\nתאריך לדוגמה: 2026-04-05 או 05/04/2026\nשעה לדוגמה: 18:30"
-      );
-      return;
-    }
-
-    await redeemCardAtDate(parsedDate);
   };
 
   const deleteRedeem = async (indexToDelete: number) => {
@@ -581,8 +734,20 @@ export default function ClientCardManager({
     );
   }
 
+  const showSearchResults = searchFocused && normalizedSearch.length > 0;
+
   return (
     <View style={styles.container}>
+      <DateTimeWheelPickerModal
+        visible={pickerVisible}
+        initialDate={selectedRedeemDate || new Date()}
+        onClose={() => setPickerVisible(false)}
+        onConfirm={(date) => {
+          setSelectedRedeemDate(date);
+          setPickerVisible(false);
+        }}
+      />
+
       <View style={styles.topHeader}>
         <View style={styles.headerTitleRow}>
           <CardsIcon size={18} color="#0F172A" />
@@ -592,278 +757,303 @@ export default function ClientCardManager({
         </View>
 
         <Text style={[styles.headerSubtitle, { fontSize: dynamic.subTextSize }]}>
-          אפשר להוסיף לקוח ידנית, להגדיר כרטיסיות, לממש לפי תאריך ושעת אימון, ולמחוק מימוש קיים
+          חיפוש לקוח לפי שם, הגדרת כרטיסיות, ומימוש ידני לפי תאריך ושעה בגלילה
         </Text>
       </View>
 
       <View style={styles.section}>
-        <View style={styles.manualHeaderRow}>
-          <PlusUserIcon size={18} color="#0F172A" />
-          <Text style={styles.sectionTitle}>הוספת לקוח ידנית</Text>
-        </View>
-
-        <TextInput
-          value={manualName}
-          onChangeText={setManualName}
-          placeholder="שם הלקוח"
-          placeholderTextColor="#94A3B8"
-          style={styles.input}
-          textAlign="right"
-        />
-
-        <TextInput
-          value={manualEmail}
-          onChangeText={setManualEmail}
-          placeholder="אימייל הלקוח (לא חובה)"
-          placeholderTextColor="#94A3B8"
-          style={styles.input}
-          autoCapitalize="none"
-          keyboardType="email-address"
-          textAlign="right"
-        />
-
         <Pressable
-          onPress={createManualClient}
-          disabled={creatingClient}
+          onPress={() => setManualSectionOpen((prev) => !prev)}
           style={({ pressed }) => [
-            styles.primaryActionButton,
+            styles.expandButton,
+            manualSectionOpen && styles.expandButtonActive,
             pressed && styles.pressed,
-            creatingClient && styles.disabledButton,
           ]}
         >
-          {creatingClient ? (
-            <ActivityIndicator color="#FFFFFF" />
-          ) : (
-            <Text style={styles.primaryActionButtonText}>הוסף לקוח ידנית</Text>
-          )}
+          <View style={styles.expandButtonRight}>
+            <PlusUserIcon size={18} color="#0F172A" />
+            <Text style={styles.expandButtonText}>הוספה ידנית</Text>
+          </View>
+
+          <ChevronIcon direction={manualSectionOpen ? "up" : "down"} />
         </Pressable>
+
+        {manualSectionOpen && (
+          <View style={styles.expandContent}>
+            <TextInput
+              value={manualName}
+              onChangeText={setManualName}
+              placeholder="שם הלקוח"
+              placeholderTextColor="#94A3B8"
+              style={styles.input}
+              textAlign="right"
+            />
+
+            <TextInput
+              value={manualEmail}
+              onChangeText={setManualEmail}
+              placeholder="אימייל הלקוח (לא חובה)"
+              placeholderTextColor="#94A3B8"
+              style={styles.input}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              textAlign="right"
+            />
+
+            <Pressable
+              onPress={createManualClient}
+              disabled={creatingClient}
+              style={({ pressed }) => [
+                styles.primaryActionButton,
+                pressed && styles.pressed,
+                creatingClient && styles.disabledButton,
+              ]}
+            >
+              {creatingClient ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.primaryActionButtonText}>הוסף לקוח</Text>
+              )}
+            </Pressable>
+          </View>
+        )}
       </View>
 
-      {clients.length === 0 ? (
-        <View style={styles.emptyBox}>
-          <Text style={styles.emptyText}>אין לקוחות להצגה</Text>
-        </View>
-      ) : (
-        <>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.clientsScrollContent}
-          >
-            {clients.map((client) => {
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>חיפוש לקוח עם כרטיסייה</Text>
+
+        <TextInput
+          value={searchQueryText}
+          onChangeText={(text) => {
+            setSearchTouched(true);
+            setSearchFocused(true);
+            setSearchQueryText(text);
+
+            const exactMatch = clients.find(
+              (client) => (client.name || "").trim() === text.trim()
+            );
+
+            if (!text.trim()) {
+              setSelectedClient(null);
+              return;
+            }
+
+            if (exactMatch) {
+              setSelectedClient(exactMatch);
+              setSearchFocused(false);
+            } else {
+              setSelectedClient(null);
+            }
+          }}
+          onFocus={() => setSearchFocused(true)}
+          placeholder="הקלידי שם לקוחה"
+          placeholderTextColor="#94A3B8"
+          style={styles.input}
+          textAlign="right"
+        />
+
+        {normalizedSearch.length > 0 && searchedClients.length === 0 ? (
+          <Text style={styles.searchNotFoundText}>לא נמצאה לקוחה בשם הזה</Text>
+        ) : showSearchResults ? (
+          <View style={styles.searchResultsList}>
+            {searchedClients.map((client) => {
               const isSelected =
                 (selectedClient?.uid || selectedClient?.id) === (client.uid || client.id);
 
               return (
                 <Pressable
                   key={client.id}
-                  onPress={() => setSelectedClient(client)}
+                  onPress={() => {
+                    setSelectedClient(client);
+                    setSearchQueryText(client.name || "");
+                    setSearchTouched(true);
+                    setSearchFocused(false);
+                  }}
                   style={({ pressed }) => [
-                    styles.clientPill,
-                    { minHeight: dynamic.pillHeight },
-                    isSelected && styles.clientPillActive,
+                    styles.searchResultCard,
+                    isSelected && styles.searchResultCardActive,
                     pressed && styles.pressed,
                   ]}
                 >
-                  <Text
-                    style={[
-                      styles.clientPillName,
-                      { fontSize: dynamic.textSize },
-                      isSelected && styles.clientPillNameActive,
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {client.name || "ללא שם"}
-                  </Text>
-
-                  <Text
-                    style={[
-                      styles.clientPillEmail,
-                      { fontSize: dynamic.subTextSize },
-                      isSelected && styles.clientPillEmailActive,
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {client.email || "ללא אימייל"}
-                  </Text>
+                  <View style={styles.searchResultTextWrap}>
+                    <Text style={[styles.searchResultName, isSelected && styles.searchResultNameActive]}>
+                      {client.name || "ללא שם"}
+                    </Text>
+                    <Text style={[styles.searchResultEmail, isSelected && styles.searchResultEmailActive]}>
+                      {client.email || "ללא אימייל"}
+                    </Text>
+                  </View>
                 </Pressable>
               );
             })}
-          </ScrollView>
+          </View>
+        ) : null}
+      </View>
 
-          {selectedClient && (
-            <View style={styles.selectedClientCard}>
-              <Text style={styles.selectedClientTitle}>
-                {selectedClient.name || "ללא שם"}
-              </Text>
-              <Text style={styles.selectedClientEmail}>
-                {selectedClient.email || "ללא אימייל"}
-              </Text>
-            </View>
-          )}
-
-          {loadingData ? (
-            <View style={styles.loadingBox}>
-              <ActivityIndicator size="large" color="#0F172A" />
-              <Text style={styles.loadingText}>טוען נתוני כרטיסיות...</Text>
-            </View>
-          ) : (
-            <>
-              <View style={styles.summaryGrid}>
-                <View style={[styles.summaryCard, { padding: dynamic.cardPadding }]}>
-                  <Text style={styles.summaryValue}>{purchased}</Text>
-                  <Text style={styles.summaryLabel}>נרכשו</Text>
-                </View>
-
-                <View style={[styles.summaryCard, { padding: dynamic.cardPadding }]}>
-                  <Text style={styles.summaryValue}>{used}</Text>
-                  <Text style={styles.summaryLabel}>מומשו</Text>
-                </View>
-
-                <View style={[styles.summaryCard, { padding: dynamic.cardPadding }]}>
-                  <Text style={styles.summaryValue}>{remaining}</Text>
-                  <Text style={styles.summaryLabel}>נותרו</Text>
-                </View>
-
-                <View style={[styles.summaryCard, { padding: dynamic.cardPadding }]}>
-                  <Text style={styles.summaryValue}>
-                    {usageDates[0] ? formatDateTimeIL(usageDates[0]) : "אין"}
-                  </Text>
-                  <Text style={styles.summaryLabel}>מימוש אחרון</Text>
-                </View>
+      {selectedClient ? (
+        loadingData ? (
+          <View style={styles.loadingBox}>
+            <ActivityIndicator size="large" color="#0F172A" />
+            <Text style={styles.loadingText}>טוען נתוני כרטיסיות...</Text>
+          </View>
+        ) : (
+          <>
+            <View style={styles.summaryGrid}>
+              <View style={[styles.summaryCard, { padding: dynamic.cardPadding }]}>
+                <Text style={styles.summaryValue}>{purchased}</Text>
+                <Text style={styles.summaryLabel}>נרכשו</Text>
               </View>
 
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>הגדרת כרטיסיות שנרכשו</Text>
-
-                <TextInput
-                  value={cardsPurchasedInput}
-                  onChangeText={(text) => setCardsPurchasedInput(text.replace(/[^0-9]/g, ""))}
-                  keyboardType="number-pad"
-                  placeholder="הזיני מספר כרטיסיות"
-                  placeholderTextColor="#94A3B8"
-                  style={styles.input}
-                  textAlign="right"
-                />
-
-                <Pressable
-                  onPress={savePurchasedCards}
-                  disabled={savingCards}
-                  style={({ pressed }) => [
-                    styles.primaryActionButton,
-                    pressed && styles.pressed,
-                    savingCards && styles.disabledButton,
-                  ]}
-                >
-                  {savingCards ? (
-                    <ActivityIndicator color="#FFFFFF" />
-                  ) : (
-                    <Text style={styles.primaryActionButtonText}>שמור מספר כרטיסיות</Text>
-                  )}
-                </Pressable>
+              <View style={[styles.summaryCard, { padding: dynamic.cardPadding }]}>
+                <Text style={styles.summaryValue}>{used}</Text>
+                <Text style={styles.summaryLabel}>מומשו</Text>
               </View>
 
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>מימוש כרטיסייה</Text>
+              <View style={[styles.summaryCard, { padding: dynamic.cardPadding }]}>
+                <Text style={styles.summaryValue}>{remaining}</Text>
+                <Text style={styles.summaryLabel}>נותרו</Text>
+              </View>
 
-                <Pressable
-                  onPress={redeemNow}
-                  disabled={redeemingCard || remaining <= 0}
-                  style={({ pressed }) => [
-                    styles.redeemNowButton,
-                    pressed && styles.pressed,
-                    (redeemingCard || remaining <= 0) && styles.disabledButton,
-                  ]}
-                >
-                  {redeemingCard ? (
-                    <ActivityIndicator color="#FFFFFF" />
-                  ) : (
-                    <Text style={styles.redeemButtonText}>ממש כרטיסייה עכשיו</Text>
-                  )}
-                </Pressable>
-
-                <Text style={styles.helperTitle}>מימוש לפי תאריך ושעת אימון</Text>
-
-                <TextInput
-                  value={redeemDateInput}
-                  onChangeText={setRedeemDateInput}
-                  placeholder="תאריך: 2026-04-05 או 05/04/2026"
-                  placeholderTextColor="#94A3B8"
-                  style={styles.input}
-                  textAlign="right"
-                />
-
-                <TextInput
-                  value={redeemTimeInput}
-                  onChangeText={(text) => setRedeemTimeInput(text)}
-                  placeholder="שעת אימון: 18:30"
-                  placeholderTextColor="#94A3B8"
-                  style={styles.input}
-                  textAlign="right"
-                />
-
-                <Pressable
-                  onPress={redeemByChosenDateTime}
-                  disabled={redeemingCard || remaining <= 0}
-                  style={({ pressed }) => [
-                    styles.redeemManualButton,
-                    pressed && styles.pressed,
-                    (redeemingCard || remaining <= 0) && styles.disabledButton,
-                  ]}
-                >
-                  <Text style={styles.redeemButtonText}>ממש לפי תאריך ושעת אימון</Text>
-                </Pressable>
-
-                <Text style={styles.remainingText}>
-                  כרטיסיות זמינות למימוש: {remaining}
+              <View style={[styles.summaryCard, { padding: dynamic.cardPadding }]}>
+                <Text style={styles.summaryValue}>
+                  {purchased > 0 ? "יש" : "אין"}
                 </Text>
+                <Text style={styles.summaryLabel}>כרטיסייה</Text>
               </View>
+            </View>
 
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>תאריכי מימוש</Text>
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>הגדרת מספר כרטיסיות</Text>
 
-                {usageDates.length === 0 ? (
-                  <View style={styles.emptyInnerBox}>
-                    <Text style={styles.emptyText}>עדיין לא בוצעו מימושים</Text>
-                  </View>
+              <TextInput
+                value={cardsPurchasedInput}
+                onChangeText={(text) => setCardsPurchasedInput(text.replace(/[^0-9]/g, ""))}
+                keyboardType="number-pad"
+                placeholder="הזיני מספר כרטיסיות"
+                placeholderTextColor="#94A3B8"
+                style={styles.input}
+                textAlign="right"
+              />
+
+              <Pressable
+                onPress={savePurchasedCards}
+                disabled={savingCards}
+                style={({ pressed }) => [
+                  styles.primaryActionButton,
+                  pressed && styles.pressed,
+                  savingCards && styles.disabledButton,
+                ]}
+              >
+                {savingCards ? (
+                  <ActivityIndicator color="#FFFFFF" />
                 ) : (
-                  <View style={styles.usageList}>
-                    {usageDates.map((usageDate, index) => (
-                      <View key={`${usageDate}-${index}`} style={styles.usageRow}>
-                        <View style={styles.usageDeleteWrap}>
-                          <Pressable
-                            onPress={() => deleteRedeem(index)}
-                            disabled={deletingRedeemIndex === index}
-                            style={({ pressed }) => [
-                              styles.deleteUsageButton,
-                              pressed && styles.pressed,
-                              deletingRedeemIndex === index && styles.disabledButton,
-                            ]}
-                          >
-                            {deletingRedeemIndex === index ? (
-                              <ActivityIndicator size="small" color="#DC2626" />
-                            ) : (
-                              <TrashIcon size={18} color="#DC2626" />
-                            )}
-                          </Pressable>
-                        </View>
-
-                        <View style={styles.usageInfo}>
-                          <Text style={styles.usageDateText}>
-                            מימוש {usageDates.length - index}
-                          </Text>
-                          <Text style={styles.usageDateText}>
-                            {formatDateTimeIL(usageDate)}
-                          </Text>
-                        </View>
-                      </View>
-                    ))}
-                  </View>
+                  <Text style={styles.primaryActionButtonText}>שמור מספר כרטיסיות</Text>
                 )}
-              </View>
-            </>
-          )}
-        </>
+              </Pressable>
+            </View>
+
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>מימוש כרטיסייה באופן ידני</Text>
+
+              <Pressable
+                onPress={() => setPickerVisible(true)}
+                style={({ pressed }) => [
+                  styles.datePickerOpenButton,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Text style={styles.datePickerOpenButtonText}>
+                  {selectedRedeemDate
+                    ? `נבחר: ${new Intl.DateTimeFormat("he-IL", {
+                        day: "2-digit",
+                        month: "2-digit",
+                        year: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      }).format(selectedRedeemDate)}`
+                    : "בחרי תאריך ושעה"}
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={async () => {
+                  if (!selectedRedeemDate) {
+                    Alert.alert("שגיאה", "יש לבחור תאריך ושעה");
+                    return;
+                  }
+                  await redeemCardAtDate(selectedRedeemDate);
+                }}
+                disabled={redeemingCard || remaining <= 0}
+                style={({ pressed }) => [
+                  styles.redeemManualButton,
+                  pressed && styles.pressed,
+                  (redeemingCard || remaining <= 0) && styles.disabledButton,
+                ]}
+              >
+                {redeemingCard ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.redeemButtonText}>ממש כרטיסייה</Text>
+                )}
+              </Pressable>
+
+              <Text style={styles.remainingText}>
+                {purchased <= 0
+                  ? "ללקוח הזה אין כרטיסייה"
+                  : `כרטיסיות זמינות למימוש: ${remaining}`}
+              </Text>
+            </View>
+
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>תאריכי מימוש</Text>
+
+              {usageDates.length === 0 ? (
+                <View style={styles.emptyInnerBox}>
+                  <Text style={styles.emptyText}>עדיין לא בוצעו מימושים</Text>
+                </View>
+              ) : (
+                <View style={styles.usageList}>
+                  {usageDates.map((usageDate, index) => (
+                    <View key={`${usageDate}-${index}`} style={styles.usageRow}>
+                      <View style={styles.usageDeleteWrap}>
+                        <Pressable
+                          onPress={() => deleteRedeem(index)}
+                          disabled={deletingRedeemIndex === index}
+                          style={({ pressed }) => [
+                            styles.deleteUsageButton,
+                            pressed && styles.pressed,
+                            deletingRedeemIndex === index && styles.disabledButton,
+                          ]}
+                        >
+                          {deletingRedeemIndex === index ? (
+                            <ActivityIndicator size="small" color="#DC2626" />
+                          ) : (
+                            <TrashIcon size={18} color="#DC2626" />
+                          )}
+                        </Pressable>
+                      </View>
+
+                      <View style={styles.usageInfo}>
+                        <Text style={styles.usageDateText}>מימוש {usageDates.length - index}</Text>
+                        <Text style={styles.usageDateText}>{formatDateTimeIL(usageDate)}</Text>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
+          </>
+        )
+      ) : (
+        searchTouched && normalizedSearch ? (
+          <View style={styles.emptyBox}>
+            <Text style={styles.emptyText}>בחרי לקוח מתוצאות החיפוש</Text>
+          </View>
+        ) : (
+          <View style={styles.emptyBox}>
+            <Text style={styles.emptyText}>חפשי לקוח כדי להציג את נתוני הכרטיסייה</Text>
+          </View>
+        )
       )}
     </View>
   );
@@ -903,87 +1093,157 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 
-  manualHeaderRow: {
+  section: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    padding: 14,
+    gap: 12,
+  },
+
+  sectionTitle: {
+    color: "#0F172A",
+    fontSize: 16,
+    fontWeight: "800",
+    textAlign: "right",
+  },
+
+  expandButton: {
+    minHeight: 54,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    backgroundColor: "#F8FAFC",
+    paddingHorizontal: 14,
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+
+  expandButtonActive: {
+    borderColor: "#94A3B8",
+    backgroundColor: "#F1F5F9",
+  },
+
+  expandButtonRight: {
     flexDirection: "row-reverse",
     alignItems: "center",
     gap: 8,
   },
 
-  clientsScrollContent: {
-    gap: 10,
-    paddingVertical: 2,
+  expandButtonText: {
+    color: "#0F172A",
+    fontSize: 15,
+    fontWeight: "800",
+    textAlign: "right",
   },
 
-  clientPill: {
-    minWidth: 150,
-    maxWidth: 220,
-    backgroundColor: "#FFFFFF",
+  expandContent: {
+    gap: 12,
+    paddingTop: 4,
+  },
+
+  input: {
+    width: "100%",
+    minHeight: 52,
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    borderRadius: 14,
+    backgroundColor: "#F8FAFC",
+    paddingHorizontal: 14,
+    color: "#0F172A",
+    fontSize: 15,
+    textAlign: "right",
+  },
+
+  primaryActionButton: {
+    width: "100%",
+    minHeight: 52,
+    borderRadius: 16,
+    backgroundColor: "#0F172A",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 16,
+  },
+
+  primaryActionButtonText: {
+    color: "#FFFFFF",
+    fontWeight: "800",
+    fontSize: 15,
+    textAlign: "center",
+  },
+
+  searchHintBox: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: "#E2E8F0",
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    justifyContent: "center",
+    paddingVertical: 14,
+    paddingHorizontal: 12,
   },
 
-  clientPillActive: {
+  searchHintText: {
+    color: "#64748B",
+    fontSize: 14,
+    textAlign: "right",
+  },
+
+  searchResultsList: {
+    gap: 10,
+  },
+
+  searchResultCard: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+
+  searchResultCardActive: {
     backgroundColor: "#EEF2FF",
     borderColor: "#C7D2FE",
   },
 
-  clientPillName: {
+  searchResultTextWrap: {
+    alignItems: "flex-end",
+  },
+
+  searchResultName: {
     color: "#0F172A",
+    fontSize: 15,
     fontWeight: "800",
     textAlign: "right",
     writingDirection: I18nManager.isRTL ? "rtl" : "ltr",
   },
 
-  clientPillNameActive: {
+  searchResultNameActive: {
     color: "#1E293B",
   },
 
-  clientPillEmail: {
-    marginTop: 4,
-    color: "#64748B",
-    textAlign: "right",
-  },
-
-  clientPillEmailActive: {
-    color: "#475569",
-  },
-
-  selectedClientCard: {
-    backgroundColor: "#F8FAFC",
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    padding: 16,
-    alignItems: "flex-end",
-  },
-
-  selectedClientTitle: {
-    color: "#0F172A",
-    fontSize: 18,
-    fontWeight: "800",
-    textAlign: "right",
-  },
-
-  selectedClientEmail: {
+  searchResultEmail: {
     marginTop: 4,
     color: "#64748B",
     fontSize: 13,
     textAlign: "right",
   },
 
+  searchResultEmailActive: {
+    color: "#475569",
+  },
+
   summaryGrid: {
     flexDirection: "row-reverse",
     flexWrap: "wrap",
-    gap: 10,
-    justifyContent: "space-between",
+    rowGap: 10,
+    columnGap: 10,
+    justifyContent: "flex-start",
   },
 
   summaryCard: {
-    width: "48.5%",
+    width: "48%",
     backgroundColor: "#FFFFFF",
     borderRadius: 18,
     borderWidth: 1,
@@ -1008,66 +1268,23 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 
-  section: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    padding: 14,
-    gap: 12,
-  },
-
-  sectionTitle: {
-    color: "#0F172A",
-    fontSize: 16,
-    fontWeight: "800",
-    textAlign: "right",
-  },
-
-  helperTitle: {
-    color: "#334155",
-    fontSize: 14,
-    fontWeight: "700",
-    textAlign: "right",
-  },
-
-  input: {
+  datePickerOpenButton: {
     width: "100%",
     minHeight: 52,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: "#CBD5E1",
-    borderRadius: 14,
     backgroundColor: "#F8FAFC",
+    alignItems: "flex-end",
+    justifyContent: "center",
     paddingHorizontal: 14,
+  },
+
+  datePickerOpenButtonText: {
     color: "#0F172A",
     fontSize: 15,
-  },
-
-  primaryActionButton: {
-    width: "100%",
-    minHeight: 52,
-    borderRadius: 16,
-    backgroundColor: "#0F172A",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 16,
-  },
-
-  primaryActionButtonText: {
-    color: "#FFFFFF",
-    fontWeight: "800",
-    fontSize: 15,
-    textAlign: "center",
-  },
-
-  redeemNowButton: {
-    width: "100%",
-    minHeight: 52,
-    borderRadius: 16,
-    backgroundColor: "#2563EB",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 16,
+    fontWeight: "600",
+    textAlign: "right",
   },
 
   redeemManualButton: {
@@ -1177,10 +1394,136 @@ const styles = StyleSheet.create({
   },
 
   pressed: {
-    opacity: 0.8,
+    opacity: 0.82,
   },
 
   disabledButton: {
     opacity: 0.6,
+  },
+
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.45)",
+    justifyContent: "center",
+    padding: 18,
+  },
+
+  modalCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 22,
+    padding: 16,
+    gap: 14,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+
+  modalTitle: {
+    color: "#0F172A",
+    fontSize: 18,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+
+  modalPreviewText: {
+    color: "#334155",
+    fontSize: 14,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+
+  wheelsRow: {
+    flexDirection: "row-reverse",
+    gap: 10,
+    paddingVertical: 4,
+  },
+
+  wheelWrap: {
+    width: 72,
+    alignItems: "center",
+    gap: 8,
+  },
+
+  wheelLabel: {
+    color: "#475569",
+    fontSize: 13,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+
+  wheelOuter: {
+    height: 220,
+    width: "100%",
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 16,
+    overflow: "hidden",
+  },
+
+  wheelScrollContent: {
+    paddingVertical: 10,
+  },
+
+  wheelItem: {
+    height: 46,
+    alignItems: "center",
+    justifyContent: "center",
+    marginHorizontal: 6,
+    borderRadius: 12,
+  },
+
+  wheelItemSelected: {
+    backgroundColor: "#E2E8F0",
+  },
+
+  wheelItemText: {
+    color: "#334155",
+    fontSize: 18,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+
+  wheelItemTextSelected: {
+    color: "#0F172A",
+    fontWeight: "800",
+  },
+
+  modalActionsRow: {
+    flexDirection: "row-reverse",
+    gap: 10,
+  },
+
+  modalPrimaryButton: {
+    flex: 1,
+    minHeight: 50,
+    borderRadius: 14,
+    backgroundColor: "#1D4ED8",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 14,
+  },
+
+  modalPrimaryButtonText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+
+  modalSecondaryButton: {
+    flex: 1,
+    minHeight: 50,
+    borderRadius: 14,
+    backgroundColor: "#E2E8F0",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 14,
+  },
+
+  modalSecondaryButtonText: {
+    color: "#0F172A",
+    fontSize: 15,
+    fontWeight: "800",
+    textAlign: "center",
   },
 });
