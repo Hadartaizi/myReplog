@@ -1,10 +1,10 @@
 {
   "expo": {
-    "name": "repLog",
-    "slug": "repLog",
+    "name": "Replog",
+    "slug": "replog",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/Replog.png",
     "scheme": "replog",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -17,7 +17,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "foregroundImage": "./assets/images/Replog.png",
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
@@ -33,39 +33,7 @@
     "web": {
       "bundler": "metro",
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
-    },
-    "plugins": [
-      "expo-router",
-      [
-        "expo-splash-screen",
-        {
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 200,
-          "resizeMode": "contain",
-          "backgroundColor": "#ffffff"
-        }
-      ]
-    ],
-    "experiments": { "typedRoutes": true },
-    "extra": {
-      "expo-router": { "origin": "replog://" },
-      "router": {},
-      "eas": { "projectId": "0ca32970-7986-4e69-89ea-06beafd03661" },
-      "firebaseConfig": {
-      "apiKey": "AIzaSyArrNt0TR70rzg4m1ibw8iFGesCAjfsu1I",
-      "authDomain": "fir-6b758.firebaseapp.com",
-      "projectId": "fir-6b758",
-      "storageBucket": "fir-6b758.appspot.com",
-      "messagingSenderId": "527694804454",
-      "appId": "1:527694804454:web:913ef35d2fc4e2dc9c9227",
-      "measurementId": "G-04013W16P2"
-      }
-    },
-    "runtimeVersion": { "policy": "appVersion" },
-    "updates": {
-      "url": "https://u.expo.dev/0ca32970-7986-4e69-89ea-06beafd03661"
-    },
-    "owner": "hadartaizi"
+      "favicon": "./assets/images/Replog.png"
+    }
   }
 }
