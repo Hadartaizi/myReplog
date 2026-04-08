@@ -1107,44 +1107,44 @@ export default function ClientProgressTracker({ clients: initialClients = [] }: 
             </ScrollView>
           )}
 
-            {selectedClient && (
+          {selectedClient && (
             <View style={styles.selectedClientCard}>
-                <View style={styles.selectedClientTopRow}>
+              <View style={styles.selectedClientTopRow}>
                 <View style={styles.selectedClientTextWrap}>
-                    <Text style={styles.selectedClientTitle}>
+                  <Text style={styles.selectedClientTitle}>
                     {selectedClient.name || "ללא שם"}
-                    </Text>
-                    <Text style={styles.selectedClientEmail}>
+                  </Text>
+                  <Text style={styles.selectedClientEmail}>
                     {selectedClient.email || "ללא אימייל"}
-                    </Text>
+                  </Text>
                 </View>
 
                 <View style={styles.switchBlock}>
-                    <Text style={styles.switchLabel}>
+                  <Text style={styles.switchLabel}>
                     {savingTrackerFlag
-                        ? "שומר..."
-                        : selectedClient.showInTracker
-                        ? "במעקב"
-                        : "לא במעקב"}
-                    </Text>
+                      ? "שומר..."
+                      : selectedClient.showInTracker
+                      ? "במעקב"
+                      : "לא במעקב"}
+                  </Text>
 
-                    <Switch
+                  <Switch
                     value={!!selectedClient.showInTracker}
                     onValueChange={toggleClientTrackerFlag}
                     disabled={savingTrackerFlag}
                     trackColor={{ false: "#CBD5E1", true: "#0F172A" }}
                     thumbColor={"#FFFFFF"}
-                    />
+                  />
                 </View>
-                </View>
+              </View>
 
-                <Text style={styles.selectedClientStatusText}>
+              <Text style={styles.selectedClientStatusText}>
                 {selectedClient.showInTracker
-                    ? "הלקוח מסומן למעקב וכל האימונים שלו מוצגים."
-                    : "הלקוח לא מסומן למעקב כרגע."}
-                </Text>
+                  ? "הלקוח מסומן למעקב וכל האימונים שלו מוצגים."
+                  : "הלקוח לא מסומן למעקב כרגע."}
+              </Text>
             </View>
-            )}
+          )}
 
           {selectedClient && !selectedClient.showInTracker ? (
             <View style={styles.emptyBox}>
@@ -1414,14 +1414,14 @@ const styles = StyleSheet.create({
     gap: 8,
   },
 
-    searchInput: {
+  searchInput: {
     flex: 1,
     color: "#0F172A",
     fontSize: 14,
     textAlign: "right",
     writingDirection: "rtl",
     flexDirection: "row-reverse",
-    },
+  },
 
   searchInfoText: {
     color: "#64748B",
@@ -1559,14 +1559,15 @@ const styles = StyleSheet.create({
   },
 
   summaryGrid: {
-    flexDirection: "row-reverse",
+    flexDirection: "row",
     flexWrap: "wrap",
-    gap: 10,
     justifyContent: "space-between",
+    rowGap: 10,
+    columnGap: 10,
   },
 
   summaryCard: {
-    width: "48.5%",
+    width: "48%",
     backgroundColor: "#FFFFFF",
     borderRadius: 18,
     borderWidth: 1,

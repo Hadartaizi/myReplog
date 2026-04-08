@@ -637,8 +637,8 @@ export default function Menu() {
                       ]}
                       onPress={() => setAdminActionsOpen((prev) => !prev)}
                     >
-                      <View style={styles.buttonRow}>
-                        <View style={styles.mainButtonContent}>
+                      <View style={styles.adminMainButtonInner}>
+                        <View style={styles.mainButtonContentCentered}>
                           <View style={styles.iconWrap}>
                             <AdminIcon size={dynamic.iconSize} color="#1E293B" />
                           </View>
@@ -654,7 +654,7 @@ export default function Menu() {
                           </Text>
                         </View>
 
-                        <Text style={styles.mainExpandText}>
+                        <Text style={styles.mainExpandTextAbsolute}>
                           {adminActionsOpen ? "סגירה" : "פתיחה"}
                         </Text>
                       </View>
@@ -1047,6 +1047,20 @@ const styles = StyleSheet.create({
     gap: 8,
   },
 
+  mainButtonContentCentered: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+
+  adminMainButtonInner: {
+    width: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+  },
+
   categoryButtonContent: {
     flex: 1,
     flexDirection: "row-reverse",
@@ -1133,10 +1147,19 @@ const styles = StyleSheet.create({
   adminMainButtonText: {
     color: "#1E293B",
     fontWeight: "800",
-    textAlign: "right",
+    textAlign: "center",
   },
 
   mainExpandText: {
+    color: "#1D4ED8",
+    fontSize: 12,
+    fontWeight: "800",
+    textAlign: "left",
+  },
+
+  mainExpandTextAbsolute: {
+    position: "absolute",
+    left: 0,
     color: "#1D4ED8",
     fontSize: 12,
     fontWeight: "800",

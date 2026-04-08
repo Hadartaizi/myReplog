@@ -354,7 +354,7 @@ export default function ClientCardManager({
 
   const [clients, setClients] = useState<ClientItem[]>(initialClients);
   const [loadingClients, setLoadingClients] = useState(initialClients.length === 0);
-  const [selectedClient, setSelectedClient] = useState<ClientItem | null>(initialClients[0] || null);
+  const [selectedClient, setSelectedClient] = useState<ClientItem | null>(null);
   const [loadingData, setLoadingData] = useState(false);
   const [savingCards, setSavingCards] = useState(false);
   const [redeemingCard, setRedeemingCard] = useState(false);
@@ -381,7 +381,6 @@ export default function ClientCardManager({
     if (initialClients.length > 0) {
       setClients(initialClients);
       setSelectedClient((prev) => {
-        if (!prev && initialClients[0]) return initialClients[0];
         if (!prev) return null;
 
         const matched = initialClients.find(
@@ -852,7 +851,11 @@ export default function ClientCardManager({
           textAlign="right"
         />
 
-        {normalizedSearch.length > 0 && searchedClients.length === 0 ? (
+        {!normalizedSearch ? (
+          <View style={styles.searchHintBox}>
+            <Text style={styles.searchHintText}>התחילי להקליד שם כדי לבחור לקוח</Text>
+          </View>
+        ) : searchedClients.length === 0 ? (
           <Text style={styles.searchNotFoundText}>לא נמצאה לקוחה בשם הזה</Text>
         ) : showSearchResults ? (
           <View style={styles.searchResultsList}>
@@ -1045,15 +1048,9 @@ export default function ClientCardManager({
           </>
         )
       ) : (
-        searchTouched && normalizedSearch ? (
-          <View style={styles.emptyBox}>
-            <Text style={styles.emptyText}>בחרי לקוח מתוצאות החיפוש</Text>
-          </View>
-        ) : (
-          <View style={styles.emptyBox}>
-            <Text style={styles.emptyText}>חפשי לקוח כדי להציג את נתוני הכרטיסייה</Text>
-          </View>
-        )
+        <View style={styles.emptyBox}>
+          <Text style={styles.emptyText}>בחרי לקוח כדי להציג את נתוני הכרטיסייה</Text>
+        </View>
       )}
     </View>
   );
@@ -1187,6 +1184,13 @@ const styles = StyleSheet.create({
     color: "#64748B",
     fontSize: 14,
     textAlign: "right",
+  },
+
+  searchNotFoundText: {
+    color: "#DC2626",
+    fontSize: 14,
+    textAlign: "right",
+    fontWeight: "600",
   },
 
   searchResultsList: {
