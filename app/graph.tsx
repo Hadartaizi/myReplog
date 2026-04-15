@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo } from 'react';
+import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import {
   Text,
   StyleSheet,
@@ -11,12 +11,22 @@ import {
   useWindowDimensions,
   SafeAreaView,
   Platform,
+  TextInput,
+  Modal,
 } from 'react-native';
 import { useFonts } from 'expo-font';
 import Svg, { Path, Line, Rect } from 'react-native-svg';
 import AppLayout from './components/AppLayout';
 import { auth, db } from '../database/firebase';
-import { collection, query, where, getDocs, deleteDoc, doc } from 'firebase/firestore';
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  deleteDoc,
+  doc,
+  setDoc,
+} from 'firebase/firestore';
 import { LineChart, BarChart } from 'react-native-chart-kit';
 import ModalSelector from 'react-native-modal-selector';
 
@@ -30,6 +40,28 @@ const timeOptions = {
   'רבעוני': 90,
   'חצי שנתי': 182,
   'שנתי': 365,
+};
+
+const normalizeText = (text: string) =>
+  String(text || '')
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[֑-ׇ]/g, '')
+    .replace(/[^֐-׿\w\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+type WorkoutLike = {
+  id?: string;
+  uid?: string;
+  exerciseName?: string;
+  title?: string;
+  name?: string;
+  date?: any;
+  numSets?: number;
+  repsPerSet?: Record<string, { reps?: string; weight?: string }>;
+  createdAt?: any;
+  updatedAt?: any;
 };
 
 function ArrowDownIcon({ size = 20, color = '#5B6470' }) {
@@ -109,9 +141,12 @@ export default function GraphScreen() {
 
   const [selectedPeriod, setSelectedPeriod] = useState('');
   const [selectedExercise, setSelectedExercise] = useState('');
+  const [exerciseSearchText, setExerciseSearchText] = useState('');
+  const [exerciseModalVisible, setExerciseModalVisible] = useState(false);
   const [dataType, setDataType] = useState('');
   const [chartType, setChartType] = useState('');
   const [availableExercises, setAvailableExercises] = useState<string[]>([]);
+  const [deletedExerciseNames, setDeletedExerciseNames] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
   const [chartData, setChartData] = useState<{ labels: string[]; datasets: { data: number[] }[] }>({
@@ -159,7 +194,7 @@ export default function GraphScreen() {
     if (typeof dateValue === 'string') {
       const simpleDateMatch = dateValue.match(/^(\d{4})-(\d{2})-(\d{2})$/);
       if (simpleDateMatch) {
-        const [, year, month, day] = simpleDateMatch;
+        const [, year, month, day] = dateValue.match(/^(\d{4})-(\d{2})-(\d{2})$/)!;
         return new Date(Number(year), Number(month) - 1, Number(day));
       }
 
@@ -183,29 +218,83 @@ export default function GraphScreen() {
       year: '2-digit',
     });
 
-  useEffect(() => {
-    const fetchExercises = async () => {
-      const user = auth.currentUser;
-      if (!user) {
-        setAvailableExercises([]);
-        return;
-      }
+  const getExerciseNameFromDoc = (item: any) =>
+    String(item?.exerciseName || item?.title || item?.name || '').trim();
 
-      try {
-        const q = query(collection(db, 'exercises'), where('uid', '==', user.uid));
-        const snapshot = await getDocs(q);
-        const names = snapshot.docs
-          .map((docItem) => docItem.data().exerciseName)
-          .filter(Boolean);
+  const resetChartSelections = () => {
+    setDataType('');
+    setChartType('');
+    setChartData({ labels: [], datasets: [{ data: [] }] });
+  };
 
-        setAvailableExercises([...new Set(names)]);
-      } catch (error) {
-        console.error('Error fetching exercises:', error);
-      }
-    };
+  const loadDeletedExercises = useCallback(async (uid: string) => {
+    try {
+      const deletedCollectionRef = collection(db, 'users', uid, 'deletedExercises');
+      const deletedSnapshot = await getDocs(deletedCollectionRef);
 
-    fetchExercises();
+      const deletedSet = new Set(
+        deletedSnapshot.docs
+          .map((docSnap) => normalizeText(docSnap.data()?.exerciseName || docSnap.id))
+          .filter(Boolean)
+      );
+
+      setDeletedExerciseNames(deletedSet);
+      return deletedSet;
+    } catch (error) {
+      console.error('Error fetching deleted exercises:', error);
+      const emptySet = new Set<string>();
+      setDeletedExerciseNames(emptySet);
+      return emptySet;
+    }
   }, []);
+
+  const fetchExercises = useCallback(async () => {
+    const user = auth.currentUser;
+    if (!user) {
+      setAvailableExercises([]);
+      setDeletedExerciseNames(new Set());
+      return;
+    }
+
+    try {
+      const deletedSet = await loadDeletedExercises(user.uid);
+
+      const workoutsQuery = query(collection(db, 'workouts'), where('uid', '==', user.uid));
+      const workoutsSnapshot = await getDocs(workoutsQuery);
+
+      const namesFromWorkouts = workoutsSnapshot.docs
+        .map((docItem) => getExerciseNameFromDoc(docItem.data()))
+        .filter(Boolean);
+
+      const exercisesQuery = query(collection(db, 'exercises'), where('uid', '==', user.uid));
+      const exercisesSnapshot = await getDocs(exercisesQuery);
+
+      const namesFromExercises = exercisesSnapshot.docs
+        .map((docItem) => getExerciseNameFromDoc(docItem.data()))
+        .filter(Boolean);
+
+      const merged = [...namesFromWorkouts, ...namesFromExercises];
+
+      const uniqueVisibleNames: string[] = [];
+      const seen = new Set<string>();
+
+      for (const rawName of merged) {
+        const normalized = normalizeText(rawName);
+        if (!normalized || deletedSet.has(normalized) || seen.has(normalized)) continue;
+        seen.add(normalized);
+        uniqueVisibleNames.push(rawName);
+      }
+
+      setAvailableExercises(uniqueVisibleNames.sort((a, b) => a.localeCompare(b)));
+    } catch (error) {
+      console.error('Error fetching exercises:', error);
+      setAvailableExercises([]);
+    }
+  }, [loadDeletedExercises]);
+
+  useEffect(() => {
+    fetchExercises();
+  }, [fetchExercises]);
 
   useEffect(() => {
     const fetchWorkoutData = async () => {
@@ -221,7 +310,17 @@ export default function GraphScreen() {
       try {
         const q = query(collection(db, 'workouts'), where('uid', '==', user.uid));
         const snapshot = await getDocs(q);
-        let filteredWorkouts = snapshot.docs.map((docItem) => docItem.data());
+
+        const selectedNormalized = normalizeText(selectedExercise);
+
+        let filteredWorkouts = snapshot.docs
+          .map((docItem) => docItem.data())
+          .filter((workout: any) => {
+            const normalizedName = normalizeText(getExerciseNameFromDoc(workout));
+            if (!normalizedName) return false;
+            if (deletedExerciseNames.has(normalizedName)) return false;
+            return normalizedName === selectedNormalized;
+          });
 
         const daysBack = timeOptions[selectedPeriod as keyof typeof timeOptions];
 
@@ -246,9 +345,9 @@ export default function GraphScreen() {
     };
 
     fetchWorkoutData();
-  }, [selectedPeriod, selectedExercise, dataType]);
+  }, [selectedPeriod, selectedExercise, dataType, deletedExerciseNames]);
 
-  const generateChartData = (filteredWorkouts: any[]) => {
+  const generateChartData = (filteredWorkouts: WorkoutLike[]) => {
     const groupedMap: Record<string, { label: string; sortValue: number; values: number[] }> = {};
 
     const getBucketData = (date: Date) => {
@@ -322,8 +421,6 @@ export default function GraphScreen() {
     };
 
     filteredWorkouts.forEach((w: any) => {
-      if (w.exerciseName !== selectedExercise) return;
-
       const workoutDate = parseWorkoutDate(w.date);
       if (!workoutDate) return;
 
@@ -376,60 +473,79 @@ export default function GraphScreen() {
 
       setIsDeleting(true);
 
-      setAvailableExercises((prev) => prev.filter((e) => e !== exerciseName));
+      const normalizedTarget = normalizeText(exerciseName);
+      const deletedDocRef = doc(db, 'users', user.uid, 'deletedExercises', normalizedTarget);
 
-      if (selectedExercise === exerciseName) {
-        setSelectedExercise('');
-        setDataType('');
-        setChartType('');
-        setChartData({ labels: [], datasets: [{ data: [] }] });
-      }
-
-      const exercisesQuery = query(
-        collection(db, 'exercises'),
-        where('uid', '==', user.uid),
-        where('exerciseName', '==', exerciseName)
+      await setDoc(
+        deletedDocRef,
+        {
+          exerciseName: exerciseName.trim(),
+          normalizedName: normalizedTarget,
+          uid: user.uid,
+          deletedAt: new Date().toISOString(),
+        },
+        { merge: true }
       );
 
-      const exercisesSnapshot = await getDocs(exercisesQuery);
-
-      for (const docSnap of exercisesSnapshot.docs) {
-        await deleteDoc(doc(db, 'exercises', docSnap.id));
-      }
-
-      const workoutsQuery = query(
-        collection(db, 'workouts'),
-        where('uid', '==', user.uid),
-        where('exerciseName', '==', exerciseName)
-      );
-
+      const workoutsQuery = query(collection(db, 'workouts'), where('uid', '==', user.uid));
       const workoutsSnapshot = await getDocs(workoutsQuery);
 
-      for (const docSnap of workoutsSnapshot.docs) {
-        await deleteDoc(doc(db, 'workouts', docSnap.id));
+      await Promise.all(
+        workoutsSnapshot.docs
+          .filter((docSnap) => normalizeText(getExerciseNameFromDoc(docSnap.data())) === normalizedTarget)
+          .map((docSnap) => deleteDoc(doc(db, 'workouts', docSnap.id)))
+      );
+
+      const exercisesQuery = query(collection(db, 'exercises'), where('uid', '==', user.uid));
+      const exercisesSnapshot = await getDocs(exercisesQuery);
+
+      await Promise.all(
+        exercisesSnapshot.docs
+          .filter((docSnap) => normalizeText(getExerciseNameFromDoc(docSnap.data())) === normalizedTarget)
+          .map((docSnap) => deleteDoc(doc(db, 'exercises', docSnap.id)))
+      );
+
+      await fetchExercises();
+
+      setSelectedExercise('');
+      setExerciseSearchText('');
+      resetChartSelections();
+
+      if (Platform.OS === 'web') {
+        window.alert('התרגיל נמחק בהצלחה');
+      } else {
+        Alert.alert('הצלחה', 'התרגיל נמחק בהצלחה');
       }
     } catch (error) {
       console.error('Error deleting exercise:', error);
-      Alert.alert('שגיאה', 'לא הצלחתי למחוק את התרגיל.');
+
+      if (Platform.OS === 'web') {
+        window.alert('לא הצלחתי למחוק את התרגיל');
+      } else {
+        Alert.alert('שגיאה', 'לא הצלחתי למחוק את התרגיל.');
+      }
     } finally {
       setIsDeleting(false);
     }
   };
 
-  const handleDeleteExercise = (exerciseName: string) => {
-    if (!exerciseName) return;
+  const handleDeleteExercise = async (exerciseName: string) => {
+    if (!exerciseName || isDeleting) return;
 
     if (Platform.OS === 'web') {
-      const confirmed = window.confirm('מחיקת תרגיל תסיר אותו מהרשימה וגם תמחק את כל ההיסטוריה שלו. להמשיך?');
-      if (confirmed) {
-        deleteExerciseConfirmed(exerciseName);
-      }
+      const confirmed = window.confirm(
+        `למחוק את התרגיל "${exerciseName}"?\nהמחיקה תסיר גם את כל ההיסטוריה שלו.`
+      );
+
+      if (!confirmed) return;
+
+      await deleteExerciseConfirmed(exerciseName);
       return;
     }
 
     Alert.alert(
       'אישור מחיקה',
-      'מחיקת תרגיל תסיר אותו מהרשימה וגם תמחק את כל ההיסטוריה שלו. האם את בטוחה?',
+      `למחוק את התרגיל "${exerciseName}"?\nהמחיקה תסיר גם את כל ההיסטוריה שלו.`,
       [
         { text: 'ביטול', style: 'cancel' },
         {
@@ -441,6 +557,35 @@ export default function GraphScreen() {
         },
       ]
     );
+  };
+
+  const filteredExercises = useMemo(() => {
+    const normalizedSearch = normalizeText(exerciseSearchText);
+
+    if (!normalizedSearch) {
+      return availableExercises;
+    }
+
+    return availableExercises.filter((exerciseName) =>
+      normalizeText(exerciseName).includes(normalizedSearch)
+    );
+  }, [availableExercises, exerciseSearchText]);
+
+  const openExerciseModal = () => {
+    setExerciseSearchText(selectedExercise || '');
+    setExerciseModalVisible(true);
+  };
+
+  const closeExerciseModal = () => {
+    setExerciseModalVisible(false);
+    setExerciseSearchText(selectedExercise || '');
+  };
+
+  const chooseExercise = (exerciseName: string) => {
+    setSelectedExercise(exerciseName);
+    setExerciseSearchText(exerciseName);
+    resetChartSelections();
+    setExerciseModalVisible(false);
   };
 
   if (!fontsLoaded) {
@@ -573,42 +718,38 @@ export default function GraphScreen() {
 
               {selectedPeriod !== '' && (
                 <View style={styles.section}>
-                  <Text style={[styles.label, { fontSize: dynamic.labelSize }]}>תרגיל</Text>
-                  <ModalSelector
-                    data={availableExercises
-                      .sort((a, b) => a.localeCompare(b))
-                      .map((label, index) => ({ key: index, label, value: label }))}
-                    onChange={(option) => {
-                      setSelectedExercise(option.value);
-                    }}
-                    cancelText="ביטול"
-                    optionContainerStyle={selectorBoxStyle}
-                    optionTextStyle={(text: string) => ({
-                      fontSize: dynamic.selectorFont,
-                      textAlign: textAlignByLanguage(text),
-                    })}
-                    overlayStyle={styles.modalOverlay}
-                    cancelStyle={styles.modalCancelButton}
-                    cancelTextStyle={styles.modalCancelText}
+                  <Text style={[styles.label, { fontSize: dynamic.labelSize }]}>חפש/י תרגיל</Text>
+
+                  <Pressable
+                    onPress={openExerciseModal}
+                    style={({ pressed }) => [
+                      styles.singleExerciseBox,
+                      { minHeight: dynamic.inputHeight },
+                      pressed && styles.singleExerciseBoxPressed,
+                    ]}
                   >
-                    <View style={[styles.inputBox, { minHeight: dynamic.inputHeight }]}>
-                      {selectorRow({
-                        value: selectedExercise,
-                        placeholder: 'בחרי תרגיל',
-                        fontSize: dynamic.textSize,
-                      })}
-                    </View>
-                  </ModalSelector>
+                    <ArrowDownIcon size={22} color="#5B6470" />
+                    <Text
+                      style={[
+                        selectedExercise ? styles.singleExerciseText : styles.singleExercisePlaceholder,
+                        { fontSize: dynamic.textSize },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {selectedExercise || 'חפשי את התרגיל'}
+                    </Text>
+                  </Pressable>
 
                   {selectedExercise !== '' && (
                     <View style={styles.deleteWrapper}>
                       <Pressable
                         onPress={() => handleDeleteExercise(selectedExercise)}
                         disabled={isDeleting}
-                        hitSlop={8}
+                        hitSlop={12}
                         style={({ pressed }) => [
                           styles.deleteButton,
-                          (pressed || isDeleting) && { opacity: 0.7 },
+                          isDeleting && styles.deleteButtonDisabled,
+                          pressed && { opacity: 0.82 },
                         ]}
                       >
                         <DeleteIcon size={18} color="#DC2626" />
@@ -738,7 +879,7 @@ export default function GraphScreen() {
                 </View>
               )}
 
-              {!loading && chartData.labels.length === 0 && selectedExercise && (
+              {!loading && chartData.labels.length === 0 && selectedExercise && dataType && chartType && (
                 <View style={styles.emptyState}>
                   <ChartIcon size={28} color="#64748B" />
                   <Text style={[styles.noData, { fontSize: dynamic.textSize - 1 }]}>
@@ -749,6 +890,71 @@ export default function GraphScreen() {
             </View>
           </ScrollView>
         </View>
+
+        <Modal
+          visible={exerciseModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={closeExerciseModal}
+        >
+          <View style={styles.exerciseModalOverlay}>
+            <View style={styles.exerciseModalCard}>
+              <Text style={styles.exerciseModalTitle}>חפשי את התרגיל</Text>
+
+              <TextInput
+                style={styles.exerciseModalSearchInput}
+                placeholder="הקלידי שם תרגיל"
+                placeholderTextColor="#94A3B8"
+                value={exerciseSearchText}
+                onChangeText={setExerciseSearchText}
+                textAlign="right"
+                autoFocus
+              />
+
+              <ScrollView
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+                style={styles.exerciseResultsScroll}
+              >
+                {filteredExercises.length > 0 ? (
+                  filteredExercises.slice(0, 30).map((exerciseName, index) => {
+                    const isSelected =
+                      normalizeText(selectedExercise) === normalizeText(exerciseName);
+
+                    return (
+                      <Pressable
+                        key={`${exerciseName}-${index}`}
+                        onPress={() => chooseExercise(exerciseName)}
+                        style={({ pressed }) => [
+                          styles.exerciseResultRow,
+                          isSelected && styles.exerciseResultRowActive,
+                          pressed && styles.exerciseResultRowPressed,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.exerciseResultText,
+                            isSelected && styles.exerciseResultTextActive,
+                          ]}
+                        >
+                          {exerciseName}
+                        </Text>
+                      </Pressable>
+                    );
+                  })
+                ) : (
+                  <View style={styles.noExercisesWrap}>
+                    <Text style={styles.noExercisesText}>לא נמצאו תרגילים</Text>
+                  </View>
+                )}
+              </ScrollView>
+
+              <Pressable onPress={closeExerciseModal} style={styles.exerciseModalCloseButton}>
+                <Text style={styles.exerciseModalCloseText}>סגירה</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
       </AppLayout>
     </SafeAreaView>
   );
@@ -757,25 +963,28 @@ export default function GraphScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: APP_BG,
+    backgroundColor: '#F4F7FB',
   },
   screen: {
     flex: 1,
-    backgroundColor: APP_BG,
+    backgroundColor: '#F4F7FB',
   },
   scrollContent: {
     flexGrow: 1,
     alignItems: 'center',
   },
+
   card: {
     backgroundColor: '#FFFFFF',
     borderRadius: 24,
+    padding: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.08,
     shadowRadius: 16,
     elevation: 6,
   },
+
   header: {
     alignItems: 'center',
     marginBottom: 24,
@@ -788,20 +997,21 @@ const styles = StyleSheet.create({
   subtitle: {
     color: '#64748B',
     textAlign: 'center',
-    marginTop: 8,
-    lineHeight: 22,
+    marginTop: 6,
   },
+
   section: {
-    marginBottom: 18,
+    marginBottom: 20,
+    width: '100%',
   },
   label: {
-    color: '#334155',
     fontWeight: '700',
-    textAlign: 'right',
+    color: '#334155',
     marginBottom: 8,
+    textAlign: 'right',
   },
+
   inputBox: {
-    width: '100%',
     borderWidth: 1,
     borderColor: '#D7DFE9',
     borderRadius: 16,
@@ -809,24 +1019,49 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     justifyContent: 'center',
   },
+
+  singleExerciseBox: {
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 18,
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  singleExerciseBoxPressed: {
+    opacity: 0.88,
+  },
+  singleExerciseText: {
+    flex: 1,
+    textAlign: 'right',
+    color: '#111827',
+  },
+  singleExercisePlaceholder: {
+    flex: 1,
+    textAlign: 'right',
+    color: '#8A94A6',
+  },
+
   selectorInnerRow: {
-    width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   selectorText: {
     flex: 1,
-    color: '#111827',
     textAlign: 'right',
-    marginRight: 8,
+    color: '#111827',
   },
   selectorPlaceholderText: {
     flex: 1,
-    color: '#8A94A6',
     textAlign: 'right',
-    marginRight: 8,
+    color: '#94A3B8',
   },
+
   deleteWrapper: {
     marginTop: 10,
     alignItems: 'flex-end',
@@ -840,117 +1075,205 @@ const styles = StyleSheet.create({
     borderColor: '#FECACA',
     paddingVertical: 10,
     paddingHorizontal: 14,
-    borderRadius: 16,
-    minHeight: 44,
+    borderRadius: 14,
+  },
+  deleteButtonDisabled: {
+    opacity: 0.6,
   },
   deleteButtonText: {
     color: '#DC2626',
     fontWeight: '700',
     fontSize: 14,
   },
+
   loaderWrapper: {
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 26,
+    paddingVertical: 24,
   },
   loaderText: {
     marginTop: 10,
     color: '#64748B',
-    textAlign: 'center',
   },
+
   graphSection: {
-    marginTop: 6,
+    marginTop: 10,
   },
   graphTitle: {
-    textAlign: 'right',
     fontWeight: '800',
     color: '#1E293B',
     marginBottom: 6,
+    textAlign: 'right',
   },
   graphSubTitle: {
-    textAlign: 'center',
     color: '#64748B',
-    marginBottom: 12,
+    textAlign: 'center',
+    marginBottom: 10,
   },
+
   metricTag: {
     alignSelf: 'center',
     backgroundColor: '#EEF2F7',
     borderRadius: 999,
-    paddingVertical: 8,
+    paddingVertical: 6,
     paddingHorizontal: 14,
-    marginBottom: 14,
+    marginBottom: 12,
   },
   metricTagText: {
     color: '#334155',
-    fontWeight: '700',
+    fontWeight: '600',
     fontSize: 13,
   },
+
   graphCard: {
     backgroundColor: '#F8FAFC',
-    borderRadius: 18,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     padding: 14,
     alignItems: 'center',
-    overflow: 'hidden',
   },
+
   yAxisTitle: {
-    textAlign: 'center',
     fontWeight: '700',
     color: '#1E293B',
     marginBottom: 10,
-    fontSize: 14,
   },
+
   chartViewport: {
     width: '100%',
-    overflow: 'hidden',
-    alignSelf: 'stretch',
   },
   chartScrollContent: {
     paddingHorizontal: 4,
   },
   chart: {
-    borderRadius: 18,
-    marginTop: 8,
-    marginBottom: 8,
+    borderRadius: 16,
   },
+
   scrollHint: {
     marginTop: 6,
     fontSize: 12,
     color: '#64748B',
     textAlign: 'center',
   },
+
   emptyState: {
-    marginTop: 12,
+    marginTop: 16,
     backgroundColor: '#F8FAFC',
-    borderRadius: 18,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     paddingVertical: 24,
     paddingHorizontal: 16,
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
   },
   noData: {
+    marginTop: 8,
     color: '#64748B',
     textAlign: 'center',
-    fontWeight: '500',
-    marginTop: 8,
   },
+
   modalOverlay: {
-    backgroundColor: 'rgba(15,23,42,0.35)',
+    backgroundColor: 'rgba(0,0,0,0.35)',
   },
   modalCancelButton: {
     backgroundColor: '#FFFFFF',
     borderRadius: 14,
     marginTop: 10,
-    minHeight: 46,
-    justifyContent: 'center',
+    paddingVertical: 12,
   },
   modalCancelText: {
-    color: '#0F172A',
-    fontWeight: '700',
     textAlign: 'center',
+    fontWeight: '700',
+    color: '#111827',
+  },
+
+  exerciseModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.38)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 18,
+  },
+  exerciseModalCard: {
+    width: '100%',
+    maxWidth: 460,
+    maxHeight: '80%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 22,
+    padding: 18,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.14,
+    shadowRadius: 18,
+    elevation: 10,
+  },
+  exerciseModalTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#1E293B',
+    textAlign: 'center',
+    marginBottom: 14,
+  },
+  exerciseModalSearchInput: {
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 16,
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    color: '#111827',
+    textAlign: 'right',
+    fontSize: 16,
+    marginBottom: 12,
+  },
+  exerciseResultsScroll: {
+    maxHeight: 360,
+  },
+  exerciseResultRow: {
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    marginBottom: 8,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  exerciseResultRowActive: {
+    backgroundColor: '#EEF4FF',
+    borderColor: '#BFDBFE',
+  },
+  exerciseResultRowPressed: {
+    opacity: 0.82,
+  },
+  exerciseResultText: {
+    textAlign: 'right',
+    color: '#111827',
+    fontSize: 15,
+  },
+  exerciseResultTextActive: {
+    color: '#2563EB',
+    fontWeight: '700',
+  },
+  noExercisesWrap: {
+    paddingVertical: 24,
+    alignItems: 'center',
+  },
+  noExercisesText: {
+    color: '#64748B',
+    fontSize: 15,
+    textAlign: 'center',
+  },
+  exerciseModalCloseButton: {
+    marginTop: 14,
+    backgroundColor: '#0F172A',
+    borderRadius: 16,
+    paddingVertical: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  exerciseModalCloseText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 15,
   },
 });

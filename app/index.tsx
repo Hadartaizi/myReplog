@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -16,22 +16,24 @@ import {
   Modal,
   Pressable,
   SafeAreaView,
-} from 'react-native';
-import { Stack, useRouter } from 'expo-router';
-import { useFonts } from 'expo-font';
+} from "react-native";
+import { Stack, useRouter } from "expo-router";
+import { useFonts } from "expo-font";
 import {
-  signInWithEmailAndPassword,
+  browserSessionPersistence,
   sendPasswordResetEmail,
+  setPersistence,
+  signInWithEmailAndPassword,
   signOut,
-} from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
-import Svg, { Path, Circle, Line } from 'react-native-svg';
-import { auth, db } from '../database/firebase.js';
-import { getAccessState } from './components/admin/accessUtils';
+} from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
+import Svg, { Path, Circle, Line } from "react-native-svg";
+import { auth, db } from "../database/firebase.js";
+import { getAccessState } from "./components/admin/accessUtils";
 
-const APP_BG = '#aec6cfb7';
+const APP_BG = "#aec6cfb7";
 
-function MailIcon({ size = 22, color = '#5B6470' }) {
+function MailIcon({ size = 22, color = "#5B6470" }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
       <Path
@@ -53,7 +55,7 @@ function MailIcon({ size = 22, color = '#5B6470' }) {
   );
 }
 
-function EyeIcon({ size = 22, color = '#5B6470' }) {
+function EyeIcon({ size = 22, color = "#5B6470" }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
       <Path
@@ -75,7 +77,7 @@ function EyeIcon({ size = 22, color = '#5B6470' }) {
   );
 }
 
-function EyeOffIcon({ size = 22, color = '#5B6470' }) {
+function EyeOffIcon({ size = 22, color = "#5B6470" }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
       <Path
@@ -111,15 +113,15 @@ export default function Index() {
   const { width, height } = useWindowDimensions();
 
   const [fontsLoaded] = useFonts({
-    Bilbo: require('../assets/fonts/Bilbo-Regular.ttf'),
+    Bilbo: require("../assets/fonts/Bilbo-Regular.ttf"),
   });
 
   const [isHydrated, setIsHydrated] = useState(false);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [resetEmail, setResetEmail] = useState('');
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [resetEmail, setResetEmail] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isResetLoading, setIsResetLoading] = useState(false);
   const [resetModalVisible, setResetModalVisible] = useState(false);
@@ -153,7 +155,7 @@ export default function Index() {
   }
 
   const showMessage = (title: string, message: string) => {
-    if (Platform.OS === 'web') {
+    if (Platform.OS === "web") {
       window.alert(`${title}\n\n${message}`);
     } else {
       Alert.alert(title, message);
@@ -161,17 +163,21 @@ export default function Index() {
   };
 
   const handleLogin = async () => {
-    setErrorMessage('');
+    setErrorMessage("");
 
     const trimmedEmail = email.trim().toLowerCase();
 
     if (!trimmedEmail || !password) {
-      setErrorMessage('אנא הזיני אימייל וסיסמה');
+      setErrorMessage("אנא הזיני אימייל וסיסמה");
       return;
     }
 
     try {
       setIsLoading(true);
+
+      if (Platform.OS === "web") {
+        await setPersistence(auth, browserSessionPersistence);
+      }
 
       const userCredential = await signInWithEmailAndPassword(
         auth,
@@ -180,109 +186,109 @@ export default function Index() {
       );
 
       const user = userCredential.user;
-      const userRef = doc(db, 'users', user.uid);
+      const userRef = doc(db, "users", user.uid);
       const userSnap = await getDoc(userRef);
 
       if (!userSnap.exists()) {
         await signOut(auth);
-        setErrorMessage('לא נמצאו פרטי משתמש. יש להתחבר מחדש');
+        setErrorMessage("לא נמצאו פרטי משתמש. יש להתחבר מחדש");
         return;
       }
 
       const userData = userSnap.data();
 
-      console.log('LOGIN userData:', userData);
-      console.log('LOGIN accessStartAt raw:', userData?.accessStartAt);
-      console.log('LOGIN accessEndAt raw:', userData?.accessEndAt);
-      console.log('LOGIN device now:', new Date().toISOString());
+      console.log("LOGIN userData:", userData);
+      console.log("LOGIN accessStartAt raw:", userData?.accessStartAt);
+      console.log("LOGIN accessEndAt raw:", userData?.accessEndAt);
+      console.log("LOGIN device now:", new Date().toISOString());
 
       const accessState = getAccessState(userData);
 
-      console.log('LOGIN accessState:', accessState);
+      console.log("LOGIN accessState:", accessState);
 
       if (!accessState.allowed) {
         await signOut(auth);
 
         switch (accessState.reason) {
-          case 'blocked':
-            setErrorMessage('החשבון שלך נחסם');
+          case "blocked":
+            setErrorMessage("החשבון שלך נחסם");
             showMessage(
-              'החשבון חסום',
-              'הגישה שלך למערכת נחסמה. יש לפנות למנהל המערכת.'
+              "החשבון חסום",
+              "הגישה שלך למערכת נחסמה. יש לפנות למנהל המערכת."
             );
             return;
 
-          case 'pending_approval':
-            setErrorMessage('החשבון עדיין לא אושר');
+          case "pending_approval":
+            setErrorMessage("החשבון עדיין לא אושר");
             showMessage(
-              'החשבון עדיין לא אושר',
-              'ההרשמה נקלטה בהצלחה. יש להמתין לאישור סופי ממנהל המערכת.'
+              "החשבון עדיין לא אושר",
+              "ההרשמה נקלטה בהצלחה. יש להמתין לאישור סופי ממנהל המערכת."
             );
             return;
 
-          case 'expired':
-            setErrorMessage('תקופת הגישה שלך הסתיימה');
+          case "expired":
+            setErrorMessage("תקופת הגישה שלך הסתיימה");
             showMessage(
-              'הגישה הסתיימה',
-              'תקופת הגישה שהוגדרה עבורך הסתיימה.'
+              "הגישה הסתיימה",
+              "תקופת הגישה שהוגדרה עבורך הסתיימה."
             );
             return;
 
-          case 'not_started_yet':
-            setErrorMessage('תקופת הגישה שלך עדיין לא התחילה');
+          case "not_started_yet":
+            setErrorMessage("תקופת הגישה שלך עדיין לא התחילה");
             showMessage(
-              'הגישה עדיין לא התחילה',
-              'תקופת הגישה שלך עדיין לא התחילה.'
+              "הגישה עדיין לא התחילה",
+              "תקופת הגישה שלך עדיין לא התחילה."
             );
             return;
 
-          case 'invalid_access_start':
-            setErrorMessage('תאריך תחילת הגישה אינו תקין');
+          case "invalid_access_start":
+            setErrorMessage("תאריך תחילת הגישה אינו תקין");
             showMessage(
-              'שגיאת גישה',
-              'תאריך תחילת הגישה שהוגדר עבורך אינו תקין.'
+              "שגיאת גישה",
+              "תאריך תחילת הגישה שהוגדר עבורך אינו תקין."
             );
             return;
 
-          case 'invalid_access_end':
-            setErrorMessage('לא הוגדרה תקופת גישה תקינה לחשבון');
+          case "invalid_access_end":
+            setErrorMessage("לא הוגדרה תקופת גישה תקינה לחשבון");
             showMessage(
-              'אין גישה למערכת',
-              'לא הוגדרה עבורך תקופת גישה תקינה. יש לפנות למנהל המערכת.'
+              "אין גישה למערכת",
+              "לא הוגדרה עבורך תקופת גישה תקינה. יש לפנות למנהל המערכת."
             );
             return;
 
-          case 'missing_user_doc':
-            setErrorMessage('לא נמצאו פרטי משתמש');
-            showMessage('שגיאה', 'לא נמצאו פרטי משתמש. יש לנסות שוב.');
+          case "missing_user_doc":
+            setErrorMessage("לא נמצאו פרטי משתמש");
+            showMessage("שגיאה", "לא נמצאו פרטי משתמש. יש לנסות שוב.");
             return;
 
-          case 'not_approved':
+          case "not_approved":
           default:
-            setErrorMessage('אין כרגע הרשאת גישה למערכת');
-            showMessage('אין גישה למערכת', 'אין כרגע הרשאת גישה למערכת.');
+            setErrorMessage("אין כרגע הרשאת גישה למערכת");
+            showMessage("אין גישה למערכת", "אין כרגע הרשאת גישה למערכת.");
             return;
         }
       }
 
-      router.replace('/home');
+      router.replace("/home");
     } catch (error: any) {
-      console.log('שגיאה בכניסה:', error);
+      console.log("שגיאה בכניסה:", error);
 
       switch (error?.code) {
-        case 'auth/user-not-found':
-        case 'auth/wrong-password':
-        case 'auth/invalid-credential':
-          setErrorMessage('אימייל או סיסמה שגויים');
+        case "auth/user-not-found":
+        case "auth/wrong-password":
+        case "auth/invalid-credential":
+          setErrorMessage("אימייל או סיסמה שגויים");
           break;
-        case 'auth/invalid-email':
-          setErrorMessage('כתובת האימייל אינה תקינה');
+        case "auth/invalid-email":
+          setErrorMessage("כתובת האימייל אינה תקינה");
           break;
-        case 'auth/too-many-requests':
-          setErrorMessage('בוצעו יותר מדי ניסיונות. נסי שוב מאוחר יותר');
+        case "auth/too-many-requests":
+          setErrorMessage("בוצעו יותר מדי ניסיונות. נסי שוב מאוחר יותר");
           break;
         default:
-          setErrorMessage('אירעה שגיאה, אנא נסי שוב');
+          setErrorMessage("אירעה שגיאה, אנא נסי שוב");
       }
     } finally {
       setIsLoading(false);
@@ -298,13 +304,13 @@ export default function Index() {
     const trimmedEmail = resetEmail.trim().toLowerCase();
 
     if (!trimmedEmail) {
-      Alert.alert('חסר אימייל', 'אנא הזיני כתובת אימייל');
+      Alert.alert("חסר אימייל", "אנא הזיני כתובת אימייל");
       return;
     }
 
     try {
       setIsResetLoading(true);
-      auth.languageCode = 'he';
+      auth.languageCode = "he";
 
       await sendPasswordResetEmail(auth, trimmedEmail);
 
@@ -312,25 +318,25 @@ export default function Index() {
       setEmail(trimmedEmail);
 
       Alert.alert(
-        'נשלח מייל לאיפוס סיסמה',
-        'שלחנו קישור לאיפוס הסיסמה לכתובת האימייל שהוזנה. בדקי גם בתיקיית הספאם.'
+        "נשלח מייל לאיפוס סיסמה",
+        "שלחנו קישור לאיפוס הסיסמה לכתובת האימייל שהוזנה. בדקי גם בתיקיית הספאם."
       );
     } catch (error: any) {
-      console.log('שגיאה באיפוס סיסמה:', error);
+      console.log("שגיאה באיפוס סיסמה:", error);
 
       switch (error?.code) {
-        case 'auth/invalid-email':
-          Alert.alert('שגיאה', 'כתובת האימייל אינה תקינה');
+        case "auth/invalid-email":
+          Alert.alert("שגיאה", "כתובת האימייל אינה תקינה");
           break;
-        case 'auth/user-not-found':
-        case 'auth/invalid-credential':
-          Alert.alert('שגיאה', 'לא נמצא משתמש עם כתובת האימייל הזו');
+        case "auth/user-not-found":
+        case "auth/invalid-credential":
+          Alert.alert("שגיאה", "לא נמצא משתמש עם כתובת האימייל הזו");
           break;
-        case 'auth/too-many-requests':
-          Alert.alert('שגיאה', 'בוצעו יותר מדי ניסיונות. נסי שוב מאוחר יותר');
+        case "auth/too-many-requests":
+          Alert.alert("שגיאה", "בוצעו יותר מדי ניסיונות. נסי שוב מאוחר יותר");
           break;
         default:
-          Alert.alert('שגיאה', 'לא ניתן לשלוח מייל איפוס כרגע');
+          Alert.alert("שגיאה", "לא ניתן לשלוח מייל איפוס כרגע");
       }
     } finally {
       setIsResetLoading(false);
@@ -345,8 +351,8 @@ export default function Index() {
 
         <KeyboardAvoidingView
           style={styles.flex}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 10 : 0}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 10 : 0}
         >
           <ScrollView
             contentContainerStyle={[
@@ -372,7 +378,7 @@ export default function Index() {
                 ]}
               >
                 <Image
-                  source={require('../assets/images/myAppImg/logoBarbells.png')}
+                  source={require("../assets/images/myAppImg/logoBarbells.png")}
                   resizeMode="contain"
                   style={[
                     styles.logo,
@@ -534,7 +540,7 @@ export default function Index() {
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  onPress={() => router.push('/register')}
+                  onPress={() => router.push("/register")}
                   activeOpacity={0.8}
                 >
                   <Text
@@ -648,188 +654,188 @@ const styles = StyleSheet.create({
   },
   scrollContainer: {
     flexGrow: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   card: {
-    width: '100%',
-    alignSelf: 'center',
+    width: "100%",
+    alignSelf: "center",
   },
   topSection: {
-    alignItems: 'center',
+    alignItems: "center",
   },
   logo: {
     marginBottom: 8,
   },
   titleReplog: {
-    fontFamily: 'Bilbo',
-    color: '#1E293B',
+    fontFamily: "Bilbo",
+    color: "#1E293B",
     marginBottom: 14,
-    textAlign: 'center',
+    textAlign: "center",
     includeFontPadding: false,
   },
   welcomeTitle: {
-    fontWeight: '800',
-    color: '#1E293B',
-    textAlign: 'center',
+    fontWeight: "800",
+    color: "#1E293B",
+    textAlign: "center",
     marginBottom: 10,
   },
   subtitle: {
-    color: '#64748B',
-    textAlign: 'center',
+    color: "#64748B",
+    textAlign: "center",
     paddingHorizontal: 8,
     maxWidth: 420,
-    fontWeight: '500',
+    fontWeight: "500",
   },
   formSection: {
-    width: '100%',
+    width: "100%",
   },
   label: {
-    color: '#334155',
-    fontWeight: '700',
-    textAlign: 'right',
+    color: "#334155",
+    fontWeight: "700",
+    textAlign: "right",
     marginBottom: 8,
     marginTop: 4,
   },
   inputBox: {
-    width: '100%',
+    width: "100%",
     minHeight: 56,
     borderWidth: 1,
-    borderColor: '#D7DFE9',
+    borderColor: "#D7DFE9",
     borderRadius: 16,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     paddingHorizontal: 14,
-    flexDirection: 'row-reverse',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    justifyContent: "space-between",
     marginBottom: 14,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.04,
     shadowRadius: 10,
-    elevation: Platform.OS === 'android' ? 2 : 0,
+    elevation: Platform.OS === "android" ? 2 : 0,
   },
   iconWrap: {
     width: 24,
     height: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   input: {
     flex: 1,
-    color: '#111827',
-    textAlign: 'right',
+    color: "#111827",
+    textAlign: "right",
     marginRight: 10,
     minHeight: 48,
-    paddingVertical: Platform.OS === 'android' ? 8 : 10,
+    paddingVertical: Platform.OS === "android" ? 8 : 10,
   },
   iconPressable: {
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     paddingVertical: 4,
     paddingHorizontal: 2,
   },
   forgotPasswordButton: {
-    alignSelf: 'flex-end',
+    alignSelf: "flex-end",
     paddingVertical: 6,
     marginTop: -4,
     marginBottom: 10,
   },
   forgotPasswordText: {
-    color: '#2563EB',
-    textAlign: 'right',
-    fontWeight: '700',
+    color: "#2563EB",
+    textAlign: "right",
+    fontWeight: "700",
   },
   button: {
-    width: '100%',
+    width: "100%",
     minHeight: 56,
-    backgroundColor: '#0F172A',
+    backgroundColor: "#0F172A",
     borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     marginTop: 10,
     paddingVertical: 14,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.08,
     shadowRadius: 12,
-    elevation: Platform.OS === 'android' ? 4 : 0,
+    elevation: Platform.OS === "android" ? 4 : 0,
   },
   buttonDisabled: {
     opacity: 0.7,
   },
   buttonText: {
-    color: '#FFFFFF',
-    fontWeight: '800',
+    color: "#FFFFFF",
+    fontWeight: "800",
   },
   signupText: {
-    color: '#1D4ED8',
-    textAlign: 'center',
+    color: "#1D4ED8",
+    textAlign: "center",
     marginTop: 18,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   errorText: {
-    color: '#DC2626',
+    color: "#DC2626",
     marginTop: -2,
     marginBottom: 6,
-    textAlign: 'right',
-    fontWeight: '500',
+    textAlign: "right",
+    fontWeight: "500",
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.45)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "rgba(15, 23, 42, 0.45)",
+    justifyContent: "center",
+    alignItems: "center",
     paddingHorizontal: 16,
   },
   modalCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderRadius: 22,
     padding: 20,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.12,
     shadowRadius: 20,
-    elevation: Platform.OS === 'android' ? 8 : 0,
+    elevation: Platform.OS === "android" ? 8 : 0,
   },
   modalTitle: {
     fontSize: 22,
-    fontWeight: '800',
-    color: '#1E293B',
-    textAlign: 'center',
+    fontWeight: "800",
+    color: "#1E293B",
+    textAlign: "center",
     marginBottom: 10,
   },
   modalSubtitle: {
     fontSize: 14,
-    color: '#64748B',
-    textAlign: 'center',
+    color: "#64748B",
+    textAlign: "center",
     lineHeight: 22,
     marginBottom: 18,
   },
   modalInputBox: {
-    width: '100%',
+    width: "100%",
     minHeight: 56,
     borderWidth: 1,
-    borderColor: '#D7DFE9',
+    borderColor: "#D7DFE9",
     borderRadius: 16,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     paddingHorizontal: 14,
-    flexDirection: 'row-reverse',
-    alignItems: 'center',
+    flexDirection: "row-reverse",
+    alignItems: "center",
     marginBottom: 18,
   },
   modalInput: {
     flex: 1,
-    color: '#111827',
-    textAlign: 'right',
+    color: "#111827",
+    textAlign: "right",
     marginRight: 10,
     minHeight: 48,
-    paddingVertical: Platform.OS === 'android' ? 8 : 10,
+    paddingVertical: Platform.OS === "android" ? 8 : 10,
     fontSize: 15,
   },
   modalButtonsRow: {
-    flexDirection: 'row-reverse',
-    justifyContent: 'space-between',
+    flexDirection: "row-reverse",
+    justifyContent: "space-between",
     gap: 10,
   },
   modalCancelButton: {
@@ -837,29 +843,29 @@ const styles = StyleSheet.create({
     minHeight: 50,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#CBD5E1',
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    borderColor: "#CBD5E1",
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
     paddingVertical: 12,
   },
   modalCancelText: {
-    color: '#334155',
-    fontWeight: '700',
+    color: "#334155",
+    fontWeight: "700",
     fontSize: 15,
   },
   modalSendButton: {
     flex: 1,
     minHeight: 50,
     borderRadius: 16,
-    backgroundColor: '#0F172A',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "#0F172A",
+    justifyContent: "center",
+    alignItems: "center",
     paddingVertical: 12,
   },
   modalSendText: {
-    color: '#FFFFFF',
-    fontWeight: '800',
+    color: "#FFFFFF",
+    fontWeight: "800",
     fontSize: 15,
   },
 });

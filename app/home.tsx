@@ -8,8 +8,9 @@ import {
   getDocs,
   query,
   where,
+  deleteDoc,
 } from 'firebase/firestore';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import {
   Alert,
   ActivityIndicator,
@@ -40,6 +41,9 @@ const normalizeText = (text: string) =>
     .replace(/[^֐-׿\w\s]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
+
+const hasOwn = (obj: any, key: string) =>
+  !!obj && Object.prototype.hasOwnProperty.call(obj, key);
 
 const getGreeting = () => {
   const hour = new Date().getHours();
@@ -117,6 +121,7 @@ type ExerciseDocType = {
   workoutId?: string;
   exerciseName: string;
   name?: string;
+  title?: string;
   sets?: number;
   reps?: number;
   weight?: number;
@@ -219,6 +224,7 @@ export default function Home() {
   const [tempDate, setTempDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [existingExercises, setExistingExercises] = useState<string[]>([]);
+  const [deletedExerciseNames, setDeletedExerciseNames] = useState<Set<string>>(new Set());
   const [addError, setAddError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingLastExercise, setIsLoadingLastExercise] = useState(false);
@@ -234,47 +240,82 @@ export default function Home() {
     error: '',
   });
 
-  useEffect(() => {
-    const fetchUserData = async () => {
-      try {
-        const user = auth.currentUser;
-        if (!user) return;
+  const getExerciseNameFromDoc = (item: any) => {
+    if (!item) return '';
 
-        const userRef = doc(db, 'users', user.uid);
-        const userSnap = await getDoc(userRef);
+    if (hasOwn(item, 'exerciseName')) return String(item.exerciseName ?? '').trim();
+    if (hasOwn(item, 'title')) return String(item.title ?? '').trim();
+    if (hasOwn(item, 'name')) return String(item.name ?? '').trim();
 
-        if (userSnap.exists()) {
-          const data = userSnap.data();
-          setUserName((data?.name || '').trim());
-        }
+    return '';
+  };
 
-        const q = query(collection(db, 'workouts'), where('uid', '==', user.uid));
-        const snapshot = await getDocs(q);
+  const loadDeletedExercises = useCallback(async (uid: string) => {
+    try {
+      const deletedCollectionRef = collection(db, 'users', uid, 'deletedExercises');
+      const deletedSnapshot = await getDocs(deletedCollectionRef);
 
-        const uniqueNames = Array.from(
-          new Set(
-            snapshot.docs
-              .map((item) => {
-                const data = item.data();
-                return String(
-                  data?.exerciseName ||
-                    data?.title ||
-                    data?.name ||
-                    ''
-                ).trim();
-              })
-              .filter(Boolean)
-          )
-        );
+      const deletedSet = new Set(
+        deletedSnapshot.docs
+          .map((docSnap) => normalizeText(docSnap.data()?.exerciseName || docSnap.id))
+          .filter(Boolean)
+      );
 
-        setExistingExercises(uniqueNames);
-      } catch (error) {
-        console.error('שגיאה בשליפת נתוני משתמש:', error);
-      }
-    };
-
-    fetchUserData();
+      setDeletedExerciseNames(deletedSet);
+      return deletedSet;
+    } catch (error) {
+      console.error('שגיאה בשליפת תרגילים שנמחקו:', error);
+      const emptySet = new Set<string>();
+      setDeletedExerciseNames(emptySet);
+      return emptySet;
+    }
   }, []);
+
+  const fetchUserData = useCallback(async () => {
+    try {
+      const user = auth.currentUser;
+      if (!user) return;
+
+      const userRef = doc(db, 'users', user.uid);
+      const userSnap = await getDoc(userRef);
+
+      if (userSnap.exists()) {
+        const data = userSnap.data();
+        setUserName((data?.name || '').trim());
+      }
+
+      const deletedSet = await loadDeletedExercises(user.uid);
+
+      const workoutsQuery = query(collection(db, 'workouts'), where('uid', '==', user.uid));
+      const workoutsSnapshot = await getDocs(workoutsQuery);
+
+      const exercisesQuery = query(collection(db, 'exercises'), where('uid', '==', user.uid));
+      const exercisesSnapshot = await getDocs(exercisesQuery);
+
+      const mergedNames = [
+        ...workoutsSnapshot.docs.map((item) => getExerciseNameFromDoc(item.data())),
+        ...exercisesSnapshot.docs.map((item) => getExerciseNameFromDoc(item.data())),
+      ].filter(Boolean);
+
+      const uniqueNames: string[] = [];
+      const seen = new Set<string>();
+
+      for (const rawName of mergedNames) {
+        const normalized = normalizeText(rawName);
+        if (!normalized || deletedSet.has(normalized) || seen.has(normalized)) continue;
+        seen.add(normalized);
+        uniqueNames.push(rawName.trim());
+      }
+
+      setExistingExercises(uniqueNames.sort((a, b) => a.localeCompare(b, 'he')));
+    } catch (error) {
+      console.error('שגיאה בשליפת נתוני משתמש:', error);
+    }
+  }, [loadDeletedExercises]);
+
+  useEffect(() => {
+    fetchUserData();
+  }, [fetchUserData]);
 
   const buildRepsPerSetForWorkout = () => {
     const result: RepsPerSetType = {};
@@ -304,6 +345,7 @@ export default function Home() {
         uid: '',
         exerciseName: trimmedName,
         name: trimmedName,
+        title: trimmedName,
         sets: i + 1,
         reps: Number(currentSet?.reps || 0),
         weight: Number(currentSet?.weight || 0),
@@ -316,27 +358,66 @@ export default function Home() {
     return rows;
   };
 
+  const removeOldDeletedCopiesIfExist = async (uid: string, exerciseName: string) => {
+    const normalizedTarget = normalizeText(exerciseName);
+    const deletedDocRef = doc(db, 'users', uid, 'deletedExercises', normalizedTarget);
+    const deletedDocSnap = await getDoc(deletedDocRef);
+
+    if (!deletedDocSnap.exists()) return;
+
+    const workoutsQuery = query(collection(db, 'workouts'), where('uid', '==', uid));
+    const workoutsSnapshot = await getDocs(workoutsQuery);
+
+    await Promise.all(
+      workoutsSnapshot.docs
+        .filter((docSnap) => normalizeText(getExerciseNameFromDoc(docSnap.data())) === normalizedTarget)
+        .map((docSnap) => deleteDoc(doc(db, 'workouts', docSnap.id)))
+    );
+
+    const exercisesQuery = query(collection(db, 'exercises'), where('uid', '==', uid));
+    const exercisesSnapshot = await getDocs(exercisesQuery);
+
+    await Promise.all(
+      exercisesSnapshot.docs
+        .filter((docSnap) => normalizeText(getExerciseNameFromDoc(docSnap.data())) === normalizedTarget)
+        .map((docSnap) => deleteDoc(doc(db, 'exercises', docSnap.id)))
+    );
+
+    await deleteDoc(deletedDocRef);
+
+    setDeletedExerciseNames((prev) => {
+      const next = new Set(prev);
+      next.delete(normalizedTarget);
+      return next;
+    });
+  };
+
   const fetchLastExercise = async (exerciseName: string) => {
     try {
       const user = auth.currentUser;
       if (!user) return [];
+
+      const normalizedTarget = normalizeText(exerciseName);
+
+      if (deletedExerciseNames.has(normalizedTarget)) {
+        setLastExerciseData((prev) => ({
+          ...prev,
+          [exerciseName]: [],
+        }));
+        return [];
+      }
 
       setIsLoadingLastExercise(true);
 
       const q = query(collection(db, 'workouts'), where('uid', '==', user.uid));
       const snapshot = await getDocs(q);
 
-      const normalizedTarget = normalizeText(exerciseName);
-
       const matchingWorkouts = snapshot.docs
         .map((docSnap) => {
           const data = docSnap.data();
           return { id: docSnap.id, ...data };
         })
-        .filter((item: any) => {
-          const docName = item?.exerciseName || item?.title || item?.name || '';
-          return normalizeText(String(docName)) === normalizedTarget;
-        })
+        .filter((item: any) => normalizeText(getExerciseNameFromDoc(item)) === normalizedTarget)
         .sort((a: any, b: any) => {
           const aTime =
             parseDateSafe(a.updatedAt)?.getTime() ||
@@ -462,8 +543,11 @@ export default function Home() {
 
       const filtered = input
         ? existingExercises
-            .filter((name) => normalizeText(name).includes(input))
-            .sort()
+            .filter((name) => {
+              const normalizedName = normalizeText(name);
+              return !deletedExerciseNames.has(normalizedName) && normalizedName.includes(input);
+            })
+            .sort((a, b) => a.localeCompare(b, 'he'))
         : [];
 
       updated.suggestions = filtered;
@@ -546,9 +630,12 @@ export default function Home() {
       }
 
       const trimmedExerciseName = exercise.name.trim();
+      const normalizedName = normalizeText(trimmedExerciseName);
       const dateKey = formatDateForInput(date);
       const nowIso = new Date().toISOString();
       const workoutDateIso = date.toISOString();
+
+      await removeOldDeletedCopiesIfExist(user.uid, trimmedExerciseName);
 
       const repsPerSetForWorkout = buildRepsPerSetForWorkout();
       const exerciseRows = buildExerciseRows();
@@ -575,6 +662,7 @@ export default function Home() {
             workoutId: workoutRef.id,
             exerciseName: row.exerciseName,
             name: row.name,
+            title: row.title,
             sets: row.sets,
             reps: row.reps,
             weight: row.weight,
@@ -585,13 +673,14 @@ export default function Home() {
         )
       );
 
-      const alreadyExists = existingExercises.some(
-        (name) => normalizeText(name) === normalizeText(trimmedExerciseName)
-      );
-
-      if (!alreadyExists) {
-        setExistingExercises((prev) => [...new Set([...prev, trimmedExerciseName])]);
-      }
+      setExistingExercises((prev) => {
+        const withoutOldDuplicates = prev.filter(
+          (name) => normalizeText(name) !== normalizedName
+        );
+        return [...withoutOldDuplicates, trimmedExerciseName].sort((a, b) =>
+          a.localeCompare(b, 'he')
+        );
+      });
 
       setLastExerciseData((prev) => ({
         ...prev,
@@ -617,6 +706,7 @@ export default function Home() {
       setDate(today);
       setTempDate(today);
       setAddError('');
+      await fetchUserData();
       showToast('האימון נשמר בהצלחה!');
     } catch (error) {
       console.error('שגיאה בשמירת האימון:', error);

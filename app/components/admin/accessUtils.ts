@@ -1,3 +1,4 @@
+import type { UserRole, UserDoc } from "../../types/user";
 export type AccessStatus = 'pending' | 'approved' | 'blocked';
 
 type FirestoreLikeTimestamp = {

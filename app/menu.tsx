@@ -7,7 +7,9 @@ import {
   getDoc,
   getDocs,
   query,
+  updateDoc,
   where,
+  writeBatch,
 } from "firebase/firestore";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Svg, { Circle, Line, Path, Rect } from "react-native-svg";
@@ -23,6 +25,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   useWindowDimensions,
   View,
 } from "react-native";
@@ -30,7 +33,10 @@ import { auth, db } from "../database/firebase";
 import AppLayout from "./components/AppLayout";
 import ClientAccessManager from "./components/admin/ClientAccessManager";
 import ClientCardManager from "./components/admin/ClientCardManager";
+import CoachClientCreator from "./components/admin/CoachClientCreator";
+import SecondaryAdminsManager from "./components/admin/SecondaryAdminsManager";
 import ClientProgressTracker from "./components/clientWorkout/ClientProgressTracker";
+import type { UserRole } from "./types/user";
 import {
   formatDateTimeIL,
   getRemainingTimeLabel,
@@ -38,9 +44,79 @@ import {
 
 const APP_BG = "#F4F7FB";
 
-const INSTAGRAM_URL = "https://www.instagram.com/hadar_taizi/";
-const WHATSAPP_PHONE = "972502507437";
-const PHONE_NUMBER = "0502507437";
+const DEFAULT_INSTAGRAM_URL = "https://www.instagram.com/hadar_taizi/";
+const DEFAULT_WHATSAPP_PHONE = "972502507437";
+const DEFAULT_PHONE_NUMBER = "0502507437";
+
+type ClientItem = {
+  id: string;
+  uid?: string;
+  name?: string;
+  email?: string;
+  phone?: string;
+  role?: UserRole;
+  approvalStatus?: "pending" | "approved" | "blocked";
+  accessStartAt?: string | null;
+  accessEndAt?: string | null;
+  createdByUid?: string | null;
+  hasLoginAccount?: boolean;
+  authUid?: string | null;
+  cardsPurchased?: number;
+  cardsUsed?: number;
+  cardUsageDates?: string[];
+  instagramUrl?: string;
+  whatsappPhone?: string;
+  contactPhone?: string;
+  contactOwnerUid?: string | null;
+  contactUpdatedAt?: string | null;
+};
+
+type SecondaryAdminItem = {
+  id: string;
+  uid?: string;
+  name?: string;
+  email?: string;
+  role?: UserRole;
+  approvalStatus?: "pending" | "approved" | "blocked";
+  accessStartAt?: string | null;
+  accessEndAt?: string | null;
+  createdByOwnerUid?: string | null;
+  isSecondaryAdmin?: boolean;
+};
+
+type CurrentUserData = {
+  name?: string;
+  email?: string;
+  phone?: string;
+  role?: UserRole;
+  approvalStatus?: "pending" | "approved" | "blocked";
+  accessStartAt?: string | null;
+  accessEndAt?: string | null;
+  createdByOwnerUid?: string | null;
+  isSecondaryAdmin?: boolean;
+  createdByUid?: string | null;
+  hasLoginAccount?: boolean;
+  authUid?: string | null;
+  cardsPurchased?: number;
+  cardsUsed?: number;
+  cardUsageDates?: string[];
+  instagramUrl?: string;
+  whatsappPhone?: string;
+  contactPhone?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  contactOwnerUid?: string | null;
+  contactUpdatedAt?: string | null;
+};
+
+type ContactData = {
+  instagramUrl?: string;
+  whatsappPhone?: string;
+  contactPhone?: string;
+  phone?: string;
+  name?: string;
+  uid?: string | null;
+};
 
 function AdminIcon({ size = 20, color = "#1E293B" }) {
   return (
@@ -141,28 +217,34 @@ function WorkoutTrackingIcon({ size = 20, color = "#0F172A" }) {
   );
 }
 
-type ClientItem = {
-  id: string;
-  uid?: string;
-  name?: string;
-  email?: string;
-  role?: "admin" | "client";
-  approvalStatus?: "pending" | "approved" | "blocked";
-  accessStartAt?: string | null;
-  accessEndAt?: string | null;
-};
+function normalizePhoneForWhatsapp(value?: string | null) {
+  if (!value) return "";
+  const digitsOnly = value.replace(/[^\d]/g, "");
+  if (!digitsOnly) return "";
+  if (digitsOnly.startsWith("972")) return digitsOnly;
+  if (digitsOnly.startsWith("0")) return `972${digitsOnly.slice(1)}`;
+  return digitsOnly;
+}
 
-type CurrentUserData = {
-  name?: string;
-  email?: string;
-  role?: "admin" | "client";
-  approvalStatus?: "pending" | "approved" | "blocked";
-  accessStartAt?: string | null;
-  accessEndAt?: string | null;
-  cardsPurchased?: number;
-  cardsUsed?: number;
-  cardUsageDates?: string[];
-};
+function normalizeInstagramUrl(value?: string | null) {
+  if (!value) return "";
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+    return trimmed;
+  }
+
+  if (trimmed.startsWith("@")) {
+    return `https://www.instagram.com/${trimmed.slice(1)}/`;
+  }
+
+  if (trimmed.includes("instagram.com")) {
+    return `https://${trimmed.replace(/^https?:\/\//, "")}`;
+  }
+
+  return `https://www.instagram.com/${trimmed.replace(/^@/, "")}/`;
+}
 
 export default function Menu() {
   const { width, height } = useWindowDimensions();
@@ -181,6 +263,7 @@ export default function Menu() {
     const iconSize = isVerySmall ? 18 : 20;
     const cardPaddingHorizontal = isVerySmall ? 14 : isSmallScreen ? 18 : isTablet ? 30 : 22;
     const cardPaddingVertical = isVerySmall ? 18 : isTablet ? 30 : 24;
+    const modalWidth = Math.min(width * 0.92, 430);
 
     return {
       horizontalPadding,
@@ -192,6 +275,7 @@ export default function Menu() {
       iconSize,
       cardPaddingHorizontal,
       cardPaddingVertical,
+      modalWidth,
     };
   }, [width, isVerySmall, isSmallScreen, isTablet]);
 
@@ -202,27 +286,44 @@ export default function Menu() {
   const [contactVisible, setContactVisible] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [savingContactInfo, setSavingContactInfo] = useState(false);
+  const [isEditingContactInfo, setIsEditingContactInfo] = useState(false);
+
+  const [currentUserData, setCurrentUserData] = useState<CurrentUserData | null>(null);
+  const [resolvedContactData, setResolvedContactData] = useState<ContactData | null>(null);
   const [clients, setClients] = useState<ClientItem[]>([]);
+  const [secondaryAdmins, setSecondaryAdmins] = useState<SecondaryAdminItem[]>([]);
+
+  const [instagramInput, setInstagramInput] = useState("");
+  const [whatsappInput, setWhatsappInput] = useState("");
+  const [phoneInput, setPhoneInput] = useState("");
+
   const [adminActionsOpen, setAdminActionsOpen] = useState(false);
   const [clientsSectionOpen, setClientsSectionOpen] = useState(false);
+  const [createClientOpen, setCreateClientOpen] = useState(false);
   const [deleteClientsOpen, setDeleteClientsOpen] = useState(false);
   const [accessManagementOpen, setAccessManagementOpen] = useState(false);
   const [trainingManagementOpen, setTrainingManagementOpen] = useState(false);
+  const [secondaryAdminsOpen, setSecondaryAdminsOpen] = useState(false);
   const [clientWorkoutTrackingOpen, setClientWorkoutTrackingOpen] = useState(false);
   const [clientCardManagerOpen, setClientCardManagerOpen] = useState(false);
   const [accessInfoOpen, setAccessInfoOpen] = useState(false);
   const [cardHistoryOpen, setCardHistoryOpen] = useState(false);
-  const [currentUserData, setCurrentUserData] = useState<CurrentUserData | null>(null);
+
+  const isOwner = currentUserData?.role === "owner";
+  const isAdmin = currentUserData?.role === "admin";
+  const isManager = isOwner || isAdmin;
 
   const fetchMenuData = useCallback(async () => {
     try {
+      setLoading(true);
+
       const user = auth.currentUser;
       if (!user) {
         setCurrentUserData(null);
+        setResolvedContactData(null);
         setClients([]);
-        setIsAdmin(false);
-        setLoading(false);
+        setSecondaryAdmins([]);
         return;
       }
 
@@ -231,31 +332,107 @@ export default function Menu() {
 
       if (!userSnap.exists()) {
         setCurrentUserData(null);
+        setResolvedContactData(null);
         setClients([]);
-        setIsAdmin(false);
-        setLoading(false);
+        setSecondaryAdmins([]);
         return;
       }
 
       const userData = userSnap.data() as CurrentUserData;
       setCurrentUserData(userData);
 
-      const adminMode = userData.role === "admin";
-      setIsAdmin(adminMode);
+      setInstagramInput(userData.instagramUrl || "");
+      setWhatsappInput(userData.whatsappPhone || "");
+      setPhoneInput(userData.contactPhone || userData.phone || "");
 
-      if (adminMode) {
-        const q = query(collection(db, "users"), where("role", "==", "client"));
-        const snapshot = await getDocs(q);
+      let contactSource: ContactData = {
+        instagramUrl: userData.instagramUrl,
+        whatsappPhone: userData.whatsappPhone,
+        contactPhone: userData.contactPhone,
+        phone: userData.phone,
+        name: userData.name,
+        uid: user.uid,
+      };
 
-        const clientsList: ClientItem[] = snapshot.docs.map((docSnap) => ({
+      if (userData.role === "client" && userData.createdByUid) {
+        try {
+          const coachRef = doc(db, "users", userData.createdByUid);
+          const coachSnap = await getDoc(coachRef);
+
+          if (coachSnap.exists()) {
+            const coachData = coachSnap.data() as CurrentUserData;
+            contactSource = {
+              instagramUrl: coachData.instagramUrl,
+              whatsappPhone: coachData.whatsappPhone,
+              contactPhone: coachData.contactPhone,
+              phone: coachData.phone,
+              name: coachData.name,
+              uid: userData.createdByUid,
+            };
+          } else {
+            contactSource = {
+              instagramUrl: userData.instagramUrl,
+              whatsappPhone: userData.whatsappPhone,
+              contactPhone: userData.contactPhone,
+              phone: userData.phone,
+              name: userData.name,
+              uid: user.uid,
+            };
+          }
+        } catch (error) {
+          console.error("שגיאה בטעינת פרטי צור קשר של המאמן:", error);
+        }
+      }
+
+      setResolvedContactData(contactSource);
+
+      if (userData.role === "owner") {
+        const clientsQuery = query(collection(db, "users"), where("role", "==", "client"));
+        const clientsSnap = await getDocs(clientsQuery);
+
+        const clientsList: ClientItem[] = clientsSnap.docs.map((docSnap) => ({
           id: docSnap.id,
           ...(docSnap.data() as Omit<ClientItem, "id">),
         }));
 
         clientsList.sort((a, b) => (a.name || "").localeCompare(b.name || "", "he"));
         setClients(clientsList);
+
+        const adminsQuery = query(
+          collection(db, "users"),
+          where("role", "==", "admin"),
+          where("createdByOwnerUid", "==", user.uid)
+        );
+
+        const adminsSnap = await getDocs(adminsQuery);
+
+        const adminsList: SecondaryAdminItem[] = adminsSnap.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...(docSnap.data() as Omit<SecondaryAdminItem, "id">),
+        }));
+
+        adminsList.sort((a, b) => (a.name || "").localeCompare(b.name || "", "he"));
+        setSecondaryAdmins(adminsList);
+      } else if (userData.role === "admin") {
+        const clientsQuery = query(
+          collection(db, "users"),
+          where("role", "==", "client"),
+          where("createdByUid", "==", user.uid)
+        );
+
+        const clientsSnap = await getDocs(clientsQuery);
+
+        const clientsList: ClientItem[] = clientsSnap.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...(docSnap.data() as Omit<ClientItem, "id">),
+        }));
+
+        clientsList.sort((a, b) => (a.name || "").localeCompare(b.name || "", "he"));
+        setClients(clientsList);
+        setSecondaryAdmins([]);
       } else {
         setClients([]);
+        setSecondaryAdmins([]);
       }
     } catch (error) {
       console.error("שגיאה בטעינת נתוני תפריט:", error);
@@ -285,9 +462,30 @@ export default function Menu() {
     });
   };
 
+  const resolvedInstagramUrl =
+    resolvedContactData?.instagramUrl?.trim() || DEFAULT_INSTAGRAM_URL;
+
+  const resolvedWhatsappPhone =
+    normalizePhoneForWhatsapp(resolvedContactData?.whatsappPhone) || DEFAULT_WHATSAPP_PHONE;
+
+  const resolvedPhoneNumber =
+    resolvedContactData?.contactPhone?.trim() ||
+    resolvedContactData?.phone?.trim() ||
+    DEFAULT_PHONE_NUMBER;
+
+  const openContactModal = async () => {
+    await fetchMenuData();
+    setInstagramInput(currentUserData?.instagramUrl || "");
+    setWhatsappInput(currentUserData?.whatsappPhone || "");
+    setPhoneInput(currentUserData?.contactPhone || currentUserData?.phone || "");
+    setIsEditingContactInfo(false);
+    setContactVisible(true);
+  };
+
   const openInstagram = async () => {
     try {
-      await Linking.openURL(INSTAGRAM_URL);
+      const url = normalizeInstagramUrl(resolvedInstagramUrl) || DEFAULT_INSTAGRAM_URL;
+      await Linking.openURL(url);
     } catch {
       Alert.alert("שגיאה", "אירעה בעיה בפתיחת אינסטגרם");
     }
@@ -295,7 +493,9 @@ export default function Menu() {
 
   const openWhatsApp = async () => {
     const message = encodeURIComponent("היי, אשמח לפרטים נוספים");
-    const url = `https://wa.me/${WHATSAPP_PHONE}?text=${message}`;
+    const phoneForWhatsapp =
+      normalizePhoneForWhatsapp(resolvedWhatsappPhone) || DEFAULT_WHATSAPP_PHONE;
+    const url = `https://wa.me/${phoneForWhatsapp}?text=${message}`;
 
     try {
       await Linking.openURL(url);
@@ -306,9 +506,92 @@ export default function Menu() {
 
   const makePhoneCall = async () => {
     try {
-      await Linking.openURL(`tel:${PHONE_NUMBER}`);
+      await Linking.openURL(`tel:${resolvedPhoneNumber}`);
     } catch {
       Alert.alert("שגיאה", "אירעה בעיה בפתיחת השיחה");
+    }
+  };
+
+  const handleSaveContactInfo = async () => {
+    const user = auth.currentUser;
+    if (!user) {
+      Alert.alert("שגיאה", "לא נמצא משתמש מחובר");
+      return;
+    }
+
+    const normalizedInstagram = normalizeInstagramUrl(instagramInput);
+    const normalizedWhatsapp = normalizePhoneForWhatsapp(whatsappInput);
+    const trimmedPhone = phoneInput.trim();
+    const nowIso = new Date().toISOString();
+
+    try {
+      setSavingContactInfo(true);
+
+      await updateDoc(doc(db, "users", user.uid), {
+        instagramUrl: normalizedInstagram,
+        whatsappPhone: normalizedWhatsapp,
+        contactPhone: trimmedPhone,
+        updatedAt: nowIso,
+        contactUpdatedAt: nowIso,
+      });
+
+      if (currentUserData?.role === "admin") {
+        const linkedClientsQuery = query(
+          collection(db, "users"),
+          where("role", "==", "client"),
+          where("createdByUid", "==", user.uid)
+        );
+
+        const linkedClientsSnap = await getDocs(linkedClientsQuery);
+
+        if (!linkedClientsSnap.empty) {
+          const batch = writeBatch(db);
+
+          linkedClientsSnap.docs.forEach((clientDoc) => {
+            batch.update(clientDoc.ref, {
+              instagramUrl: normalizedInstagram,
+              whatsappPhone: normalizedWhatsapp,
+              contactPhone: trimmedPhone,
+              contactOwnerUid: user.uid,
+              contactUpdatedAt: nowIso,
+              updatedAt: nowIso,
+            });
+          });
+
+          await batch.commit();
+        }
+      }
+
+      const nextUserData: CurrentUserData | null = currentUserData
+        ? {
+            ...currentUserData,
+            instagramUrl: normalizedInstagram,
+            whatsappPhone: normalizedWhatsapp,
+            contactPhone: trimmedPhone,
+            updatedAt: nowIso,
+            contactUpdatedAt: nowIso,
+          }
+        : currentUserData;
+
+      setCurrentUserData(nextUserData);
+
+      setResolvedContactData({
+        instagramUrl: normalizedInstagram,
+        whatsappPhone: normalizedWhatsapp,
+        contactPhone: trimmedPhone,
+        phone: currentUserData?.phone,
+        name: currentUserData?.name,
+        uid: user.uid,
+      });
+
+      setIsEditingContactInfo(false);
+
+      Alert.alert("הצלחה", "פרטי צור הקשר נשמרו בהצלחה");
+    } catch (error) {
+      console.error("שגיאה בשמירת פרטי צור קשר:", error);
+      Alert.alert("שגיאה", "לא ניתן לשמור את פרטי צור הקשר");
+    } finally {
+      setSavingContactInfo(false);
     }
   };
 
@@ -383,7 +666,7 @@ export default function Menu() {
     : [];
 
   const cardsUsed = cardUsageDates.length;
-  const cardsRemaining = Math.max(cardsPurchased - cardsUsed, 0);
+  const cardsRemaining = Math.max(cardsPurchased - cardUsageDates.length, 0);
   const lastCardUsage = cardUsageDates[0] || null;
 
   if (loading) {
@@ -441,14 +724,16 @@ export default function Menu() {
                 </Text>
 
                 <Text style={[styles.subtitle, { fontSize: dynamic.subtitleSize }]}>
-                  {isAdmin
-                    ? "כאן אפשר ליצור קשר, להתנתק ולצפות בפעולות ניהול"
+                  {isOwner
+                    ? "כאן אפשר ליצור קשר, להתנתק ולנהל גם לקוחות וגם מאמנים משניים"
+                    : isAdmin
+                    ? "כאן אפשר ליצור קשר, להתנתק ולנהל את הלקוחות שנוצרו על ידך"
                     : "כאן אפשר ליצור קשר, להתנתק ולראות את מצב הגישה שלך"}
                 </Text>
               </View>
 
               <View style={styles.actionsContainer}>
-                {!isAdmin && currentUserData && (
+                {!isManager && currentUserData && (
                   <View style={styles.accessWrapper}>
                     <Pressable
                       style={({ pressed }) => [
@@ -615,7 +900,7 @@ export default function Menu() {
                     { minHeight: dynamic.buttonHeight },
                     pressed && styles.pressed,
                   ]}
-                  onPress={() => setContactVisible(true)}
+                  onPress={openContactModal}
                 >
                   <Text
                     style={[
@@ -627,7 +912,7 @@ export default function Menu() {
                   </Text>
                 </Pressable>
 
-                {isAdmin && (
+                {isManager && (
                   <View style={styles.adminWrapper}>
                     <Pressable
                       style={({ pressed }) => [
@@ -644,13 +929,10 @@ export default function Menu() {
                           </View>
 
                           <Text
-                            style={[
-                              styles.adminMainButtonText,
-                              { fontSize: dynamic.textSize },
-                            ]}
+                            style={[styles.adminMainButtonText, { fontSize: dynamic.textSize }]}
                             numberOfLines={1}
                           >
-                            פעולות למנהל
+                            {isOwner ? "פעולות לבעלת המערכת" : "פעולות למאמן"}
                           </Text>
                         </View>
 
@@ -662,6 +944,41 @@ export default function Menu() {
 
                     {adminActionsOpen && (
                       <View style={styles.adminDropdown}>
+                        {isOwner && (
+                          <>
+                            <Pressable
+                              style={({ pressed }) => [
+                                styles.categoryButton,
+                                { minHeight: dynamic.buttonHeight - 2 },
+                                pressed && styles.pressedLight,
+                              ]}
+                              onPress={() => setSecondaryAdminsOpen((prev) => !prev)}
+                            >
+                              <View style={styles.buttonRow}>
+                                <View style={styles.categoryButtonContent}>
+                                  <View style={styles.iconWrap}>
+                                    <GroupsIcon size={20} color="#0F172A" />
+                                  </View>
+
+                                  <Text style={styles.categoryButtonText} numberOfLines={1}>
+                                    ניהול מאמנים משניים
+                                  </Text>
+                                </View>
+
+                                <Text style={styles.categoryExpandText}>
+                                  {secondaryAdminsOpen ? "סגירה" : "פתיחה"}
+                                </Text>
+                              </View>
+                            </Pressable>
+
+                            {secondaryAdminsOpen && (
+                              <View style={styles.categoryContent}>
+                                <SecondaryAdminsManager onAfterUpdate={fetchMenuData} />
+                              </View>
+                            )}
+                          </>
+                        )}
+
                         <Pressable
                           style={({ pressed }) => [
                             styles.categoryButton,
@@ -689,6 +1006,28 @@ export default function Menu() {
 
                         {clientsSectionOpen && (
                           <View style={styles.categoryContent}>
+                            <Pressable
+                              style={({ pressed }) => [
+                                styles.subActionButton,
+                                { minHeight: dynamic.buttonHeight - 8 },
+                                pressed && styles.pressedLight,
+                              ]}
+                              onPress={() => setCreateClientOpen((prev) => !prev)}
+                            >
+                              <View style={styles.buttonRow}>
+                                <Text style={styles.subActionButtonText}>הוספת לקוח</Text>
+                                <Text style={styles.subActionExpandText}>
+                                  {createClientOpen ? "הסתרה" : "הצגה"}
+                                </Text>
+                              </View>
+                            </Pressable>
+
+                            {createClientOpen && (
+                              <View style={styles.subActionContent}>
+                                <CoachClientCreator onAfterCreate={fetchMenuData} />
+                              </View>
+                            )}
+
                             <Pressable
                               style={({ pressed }) => [
                                 styles.subActionButton,
@@ -902,56 +1241,167 @@ export default function Menu() {
             visible={contactVisible}
             transparent
             animationType="fade"
-            onRequestClose={() => setContactVisible(false)}
+            onRequestClose={() => {
+              setContactVisible(false);
+              setIsEditingContactInfo(false);
+            }}
           >
             <View style={styles.modalOverlay}>
-              <View style={[styles.modalCard, { width: Math.min(width * 0.9, 420) }]}>
-                <Text style={styles.modalTitle}>צור קשר</Text>
-                <Text style={styles.modalSubtitle}>בחרי איך נוח לך ליצור קשר</Text>
-
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.contactButton,
-                    { minHeight: dynamic.buttonHeight - 2 },
-                    pressed && styles.pressedLight,
-                  ]}
-                  onPress={openInstagram}
+              <View
+                style={[
+                  styles.modalCard,
+                  {
+                    width: dynamic.modalWidth,
+                    maxHeight: height * 0.82,
+                  },
+                ]}
+              >
+                <ScrollView
+                  showsVerticalScrollIndicator={false}
+                  keyboardShouldPersistTaps="handled"
+                  contentContainerStyle={styles.modalScrollContent}
                 >
-                  <Text style={styles.contactButtonText}>אינסטגרם</Text>
-                </Pressable>
+                  <View style={styles.modalHeaderRow}>
+                    {isAdmin ? (
+                      <Pressable
+                        onPress={() => setIsEditingContactInfo(true)}
+                        style={({ pressed }) => [
+                          styles.editToggleButton,
+                          pressed && styles.pressedLight,
+                          isEditingContactInfo && styles.hiddenButton,
+                        ]}
+                        disabled={isEditingContactInfo}
+                      >
+                        <Text style={styles.editToggleButtonText}>עריכה</Text>
+                      </Pressable>
+                    ) : (
+                      <View style={styles.editToggleSpacer} />
+                    )}
 
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.contactButton,
-                    { minHeight: dynamic.buttonHeight - 2 },
-                    pressed && styles.pressedLight,
-                  ]}
-                  onPress={openWhatsApp}
-                >
-                  <Text style={styles.contactButtonText}>וואטסאפ</Text>
-                </Pressable>
+                    <View style={styles.modalHeaderCenter}>
+                      <Text style={styles.modalTitle}>
+                        {isEditingContactInfo ? "עריכת צור קשר" : "צור קשר"}
+                      </Text>
+                      <Text style={styles.modalSubtitle}>
+                        {isEditingContactInfo
+                          ? "עדכני את הפרטים ולחצי על שמור שינויים"
+                          : "בחרי איך נוח לך ליצור קשר"}
+                      </Text>
+                    </View>
 
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.contactButton,
-                    { minHeight: dynamic.buttonHeight - 2 },
-                    pressed && styles.pressedLight,
-                  ]}
-                  onPress={makePhoneCall}
-                >
-                  <Text style={styles.contactButtonText}>שיחת טלפון</Text>
-                </Pressable>
+                    <View style={styles.editToggleSpacer} />
+                  </View>
 
-                <Pressable
-                  onPress={() => setContactVisible(false)}
-                  style={({ pressed }) => [
-                    styles.closeButton,
-                    { minHeight: dynamic.buttonHeight - 4 },
-                    pressed && styles.pressedLight,
-                  ]}
-                >
-                  <Text style={styles.closeButtonText}>סגור</Text>
-                </Pressable>
+                  {isEditingContactInfo && isAdmin ? (
+                    <View style={styles.contactEditorBox}>
+                      <Text style={styles.contactEditorTitle}>עדכון פרטי צור קשר</Text>
+
+                      <View style={styles.inputGroup}>
+                        <Text style={styles.inputLabel}>קישור לאינסטגרם</Text>
+                        <TextInput
+                          value={instagramInput}
+                          onChangeText={setInstagramInput}
+                          placeholder="לדוגמה: hadar_taizi או קישור מלא"
+                          placeholderTextColor="#94A3B8"
+                          style={styles.input}
+                          autoCapitalize="none"
+                          textAlign="right"
+                        />
+                      </View>
+
+                      <View style={styles.inputGroup}>
+                        <Text style={styles.inputLabel}>מספר וואטסאפ</Text>
+                        <TextInput
+                          value={whatsappInput}
+                          onChangeText={setWhatsappInput}
+                          placeholder="0501234567"
+                          placeholderTextColor="#94A3B8"
+                          style={styles.input}
+                          keyboardType="phone-pad"
+                          textAlign="right"
+                        />
+                      </View>
+
+                      <View style={styles.inputGroup}>
+                        <Text style={styles.inputLabel}>מספר טלפון</Text>
+                        <TextInput
+                          value={phoneInput}
+                          onChangeText={setPhoneInput}
+                          placeholder="0501234567"
+                          placeholderTextColor="#94A3B8"
+                          style={styles.input}
+                          keyboardType="phone-pad"
+                          textAlign="right"
+                        />
+                      </View>
+
+                      <Pressable
+                        onPress={handleSaveContactInfo}
+                        disabled={savingContactInfo}
+                        style={({ pressed }) => [
+                          styles.saveContactButton,
+                          pressed && styles.pressed,
+                          savingContactInfo && styles.disabledButton,
+                        ]}
+                      >
+                        {savingContactInfo ? (
+                          <ActivityIndicator color="#FFFFFF" />
+                        ) : (
+                          <Text style={styles.saveContactButtonText}>שמור שינויים</Text>
+                        )}
+                      </Pressable>
+                    </View>
+                  ) : (
+                    <>
+                      <Pressable
+                        style={({ pressed }) => [
+                          styles.contactButton,
+                          { minHeight: dynamic.buttonHeight - 2 },
+                          pressed && styles.pressedLight,
+                        ]}
+                        onPress={openInstagram}
+                      >
+                        <Text style={styles.contactButtonText}>אינסטגרם</Text>
+                      </Pressable>
+
+                      <Pressable
+                        style={({ pressed }) => [
+                          styles.contactButton,
+                          { minHeight: dynamic.buttonHeight - 2 },
+                          pressed && styles.pressedLight,
+                        ]}
+                        onPress={openWhatsApp}
+                      >
+                        <Text style={styles.contactButtonText}>וואטסאפ</Text>
+                      </Pressable>
+
+                      <Pressable
+                        style={({ pressed }) => [
+                          styles.contactButton,
+                          { minHeight: dynamic.buttonHeight - 2 },
+                          pressed && styles.pressedLight,
+                        ]}
+                        onPress={makePhoneCall}
+                      >
+                        <Text style={styles.contactButtonText}>שיחת טלפון</Text>
+                      </Pressable>
+                    </>
+                  )}
+
+                  <Pressable
+                    onPress={() => {
+                      setContactVisible(false);
+                      setIsEditingContactInfo(false);
+                    }}
+                    style={({ pressed }) => [
+                      styles.closeButton,
+                      { minHeight: dynamic.buttonHeight - 4 },
+                      pressed && styles.pressedLight,
+                    ]}
+                  >
+                    <Text style={styles.closeButtonText}>סגור</Text>
+                  </Pressable>
+                </ScrollView>
               </View>
             </View>
           </Modal>
@@ -966,24 +1416,20 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: APP_BG,
   },
-
   screen: {
     flex: 1,
     backgroundColor: APP_BG,
   },
-
   loadingScreen: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 24,
   },
-
   scrollContent: {
     flexGrow: 1,
     alignItems: "center",
   },
-
   card: {
     backgroundColor: "#FFFFFF",
     borderRadius: 24,
@@ -993,37 +1439,31 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     elevation: 6,
   },
-
   header: {
     alignItems: "center",
     marginBottom: 26,
   },
-
   title: {
     fontWeight: "800",
     color: "#1E293B",
     textAlign: "center",
   },
-
   subtitle: {
     color: "#64748B",
     textAlign: "center",
     marginTop: 8,
     lineHeight: 22,
   },
-
   loaderText: {
     marginTop: 10,
     color: "#64748B",
     fontSize: 15,
     textAlign: "center",
   },
-
   actionsContainer: {
     gap: 14,
     width: "100%",
   },
-
   buttonRow: {
     width: "100%",
     flexDirection: "row-reverse",
@@ -1031,36 +1471,24 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: 12,
   },
-
   iconWrap: {
     width: 30,
     height: 30,
     alignItems: "center",
     justifyContent: "center",
   },
-
-  mainButtonContent: {
-    flex: 1,
-    flexDirection: "row-reverse",
-    alignItems: "center",
-    justifyContent: "flex-start",
-    gap: 8,
-  },
-
   mainButtonContentCentered: {
     flexDirection: "row-reverse",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
   },
-
   adminMainButtonInner: {
     width: "100%",
     alignItems: "center",
     justifyContent: "center",
     position: "relative",
   },
-
   categoryButtonContent: {
     flex: 1,
     flexDirection: "row-reverse",
@@ -1068,7 +1496,6 @@ const styles = StyleSheet.create({
     justifyContent: "flex-start",
     gap: 8,
   },
-
   primaryButton: {
     borderRadius: 18,
     backgroundColor: "#0F172A",
@@ -1078,18 +1505,15 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     width: "100%",
   },
-
   primaryButtonText: {
     color: "#FFFFFF",
     fontWeight: "800",
     textAlign: "center",
   },
-
   accessWrapper: {
     width: "100%",
     gap: 10,
   },
-
   userSectionButton: {
     borderRadius: 18,
     backgroundColor: "#F8FAFC",
@@ -1100,33 +1524,28 @@ const styles = StyleSheet.create({
     width: "100%",
     justifyContent: "center",
   },
-
   userSectionButtonText: {
     color: "#1E293B",
     fontWeight: "800",
     textAlign: "right",
     flex: 1,
   },
-
   userSectionContent: {
     marginRight: 8,
     paddingRight: 12,
     borderRightWidth: 3,
     borderRightColor: "#DCE6F4",
   },
-
   expandText: {
     color: "#64748B",
     fontSize: 12,
     fontWeight: "700",
     textAlign: "left",
   },
-
   adminWrapper: {
     width: "100%",
     gap: 12,
   },
-
   adminMainButton: {
     borderRadius: 20,
     backgroundColor: "#E8EEFF",
@@ -1143,20 +1562,11 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2,
   },
-
   adminMainButtonText: {
     color: "#1E293B",
     fontWeight: "800",
     textAlign: "center",
   },
-
-  mainExpandText: {
-    color: "#1D4ED8",
-    fontSize: 12,
-    fontWeight: "800",
-    textAlign: "left",
-  },
-
   mainExpandTextAbsolute: {
     position: "absolute",
     left: 0,
@@ -1165,7 +1575,6 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     textAlign: "left",
   },
-
   adminDropdown: {
     backgroundColor: "#F8FAFC",
     borderRadius: 20,
@@ -1175,7 +1584,6 @@ const styles = StyleSheet.create({
     width: "100%",
     gap: 12,
   },
-
   categoryButton: {
     backgroundColor: "#FFFFFF",
     borderRadius: 18,
@@ -1186,21 +1594,18 @@ const styles = StyleSheet.create({
     width: "100%",
     justifyContent: "center",
   },
-
   categoryButtonText: {
     color: "#0F172A",
     fontWeight: "800",
     fontSize: 15,
     textAlign: "right",
   },
-
   categoryExpandText: {
     color: "#475569",
     fontSize: 12,
     fontWeight: "800",
     textAlign: "left",
   },
-
   categoryContent: {
     gap: 10,
     marginTop: 2,
@@ -1209,7 +1614,6 @@ const styles = StyleSheet.create({
     borderRightWidth: 4,
     borderRightColor: "#C7D7F8",
   },
-
   subActionButton: {
     backgroundColor: "#F8FAFC",
     borderRadius: 16,
@@ -1220,7 +1624,6 @@ const styles = StyleSheet.create({
     width: "100%",
     justifyContent: "center",
   },
-
   subActionButtonText: {
     color: "#0F172A",
     fontWeight: "800",
@@ -1228,14 +1631,12 @@ const styles = StyleSheet.create({
     textAlign: "right",
     flex: 1,
   },
-
   subActionExpandText: {
     color: "#64748B",
     fontSize: 12,
     fontWeight: "700",
     textAlign: "left",
   },
-
   subActionContent: {
     marginTop: 6,
     marginRight: 8,
@@ -1244,7 +1645,6 @@ const styles = StyleSheet.create({
     borderRightWidth: 2,
     borderRightColor: "#E2E8F0",
   },
-
   accessCard: {
     width: "100%",
     backgroundColor: "#F8FAFC",
@@ -1253,7 +1653,6 @@ const styles = StyleSheet.create({
     borderColor: "#E2E8F0",
     padding: 16,
   },
-
   accessRow: {
     width: "100%",
     flexDirection: "row-reverse",
@@ -1264,12 +1663,10 @@ const styles = StyleSheet.create({
     borderBottomColor: "#E2E8F0",
     gap: 12,
   },
-
   accessRowLast: {
     borderBottomWidth: 0,
     paddingBottom: 0,
   },
-
   accessLabel: {
     width: 92,
     fontSize: 13,
@@ -1278,7 +1675,6 @@ const styles = StyleSheet.create({
     textAlign: "right",
     writingDirection: I18nManager.isRTL ? "rtl" : "ltr",
   },
-
   accessValue: {
     flex: 1,
     fontSize: 14,
@@ -1287,7 +1683,6 @@ const styles = StyleSheet.create({
     textAlign: "right",
     writingDirection: "rtl",
   },
-
   clientCardsInfoCard: {
     width: "100%",
     backgroundColor: "#FFFFFF",
@@ -1302,32 +1697,27 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 2,
   },
-
   clientCardsHeader: {
     alignItems: "flex-end",
     gap: 4,
   },
-
   clientCardsInfoTitle: {
     color: "#0F172A",
     fontSize: 18,
     fontWeight: "800",
     textAlign: "right",
   },
-
   clientCardsInfoSubtitle: {
     color: "#64748B",
     fontSize: 13,
     lineHeight: 20,
     textAlign: "right",
   },
-
   clientCardsTopStatsRow: {
     flexDirection: "row-reverse",
     justifyContent: "space-between",
     gap: 10,
   },
-
   clientCardsMiniStatBox: {
     flex: 1,
     minHeight: 96,
@@ -1340,14 +1730,12 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 8,
   },
-
   clientCardsMiniValue: {
     color: "#0F172A",
     fontSize: 22,
     fontWeight: "800",
     textAlign: "center",
   },
-
   clientCardsMiniLabel: {
     marginTop: 6,
     color: "#64748B",
@@ -1355,7 +1743,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     textAlign: "center",
   },
-
   clientCardsHighlightBox: {
     width: "100%",
     backgroundColor: "#EFF6FF",
@@ -1365,19 +1752,16 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 14,
   },
-
   clientCardsHighlightTextWrap: {
     alignItems: "flex-end",
     gap: 6,
   },
-
   clientCardsHighlightLabel: {
     color: "#1D4ED8",
     fontSize: 13,
     fontWeight: "700",
     textAlign: "right",
   },
-
   clientCardsHighlightValue: {
     color: "#0F172A",
     fontSize: 15,
@@ -1385,36 +1769,30 @@ const styles = StyleSheet.create({
     textAlign: "right",
     lineHeight: 22,
   },
-
   cardUsageHistoryBox: {
     marginTop: 2,
     gap: 12,
   },
-
   cardUsageHistoryHeader: {
     flexDirection: "row-reverse",
     justifyContent: "space-between",
     alignItems: "center",
   },
-
   cardUsageHistoryTitle: {
     color: "#0F172A",
     fontSize: 16,
     fontWeight: "800",
     textAlign: "right",
   },
-
   cardUsageHistoryCount: {
     color: "#64748B",
     fontSize: 13,
     fontWeight: "600",
     textAlign: "left",
   },
-
   cardUsageList: {
     gap: 10,
   },
-
   cardUsageRow: {
     backgroundColor: "#F8FAFC",
     borderRadius: 18,
@@ -1426,7 +1804,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 12,
   },
-
   cardUsageOrderBadge: {
     width: 38,
     height: 38,
@@ -1437,34 +1814,29 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-
   cardUsageOrderBadgeText: {
     color: "#3730A3",
     fontSize: 14,
     fontWeight: "800",
     textAlign: "center",
   },
-
   cardUsageContent: {
     flex: 1,
     alignItems: "flex-end",
     gap: 3,
   },
-
   cardUsageMainText: {
     color: "#0F172A",
     fontSize: 14,
     fontWeight: "700",
     textAlign: "right",
   },
-
   cardUsageSubText: {
     color: "#64748B",
     fontSize: 13,
     fontWeight: "500",
     textAlign: "right",
   },
-
   emptyCardHistoryBox: {
     backgroundColor: "#F8FAFC",
     borderRadius: 18,
@@ -1475,14 +1847,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-
   emptyCardHistoryText: {
     color: "#64748B",
     fontSize: 14,
     fontWeight: "600",
     textAlign: "center",
   },
-
   emptyClientsBox: {
     backgroundColor: "#FFFFFF",
     borderRadius: 16,
@@ -1492,14 +1862,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     alignItems: "center",
   },
-
   emptyClientsText: {
     color: "#64748B",
     fontSize: 14,
     fontWeight: "500",
     textAlign: "center",
   },
-
   clientRow: {
     backgroundColor: "#FFFFFF",
     borderRadius: 16,
@@ -1513,31 +1881,26 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     gap: 10,
   },
-
   clientInfo: {
     flex: 1,
     alignItems: "flex-end",
   },
-
   clientName: {
     color: "#1E293B",
     fontWeight: "700",
     fontSize: 15,
     textAlign: "right",
   },
-
   clientEmail: {
     color: "#64748B",
     fontSize: 13,
     textAlign: "right",
     marginTop: 4,
   },
-
   clientActions: {
     justifyContent: "center",
     alignItems: "center",
   },
-
   deleteClientButton: {
     backgroundColor: "#FEF2F2",
     borderRadius: 12,
@@ -1546,14 +1909,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#FECACA",
   },
-
   deleteClientButtonText: {
     color: "#DC2626",
     fontSize: 13,
     fontWeight: "800",
     textAlign: "center",
   },
-
   logoutButton: {
     borderRadius: 18,
     backgroundColor: "#FEF2F2",
@@ -1565,27 +1926,42 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     width: "100%",
   },
-
   logoutButtonText: {
     color: "#DC2626",
     fontWeight: "800",
     textAlign: "center",
   },
-
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(15,23,42,0.45)",
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 20,
+    paddingVertical: 24,
   },
-
   modalCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 24,
-    padding: 20,
+    paddingHorizontal: 18,
+    paddingVertical: 18,
+    alignSelf: "center",
   },
-
+  modalScrollContent: {
+    paddingBottom: 4,
+  },
+  modalHeaderRow: {
+    width: "100%",
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 16,
+    gap: 10,
+  },
+  modalHeaderCenter: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   modalTitle: {
     textAlign: "center",
     fontWeight: "800",
@@ -1593,14 +1969,87 @@ const styles = StyleSheet.create({
     color: "#0F172A",
     marginBottom: 8,
   },
-
   modalSubtitle: {
     textAlign: "center",
     color: "#64748B",
-    marginBottom: 18,
     fontSize: 14,
+    lineHeight: 20,
   },
-
+  editToggleSpacer: {
+    width: 66,
+  },
+  editToggleButton: {
+    minWidth: 66,
+    borderRadius: 12,
+    backgroundColor: "#EFF6FF",
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  editToggleButtonText: {
+    color: "#1D4ED8",
+    fontWeight: "800",
+    fontSize: 13,
+    textAlign: "center",
+  },
+  hiddenButton: {
+    opacity: 0,
+  },
+  contactEditorBox: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    padding: 14,
+    gap: 12,
+    marginBottom: 14,
+  },
+  contactEditorTitle: {
+    color: "#0F172A",
+    fontSize: 15,
+    fontWeight: "800",
+    textAlign: "right",
+  },
+  inputGroup: {
+    gap: 6,
+  },
+  inputLabel: {
+    color: "#334155",
+    fontSize: 13,
+    fontWeight: "700",
+    textAlign: "right",
+  },
+  input: {
+    width: "100%",
+    minHeight: 48,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: "#0F172A",
+    writingDirection: "rtl",
+  },
+  saveContactButton: {
+    marginTop: 4,
+    borderRadius: 16,
+    backgroundColor: "#059669",
+    minHeight: 50,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 16,
+  },
+  saveContactButtonText: {
+    color: "#FFFFFF",
+    fontWeight: "800",
+    fontSize: 15,
+    textAlign: "center",
+  },
   contactButton: {
     backgroundColor: "#F8FAFC",
     borderRadius: 16,
@@ -1613,7 +2062,6 @@ const styles = StyleSheet.create({
     width: "100%",
     marginBottom: 10,
   },
-
   contactButtonText: {
     color: "#1E293B",
     fontWeight: "700",
@@ -1621,7 +2069,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     width: "100%",
   },
-
   closeButton: {
     marginTop: 8,
     borderRadius: 16,
@@ -1631,30 +2078,24 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
     width: "100%",
   },
-
   closeButtonText: {
     color: "#1E293B",
     fontWeight: "800",
     fontSize: 16,
     textAlign: "center",
   },
-
   pressed: {
     opacity: 0.85,
   },
-
   pressedLight: {
     opacity: 0.75,
   },
-
   logoutPressed: {
     opacity: 0.8,
   },
-
   deletePressed: {
     opacity: 0.7,
   },
-
   disabledButton: {
     opacity: 0.6,
   },

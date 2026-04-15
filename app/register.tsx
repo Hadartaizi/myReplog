@@ -16,18 +16,21 @@ import {
 import { Stack, useRouter } from 'expo-router';
 import { useFonts } from 'expo-font';
 import {
+  browserSessionPersistence,
   createUserWithEmailAndPassword,
   deleteUser,
+  setPersistence,
   signOut,
 } from 'firebase/auth';
-import { auth, db } from '../database/firebase.js';
-import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { auth } from '../database/firebase.js';
+import { completeClientSignupAfterAuth } from './utils/completeClientSignupAfterAuth';
 import Svg, { Path, Circle } from 'react-native-svg';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 const APP_BG = '#F4F7FB';
 
-const ADMIN_EMAIL = 'hadartaizi2002@gmail.com';
+// אם זה האימייל שלך, הוא יהפוך ל-owner אוטומטית
+const OWNER_EMAIL = 'hadartaizi2002@gmail.com';
 
 function PersonIcon({ size = 20, color = '#5B6470' }) {
   return (
@@ -212,9 +215,13 @@ export default function Register() {
     setLoading(true);
     setErrors({});
 
-    let createdAuthUser = null;
+    let createdAuthUser: any = null;
 
     try {
+      if (Platform.OS === 'web') {
+        await setPersistence(auth, browserSessionPersistence);
+      }
+
       const userCredential = await createUserWithEmailAndPassword(
         auth,
         trimmedEmail,
@@ -223,30 +230,36 @@ export default function Register() {
 
       createdAuthUser = userCredential.user;
 
-      const isAdmin = trimmedEmail === ADMIN_EMAIL.toLowerCase();
-      const role = isAdmin ? 'admin' : 'client';
-      const nowIso = new Date().toISOString();
+      const isOwner = trimmedEmail === OWNER_EMAIL.toLowerCase();
 
-      await setDoc(doc(db, 'users', createdAuthUser.uid), {
-        uid: createdAuthUser.uid,
-        name: trimmedName,
-        email: trimmedEmail,
-        role,
-        approvalStatus: isAdmin ? 'approved' : 'pending',
-        accessStartAt: isAdmin ? nowIso : null,
-        accessEndAt: isAdmin ? '2099-12-31T23:59:59.000Z' : null,
-        approvedAt: isAdmin ? nowIso : null,
-        createdAt: serverTimestamp(),
-      });
+      if (isOwner) {
+        await completeClientSignupAfterAuth({
+          authUid: createdAuthUser.uid,
+          email: trimmedEmail,
+          fallbackName: trimmedName,
+        });
 
-      if (isAdmin) {
         showSuccessAlert('ההרשמה בוצעה בהצלחה');
         router.replace('/');
         return;
       }
 
+      const result = await completeClientSignupAfterAuth({
+        authUid: createdAuthUser.uid,
+        email: trimmedEmail,
+        fallbackName: trimmedName,
+      });
+
       await signOut(auth);
-      showSuccessAlert('ההרשמה בוצעה בהצלחה, יש להמתין לאישור סופי');
+
+      if (result.matchedInvite) {
+        showSuccessAlert('ההרשמה הושלמה בהצלחה. עכשיו אפשר להתחבר למערכת');
+      } else {
+        showSuccessAlert(
+          'ההרשמה בוצעה, אך לא נמצאה הזמנה פעילה. יש להמתין לאישור מנהל המערכת'
+        );
+      }
+
       router.replace('/');
     } catch (error: any) {
       console.error('שגיאה בהרשמה:', error);
@@ -261,7 +274,7 @@ export default function Register() {
           await deleteUser(createdAuthUser);
         } catch (deleteError) {
           console.error(
-            'שגיאה במחיקת משתמש Auth אחרי כשל בשמירה ל-Firestore:',
+            'שגיאה במחיקת משתמש Auth אחרי כשל בשמירה:',
             deleteError
           );
         }
@@ -278,7 +291,7 @@ export default function Register() {
         error.code === 'firestore/permission-denied'
       ) {
         setErrors({
-          general: 'אין הרשאה לשמור את הלקוחה בבסיס הנתונים',
+          general: 'אין הרשאה לשמור את המשתמש בבסיס הנתונים',
         });
         showErrorAlert(
           'המשתמש נוצר אך השמירה למסד הנתונים נחסמה. צריך לבדוק את חוקי Firestore.'

@@ -16,12 +16,16 @@ import {
   updateDoc,
   doc,
   deleteDoc,
+  getDoc,
+  query,
+  where,
 } from 'firebase/firestore';
-import { db } from '../../../database/firebase';
+import { auth, db } from '../../../database/firebase';
 import {
   formatDateTimeIL,
   getRemainingTimeLabel,
 } from './accessUtils';
+import type { UserRole } from '../../types/user';
 
 type ApprovalStatus = 'pending' | 'approved' | 'blocked';
 
@@ -30,10 +34,18 @@ type ClientItem = {
   uid?: string;
   name?: string;
   email?: string;
+  phone?: string;
   approvalStatus?: ApprovalStatus;
   accessStartAt?: string | null;
   accessEndAt?: string | null;
-  role?: 'admin' | 'client';
+  role?: UserRole;
+  createdByUid?: string | null;
+  hasLoginAccount?: boolean;
+  authUid?: string | null;
+};
+
+type CurrentUserData = {
+  role?: UserRole;
 };
 
 type Props = {
@@ -51,10 +63,7 @@ const normalizeStatus = (status?: string | null): ApprovalStatus => {
   return 'pending';
 };
 
-const isClientLikeUser = (user: ClientItem) => {
-  if (user.role === 'admin') return false;
-  return true;
-};
+const isClientUser = (user: ClientItem) => user.role === 'client';
 
 export default function ClientAccessManager({ onAfterUpdate }: Props) {
   const [clients, setClients] = useState<ClientItem[]>([]);
@@ -65,6 +74,7 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
   const [isHydrated, setIsHydrated] = useState(false);
   const [selectedAction, setSelectedAction] =
     useState<SelectedAction>('extend');
+  const [currentUserRole, setCurrentUserRole] = useState<UserRole | null>(null);
 
   useEffect(() => {
     setIsHydrated(true);
@@ -100,44 +110,104 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
   };
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(
-      collection(db, 'users'),
-      (snapshot) => {
-        const nextClients: ClientItem[] = snapshot.docs
-          .map((item) => {
-            const data = item.data() as Omit<ClientItem, 'id'>;
+    let unsubscribeUsers: (() => void) | null = null;
 
-            return {
-              id: item.id,
-              uid: data.uid,
-              name: data.name,
-              email: data.email,
-              approvalStatus: normalizeStatus(data.approvalStatus),
-              accessStartAt: data.accessStartAt ?? null,
-              accessEndAt: data.accessEndAt ?? null,
-              role: data.role,
-            };
-          })
-          .filter(isClientLikeUser);
+    const setupListener = async () => {
+      try {
+        const currentUser = auth.currentUser;
 
-        setClients(nextClients);
+        if (!currentUser?.uid) {
+          setClients([]);
+          setLoadingClients(false);
+          return;
+        }
 
-        setSelectedClientId((prev) => {
-          if (!prev) return prev;
-          const stillExists = nextClients.some((client) => client.id === prev);
-          return stillExists ? prev : null;
-        });
+        const meSnap = await getDoc(doc(db, 'users', currentUser.uid));
 
-        setLoadingClients(false);
-      },
-      (error) => {
-        console.error('שגיאה בטעינת לקוחות:', error);
+        if (!meSnap.exists()) {
+          setClients([]);
+          setLoadingClients(false);
+          return;
+        }
+
+        const me = meSnap.data() as CurrentUserData;
+        const myRole = me.role ?? null;
+        setCurrentUserRole(myRole);
+
+        let usersQuery;
+
+        if (myRole === 'owner') {
+          usersQuery = query(
+            collection(db, 'users'),
+            where('role', '==', 'client')
+          );
+        } else if (myRole === 'admin') {
+          usersQuery = query(
+            collection(db, 'users'),
+            where('role', '==', 'client'),
+            where('createdByUid', '==', currentUser.uid)
+          );
+        } else {
+          setClients([]);
+          setLoadingClients(false);
+          return;
+        }
+
+        unsubscribeUsers = onSnapshot(
+          usersQuery,
+          (snapshot) => {
+            const nextClients: ClientItem[] = snapshot.docs
+              .map((item) => {
+                const data = item.data() as Omit<ClientItem, 'id'>;
+
+                return {
+                  id: item.id,
+                  uid: data.uid,
+                  name: data.name,
+                  email: data.email,
+                  phone: data.phone,
+                  approvalStatus: normalizeStatus(data.approvalStatus),
+                  accessStartAt: data.accessStartAt ?? null,
+                  accessEndAt: data.accessEndAt ?? null,
+                  role: data.role,
+                  createdByUid: data.createdByUid ?? null,
+                  hasLoginAccount: data.hasLoginAccount ?? false,
+                  authUid: data.authUid ?? null,
+                };
+              })
+              .filter(isClientUser)
+              .sort((a, b) =>
+                (a.name || '').localeCompare(b.name || '', 'he')
+              );
+
+            setClients(nextClients);
+
+            setSelectedClientId((prev) => {
+              if (!prev) return prev;
+              const stillExists = nextClients.some((client) => client.id === prev);
+              return stillExists ? prev : null;
+            });
+
+            setLoadingClients(false);
+          },
+          (error) => {
+            console.error('שגיאה בטעינת לקוחות:', error);
+            setLoadingClients(false);
+            showMessage('שגיאה', 'לא ניתן לטעון את רשימת הלקוחות');
+          }
+        );
+      } catch (error) {
+        console.error('שגיאה באתחול טעינת לקוחות:', error);
         setLoadingClients(false);
         showMessage('שגיאה', 'לא ניתן לטעון את רשימת הלקוחות');
       }
-    );
+    };
 
-    return () => unsubscribe();
+    setupListener();
+
+    return () => {
+      if (unsubscribeUsers) unsubscribeUsers();
+    };
   }, []);
 
   const selectedClient = useMemo(
@@ -184,6 +254,7 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
         accessStartAt: startAt.toISOString(),
         accessEndAt: endAt.toISOString(),
         approvedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       });
 
       await onAfterUpdate?.();
@@ -203,7 +274,7 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
   const deletePendingClientById = async (clientId: string) => {
     const confirmed = await confirmAction(
       'מחיקת בקשה',
-      'האם את בטוחה שברצונך למחוק לגמרי את בקשת הלקוח? פעולה זו תמחק את מסמך המשתמש מ־Firestore.'
+      'האם את בטוחה שברצונך למחוק לגמרי את בקשת הלקוח? פעולה זו תמחק את מסמך המשתמש.'
     );
 
     if (!confirmed) return;
@@ -261,6 +332,7 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
         approvalStatus: 'approved',
         role: 'client',
         accessEndAt: newEnd.toISOString(),
+        updatedAt: new Date().toISOString(),
       });
 
       await onAfterUpdate?.();
@@ -311,6 +383,7 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
         approvalStatus: 'approved',
         role: 'client',
         accessEndAt: reducedEnd.toISOString(),
+        updatedAt: new Date().toISOString(),
       });
 
       await onAfterUpdate?.();
@@ -347,6 +420,7 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
         approvalStatus: 'approved',
         role: 'client',
         accessEndAt: null,
+        updatedAt: new Date().toISOString(),
       });
 
       await onAfterUpdate?.();
@@ -367,7 +441,10 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
     }
 
     if (selectedClient.approvalStatus === 'pending') {
-      showMessage('שגיאה', 'לא ניתן לחסום לקוח לפני אישור. ניתן למחוק את הבקשה מרשימת ההמתנה.');
+      showMessage(
+        'שגיאה',
+        'לא ניתן לחסום לקוח לפני אישור. ניתן למחוק את הבקשה מרשימת ההמתנה.'
+      );
       return;
     }
 
@@ -382,6 +459,7 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
           role: 'client',
           accessStartAt: new Date().toISOString(),
           accessEndAt: null,
+          updatedAt: new Date().toISOString(),
         });
 
         await onAfterUpdate?.();
@@ -393,11 +471,12 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
           role: 'client',
           accessStartAt: null,
           accessEndAt: null,
+          updatedAt: new Date().toISOString(),
         });
 
         await onAfterUpdate?.();
 
-        showMessage('בוצע', 'הגישה של הלקוח נחסמה לצמיתות עד ביטול החסימה');
+        showMessage('בוצע', 'הגישה של הלקוח נחסמה עד ביטול החסימה');
       }
     } catch (error) {
       console.error('שגיאה בעדכון חסימה:', error);
@@ -414,7 +493,10 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
     }
 
     if (selectedClient.approvalStatus === 'pending') {
-      showMessage('שגיאה', 'על לקוח שממתין לאישור ניתן לפעול דרך רשימת ההמתנה בלבד');
+      showMessage(
+        'שגיאה',
+        'על לקוח שממתין לאישור ניתן לפעול דרך רשימת ההמתנה בלבד'
+      );
       return;
     }
 
@@ -477,7 +559,7 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
           </View>
         ) : pendingClients.length === 0 ? (
           <View style={styles.emptyBox}>
-            <Text style={styles.emptyText}>אין לקוחות שממתינות לאישור</Text>
+            <Text style={styles.emptyText}>אין לקוחות שממתינים לאישור</Text>
           </View>
         ) : (
           pendingClients.map((client) => {
@@ -540,7 +622,11 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
           </View>
         ) : clients.length === 0 ? (
           <View style={styles.emptyBox}>
-            <Text style={styles.emptyText}>אין לקוחות להצגה</Text>
+            <Text style={styles.emptyText}>
+              {currentUserRole === 'admin'
+                ? 'עדיין אין לקוחות שנוצרו על ידך'
+                : 'אין לקוחות להצגה'}
+            </Text>
           </View>
         ) : (
           clients.map((client) => {

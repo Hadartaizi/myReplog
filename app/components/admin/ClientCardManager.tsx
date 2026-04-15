@@ -24,14 +24,16 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
-import { db } from "../../../database/firebase";
+import { auth, db } from "../../../database/firebase";
+import type { UserRole } from "../../types/user";
 
 type ClientItem = {
   id: string;
   uid?: string;
   name?: string;
   email?: string;
-  role?: "admin" | "client";
+  role?: UserRole;
+  createdByUid?: string | null;
 };
 
 type ClientCardData = {
@@ -396,7 +398,34 @@ export default function ClientCardManager({
     try {
       setLoadingClients(true);
 
-      const q = query(collection(db, "users"), where("role", "==", "client"));
+      const me = auth.currentUser;
+      if (!me?.uid) {
+        setClients([]);
+        setSelectedClient(null);
+        setLoadingClients(false);
+        return;
+      }
+
+      const myUserSnap = await getDoc(doc(db, "users", me.uid));
+      const myUser = myUserSnap.data();
+
+      let q;
+
+      if (myUser?.role === "owner") {
+        q = query(collection(db, "users"), where("role", "==", "client"));
+      } else if (myUser?.role === "admin") {
+        q = query(
+          collection(db, "users"),
+          where("role", "==", "client"),
+          where("createdByUid", "==", me.uid)
+        );
+      } else {
+        setClients([]);
+        setSelectedClient(null);
+        setLoadingClients(false);
+        return;
+      }
+
       const snap = await getDocs(q);
 
       const list: ClientItem[] = snap.docs
@@ -527,14 +556,23 @@ export default function ClientCardManager({
     try {
       setCreatingClient(true);
 
+      const me = auth.currentUser;
+
       const payload = {
         name: cleanName,
         email: cleanEmail || "",
         role: "client" as const,
+        createdByUid: me?.uid || null,
+        approvalStatus: "approved" as const,
+        accessStartAt: new Date().toISOString(),
+        accessEndAt: null,
+        hasLoginAccount: false,
+        authUid: null,
         cardsPurchased: 0,
         cardsUsed: 0,
         cardUsageDates: [],
         createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       };
 
       const docRef = await addDoc(collection(db, "users"), payload);
@@ -545,6 +583,7 @@ export default function ClientCardManager({
         name: cleanName,
         email: cleanEmail || "",
         role: "client",
+        createdByUid: me?.uid || null,
       };
 
       setClients((prev) =>
@@ -605,6 +644,7 @@ export default function ClientCardManager({
       await updateDoc(doc(db, "users", targetUid), {
         cardsPurchased: parsedValue,
         cardsUsed: used,
+        updatedAt: new Date().toISOString(),
       });
 
       setCardData((prev) => ({
@@ -654,6 +694,7 @@ export default function ClientCardManager({
       await updateDoc(doc(db, "users", targetUid), {
         cardUsageDates: nextUsageDates,
         cardsUsed: nextUsageDates.length,
+        updatedAt: new Date().toISOString(),
       });
 
       setCardData((prev) => ({
@@ -701,6 +742,7 @@ export default function ClientCardManager({
       await updateDoc(doc(db, "users", targetUid), {
         cardUsageDates: nextUsageDates,
         cardsUsed: nextUsageDates.length,
+        updatedAt: new Date().toISOString(),
       });
 
       setCardData((prev) => ({

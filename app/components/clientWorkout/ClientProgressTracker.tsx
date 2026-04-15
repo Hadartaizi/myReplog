@@ -16,19 +16,23 @@ import Svg, { Circle, Line, Path, Rect } from "react-native-svg";
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   query,
   updateDoc,
   where,
 } from "firebase/firestore";
-import { db } from "../../../database/firebase";
+import { auth, db } from "../../../database/firebase";
+import type { UserRole } from "../../types/user";
 
 type ClientItem = {
   id: string;
   uid?: string;
+  authUid?: string | null;
   name?: string;
   email?: string;
-  role?: "admin" | "client";
+  role?: UserRole;
+  createdByUid?: string | null;
   showInTracker?: boolean;
 };
 
@@ -793,7 +797,34 @@ export default function ClientProgressTracker({ clients: initialClients = [] }: 
     try {
       setLoadingClients(true);
 
-      const q = query(collection(db, "users"), where("role", "==", "client"));
+      const me = auth.currentUser;
+      if (!me?.uid) {
+        setClients([]);
+        setSelectedClient(null);
+        setLoadingClients(false);
+        return;
+      }
+
+      const myUserSnap = await getDoc(doc(db, "users", me.uid));
+      const myUser = myUserSnap.data();
+
+      let q;
+
+      if (myUser?.role === "owner") {
+        q = query(collection(db, "users"), where("role", "==", "client"));
+      } else if (myUser?.role === "admin") {
+        q = query(
+          collection(db, "users"),
+          where("role", "==", "client"),
+          where("createdByUid", "==", me.uid)
+        );
+      } else {
+        setClients([]);
+        setSelectedClient(null);
+        setLoadingClients(false);
+        return;
+      }
+
       const snap = await getDocs(q);
 
       const list: ClientItem[] = snap.docs
@@ -833,7 +864,7 @@ export default function ClientProgressTracker({ clients: initialClients = [] }: 
       return;
     }
 
-    const targetUid = client.uid || client.id;
+    const targetUid = client.authUid || client.uid || client.id;
 
     try {
       setLoadingData(true);
@@ -959,6 +990,7 @@ export default function ClientProgressTracker({ clients: initialClients = [] }: 
 
       await updateDoc(doc(db, "users", selectedClient.id), {
         showInTracker: nextValue,
+        updatedAt: new Date().toISOString(),
       });
 
       setClients((prev) =>

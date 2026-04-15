@@ -38,15 +38,31 @@ const normalizeDateOnly = (date: Date) => {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 };
 
+const normalizeExerciseName = (value: string) =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[֑-ׇ]/g, '')
+    .replace(/[^֐-׿\w\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const hasOwn = (obj: any, key: string) =>
+  !!obj && Object.prototype.hasOwnProperty.call(obj, key);
+
+const getExerciseNameValue = (item: any) => {
+  if (!item) return '';
+
+  if (hasOwn(item, 'exerciseName')) return String(item.exerciseName ?? '');
+  if (hasOwn(item, 'name')) return String(item.name ?? '');
+  if (hasOwn(item, 'title')) return String(item.title ?? '');
+
+  return '';
+};
+
 const getExerciseDisplayName = (workout: any) => {
-  return (
-    String(
-      workout?.exerciseName ||
-        workout?.name ||
-        workout?.title ||
-        ''
-    ).trim() || 'תרגיל ללא שם'
-  );
+  return getExerciseNameValue(workout).trim() || 'תרגיל ללא שם';
 };
 
 export default function Steps() {
@@ -97,13 +113,8 @@ export default function Steps() {
   const parseWorkoutDate = (dateValue: any) => {
     if (!dateValue) return null;
 
-    if (dateValue?.toDate) {
-      return dateValue.toDate();
-    }
-
-    if (dateValue instanceof Date) {
-      return dateValue;
-    }
+    if (dateValue?.toDate) return dateValue.toDate();
+    if (dateValue instanceof Date) return dateValue;
 
     if (typeof dateValue === 'string') {
       const simpleDateMatch = dateValue.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -113,9 +124,7 @@ export default function Steps() {
       }
 
       const parsed = new Date(dateValue);
-      if (!isNaN(parsed.getTime())) {
-        return parsed;
-      }
+      if (!isNaN(parsed.getTime())) return parsed;
     }
 
     return null;
@@ -135,7 +144,6 @@ export default function Steps() {
     const filtered = workouts.filter((w) => {
       const parsedDate = parseWorkoutDate(w.date);
       if (!parsedDate) return false;
-
       return normalizeDateOnly(parsedDate).getTime() === selectedOnly;
     });
 
@@ -143,48 +151,45 @@ export default function Steps() {
     buildCollapsedState(filtered);
   };
 
+  const fetchWorkouts = async (dateToFilter?: Date) => {
+    const user = auth.currentUser;
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const q = query(collection(db, 'workouts'), where('uid', '==', user.uid));
+      const snapshot = await getDocs(q);
+
+      const workouts = snapshot.docs
+        .map((docSnap) => {
+          const data = docSnap.data();
+          return {
+            id: docSnap.id,
+            ...data,
+            exerciseName: hasOwn(data, 'exerciseName')
+              ? String(data.exerciseName ?? '')
+              : String(data.name || data.title || ''),
+          };
+        })
+        .sort((a: any, b: any) => {
+          const aTime = parseWorkoutDate(a.date)?.getTime() || 0;
+          const bTime = parseWorkoutDate(b.date)?.getTime() || 0;
+          return aTime - bTime;
+        });
+
+      setAllWorkouts(workouts);
+      filterByDate(workouts, dateToFilter || selectedDate);
+    } catch (error) {
+      console.error('Error fetching workouts:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchWorkouts = async () => {
-      const user = auth.currentUser;
-      if (!user) {
-        setLoading(false);
-        return;
-      }
-
-      try {
-        const q = query(collection(db, 'workouts'), where('uid', '==', user.uid));
-        const snapshot = await getDocs(q);
-
-        const workouts = snapshot.docs
-          .map((docSnap) => {
-            const data = docSnap.data();
-
-            return {
-              id: docSnap.id,
-              ...data,
-              exerciseName:
-                data.exerciseName ||
-                data.name ||
-                data.title ||
-                '',
-            };
-          })
-          .sort((a: any, b: any) => {
-            const aTime = parseWorkoutDate(a.date)?.getTime() || 0;
-            const bTime = parseWorkoutDate(b.date)?.getTime() || 0;
-            return aTime - bTime;
-          });
-
-        setAllWorkouts(workouts);
-        filterByDate(workouts, selectedDate);
-      } catch (error) {
-        console.error('Error fetching workouts:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchWorkouts();
+    fetchWorkouts(selectedDate);
   }, []);
 
   const openDatePicker = () => {
@@ -258,6 +263,12 @@ export default function Steps() {
         if (w.id !== workoutId) return w;
 
         const updated = { ...w, [field]: value };
+
+        if (field === 'exerciseName') {
+          updated.exerciseName = value;
+          updated.name = value;
+          updated.title = value;
+        }
 
         if (field === 'numSets') {
           const cleanedValue = String(value).replace(/[^0-9]/g, '');
@@ -343,7 +354,69 @@ export default function Steps() {
     });
   };
 
+  const updateExerciseNameEverywhere = async (params: {
+    uid: string;
+    oldName: string;
+    newName: string;
+    currentWorkoutId: string;
+  }) => {
+    const { uid, oldName, newName, currentWorkoutId } = params;
+
+    const normalizedOld = normalizeExerciseName(oldName);
+    const normalizedNew = normalizeExerciseName(newName);
+
+    if (!normalizedOld || !normalizedNew || normalizedOld === normalizedNew) {
+      return;
+    }
+
+    const workoutsQuery = query(collection(db, 'workouts'), where('uid', '==', uid));
+    const workoutsSnapshot = await getDocs(workoutsQuery);
+
+    const workoutUpdatePromises = workoutsSnapshot.docs
+      .filter((docSnap) => {
+        if (docSnap.id === currentWorkoutId) return false;
+        const data = docSnap.data();
+        const currentName = getExerciseNameValue(data).trim();
+        return normalizeExerciseName(currentName) === normalizedOld;
+      })
+      .map((docSnap) =>
+        updateDoc(doc(db, 'workouts', docSnap.id), {
+          exerciseName: newName.trim(),
+          name: newName.trim(),
+          title: newName.trim(),
+          updatedAt: new Date().toISOString(),
+        })
+      );
+
+    const exercisesQuery = query(collection(db, 'exercises'), where('uid', '==', uid));
+    const exercisesSnapshot = await getDocs(exercisesQuery);
+
+    const exerciseUpdatePromises = exercisesSnapshot.docs
+      .filter((docSnap) => {
+        const data = docSnap.data();
+        const currentName = getExerciseNameValue(data).trim();
+        return normalizeExerciseName(currentName) === normalizedOld;
+      })
+      .map((docSnap) =>
+        updateDoc(doc(db, 'exercises', docSnap.id), {
+          exerciseName: newName.trim(),
+          name: newName.trim(),
+          title: newName.trim(),
+          updatedAt: new Date().toISOString(),
+        })
+      );
+
+    await Promise.all([...workoutUpdatePromises, ...exerciseUpdatePromises]);
+  };
+
   const saveWorkout = async (workout: any) => {
+    const newExerciseName = String(workout?.exerciseName ?? '').trim();
+
+    if (!newExerciseName) {
+      Alert.alert('שגיאה', 'שם התרגיל לא יכול להיות ריק');
+      return;
+    }
+
     const confirmed = await confirmAction(
       'אישור שמירה',
       'האם אתה בטוח שברצונך לשמור את השינויים?'
@@ -351,24 +424,46 @@ export default function Steps() {
 
     if (!confirmed) return;
 
+    const user = auth.currentUser;
+    if (!user) {
+      Alert.alert('שגיאה', 'המשתמש לא מחובר');
+      return;
+    }
+
     try {
       setSavingId(workout.id);
 
       const docRef = doc(db, 'workouts', workout.id);
       const { id, ...dataToSave } = workout;
 
-      await updateDoc(docRef, dataToSave);
+      const oldExerciseName = String(getExerciseNameValue(originalWorkout)).trim();
+
+      await updateDoc(docRef, {
+        ...dataToSave,
+        exerciseName: newExerciseName,
+        name: newExerciseName,
+        title: newExerciseName,
+        updatedAt: new Date().toISOString(),
+      });
+
+      await updateExerciseNameEverywhere({
+        uid: user.uid,
+        oldName: oldExerciseName,
+        newName: newExerciseName,
+        currentWorkoutId: workout.id,
+      });
 
       setEditingId(null);
       setOriginalWorkout(null);
       setErrorMessage('');
 
-      const updated = allWorkouts.map((w) =>
-        w.id === workout.id ? { ...w, ...dataToSave } : w
-      );
+      await fetchWorkouts(selectedDate);
 
-      setAllWorkouts(updated);
-      filterByDate(updated, selectedDate);
+      if (Platform.OS === 'web') {
+        window.alert('שם התרגיל עודכן בהצלחה');
+      } else {
+        Alert.alert('הצלחה', 'שם התרגיל עודכן בהצלחה');
+      }
     } catch (error) {
       console.error('Error saving workout:', error);
       Alert.alert('שגיאה', 'שמירת האימון נכשלה');
@@ -547,7 +642,7 @@ export default function Steps() {
                                   minHeight: dynamic.inputHeight,
                                 },
                               ]}
-                              value={workout.exerciseName || workout.name || workout.title || ''}
+                              value={String(workout.exerciseName ?? '')}
                               onChangeText={(val) =>
                                 handleFieldChange(workout.id, 'exerciseName', val)
                               }
@@ -709,7 +804,7 @@ export default function Steps() {
                                   onPress={() => {
                                     setFilteredWorkouts((prev) =>
                                       prev.map((w) =>
-                                        w.id === workout.id ? originalWorkout || w : w
+                                        w.id === workout.id ? JSON.parse(JSON.stringify(originalWorkout || w)) : w
                                       )
                                     );
                                     setEditingId(null);

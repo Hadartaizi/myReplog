@@ -5,6 +5,7 @@ import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../../../database/firebase';
 import { getAccessState, parseAccessDate } from './accessUtils';
+import type { UserRole, UserDoc } from "../../types/user";
 
 export default function useAccessGuard() {
   const [checkingAccess, setCheckingAccess] = useState(true);
