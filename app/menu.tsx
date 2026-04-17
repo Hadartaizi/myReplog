@@ -59,6 +59,7 @@ type ClientItem = {
   accessStartAt?: string | null;
   accessEndAt?: string | null;
   createdByUid?: string | null;
+  createdByOwnerUid?: string | null;
   hasLoginAccount?: boolean;
   authUid?: string | null;
   cardsPurchased?: number;
@@ -82,6 +83,7 @@ type SecondaryAdminItem = {
   accessEndAt?: string | null;
   createdByOwnerUid?: string | null;
   isSecondaryAdmin?: boolean;
+  authUid?: string | null;
 };
 
 type CurrentUserData = {
@@ -97,6 +99,7 @@ type CurrentUserData = {
   createdByUid?: string | null;
   hasLoginAccount?: boolean;
   authUid?: string | null;
+  uid?: string | null;
   cardsPurchased?: number;
   cardsUsed?: number;
   cardUsageDates?: string[];
@@ -116,6 +119,11 @@ type ContactData = {
   phone?: string;
   name?: string;
   uid?: string | null;
+};
+
+type ResolvedUserDoc = {
+  docId: string;
+  data: CurrentUserData;
 };
 
 function AdminIcon({ size = 20, color = "#1E293B" }) {
@@ -246,6 +254,273 @@ function normalizeInstagramUrl(value?: string | null) {
   return `https://www.instagram.com/${trimmed.replace(/^@/, "")}/`;
 }
 
+const normalizeEmail = (value?: string | null) =>
+  String(value || "")
+    .trim()
+    .toLowerCase();
+
+const getClientResolvedUid = (client: ClientItem) =>
+  String(client.uid || client.authUid || client.id || "").trim();
+
+const uniqueClientsByUid = (clients: ClientItem[]) => {
+  const map = new Map<string, ClientItem>();
+
+  for (const client of clients) {
+    const resolvedUid = getClientResolvedUid(client);
+    if (!resolvedUid) continue;
+
+    const existing = map.get(resolvedUid);
+
+    map.set(resolvedUid, {
+      ...(existing || {}),
+      ...client,
+      uid: resolvedUid,
+    });
+  }
+
+  return Array.from(map.values()).sort((a, b) =>
+    String(a.name || "").localeCompare(String(b.name || ""), "he")
+  );
+};
+
+const mapUserDocToClient = (docSnap: any): ClientItem => {
+  const data = docSnap.data() || {};
+  const resolvedUid = String(data.uid || data.authUid || docSnap.id || "").trim();
+
+  return {
+    id: docSnap.id,
+    ...data,
+    uid: resolvedUid,
+  };
+};
+
+const buildUidCandidates = (...values: Array<string | null | undefined>) => {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => String(value || "").trim())
+        .filter(Boolean)
+    )
+  );
+};
+
+async function resolveCurrentUserDoc(): Promise<ResolvedUserDoc | null> {
+  const authUser = auth.currentUser;
+  if (!authUser) return null;
+
+  const authUid = String(authUser.uid || "").trim();
+  const authEmail = normalizeEmail(authUser.email);
+
+  if (authUid) {
+    const directRef = doc(db, "users", authUid);
+    const directSnap = await getDoc(directRef);
+
+    if (directSnap.exists()) {
+      return {
+        docId: directSnap.id,
+        data: directSnap.data() as CurrentUserData,
+      };
+    }
+  }
+
+  if (authUid) {
+    const byUidSnap = await getDocs(
+      query(collection(db, "users"), where("uid", "==", authUid))
+    );
+
+    if (!byUidSnap.empty) {
+      const found = byUidSnap.docs[0];
+      return {
+        docId: found.id,
+        data: found.data() as CurrentUserData,
+      };
+    }
+  }
+
+  if (authUid) {
+    const byAuthUidSnap = await getDocs(
+      query(collection(db, "users"), where("authUid", "==", authUid))
+    );
+
+    if (!byAuthUidSnap.empty) {
+      const found = byAuthUidSnap.docs[0];
+      return {
+        docId: found.id,
+        data: found.data() as CurrentUserData,
+      };
+    }
+  }
+
+  if (authEmail) {
+    const byEmailSnap = await getDocs(
+      query(collection(db, "users"), where("email", "==", authEmail))
+    );
+
+    if (!byEmailSnap.empty) {
+      const found = byEmailSnap.docs[0];
+      return {
+        docId: found.id,
+        data: found.data() as CurrentUserData,
+      };
+    }
+  }
+
+  return null;
+}
+
+async function fetchClientsByField(
+  field: "createdByUid" | "createdByOwnerUid" | "contactOwnerUid",
+  values: string[]
+) {
+  const collected: ClientItem[] = [];
+  const normalizedValues = Array.from(
+    new Set(values.map((value) => String(value || "").trim()).filter(Boolean))
+  );
+
+  for (const value of normalizedValues) {
+    const snap = await getDocs(
+      query(
+        collection(db, "users"),
+        where("role", "==", "client"),
+        where(field, "==", value)
+      )
+    );
+
+    snap.docs.forEach((docSnap) => {
+      collected.push(mapUserDocToClient(docSnap));
+    });
+  }
+
+  return uniqueClientsByUid(collected);
+}
+
+async function fetchClientsForAnyLink(values: string[]) {
+  const normalizedValues = Array.from(
+    new Set(values.map((value) => String(value || "").trim()).filter(Boolean))
+  );
+
+  if (normalizedValues.length === 0) {
+    return [] as ClientItem[];
+  }
+
+  const [byCreated, byOwner, byContact] = await Promise.all([
+    fetchClientsByField("createdByUid", normalizedValues),
+    fetchClientsByField("createdByOwnerUid", normalizedValues),
+    fetchClientsByField("contactOwnerUid", normalizedValues),
+  ]);
+
+  return uniqueClientsByUid([...byCreated, ...byOwner, ...byContact]);
+}
+
+async function fetchAdminsByOwner(ownerUidCandidates: string[]) {
+  const admins: SecondaryAdminItem[] = [];
+  const normalizedOwnerValues = Array.from(
+    new Set(ownerUidCandidates.map((value) => String(value || "").trim()).filter(Boolean))
+  );
+
+  for (const ownerUid of normalizedOwnerValues) {
+    const [adminsByOwnerSnap, adminsByCreatedSnap] = await Promise.all([
+      getDocs(
+        query(
+          collection(db, "users"),
+          where("role", "==", "admin"),
+          where("createdByOwnerUid", "==", ownerUid)
+        )
+      ),
+      getDocs(
+        query(
+          collection(db, "users"),
+          where("role", "==", "admin"),
+          where("createdByUid", "==", ownerUid)
+        )
+      ),
+    ]);
+
+    [...adminsByOwnerSnap.docs, ...adminsByCreatedSnap.docs].forEach((docSnap) => {
+      const data = docSnap.data() || {};
+
+      admins.push({
+        id: docSnap.id,
+        ...data,
+        uid: String(data.uid || data.authUid || docSnap.id || "").trim(),
+      });
+    });
+  }
+
+  const uniqueMap = new Map<string, SecondaryAdminItem>();
+
+  for (const admin of admins) {
+    const key = String(admin.uid || admin.authUid || admin.id || "").trim();
+    if (!key) continue;
+
+    uniqueMap.set(key, {
+      ...admin,
+      uid: key,
+    });
+  }
+
+  return Array.from(uniqueMap.values()).sort((a, b) =>
+    String(a.name || "").localeCompare(String(b.name || ""), "he")
+  );
+}
+
+async function fetchAllClientsForOwner(
+  ownerUidCandidates: string[],
+  adminsList: SecondaryAdminItem[]
+) {
+  const collectedClients: ClientItem[] = [];
+
+  const ownerClients = await fetchClientsForAnyLink(ownerUidCandidates);
+  collectedClients.push(...ownerClients);
+
+  for (const admin of adminsList) {
+    const adminUidCandidates = buildUidCandidates(admin.uid, admin.authUid, admin.id);
+
+    const adminClients = await fetchClientsForAnyLink(adminUidCandidates);
+
+    collectedClients.push(
+      ...adminClients.map((client) => ({
+        ...client,
+        createdByOwnerUid: client.createdByOwnerUid || ownerUidCandidates[0] || null,
+      }))
+    );
+  }
+
+  return uniqueClientsByUid(collectedClients);
+}
+
+async function fetchAllClientsForAdmin(
+  adminUidCandidates: string[],
+  ownerUidCandidates: string[]
+) {
+  const collectedClients: ClientItem[] = [];
+
+  const directAdminClients = await fetchClientsForAnyLink(adminUidCandidates);
+  collectedClients.push(...directAdminClients);
+
+  if (ownerUidCandidates.length > 0) {
+    const ownerLinkedClients = await fetchClientsByField(
+      "createdByOwnerUid",
+      ownerUidCandidates
+    );
+
+    collectedClients.push(
+      ...ownerLinkedClients.filter((client) => {
+        const linkedAdminCandidates = buildUidCandidates(
+          client.createdByUid,
+          client.contactOwnerUid
+        );
+
+        return linkedAdminCandidates.some((value) =>
+          adminUidCandidates.includes(value)
+        );
+      })
+    );
+  }
+
+  return uniqueClientsByUid(collectedClients);
+}
+
 export default function Menu() {
   const { width, height } = useWindowDimensions();
 
@@ -318,8 +593,8 @@ export default function Menu() {
     try {
       setLoading(true);
 
-      const user = auth.currentUser;
-      if (!user) {
+      const authUser = auth.currentUser;
+      if (!authUser) {
         setCurrentUserData(null);
         setResolvedContactData(null);
         setClients([]);
@@ -327,10 +602,9 @@ export default function Menu() {
         return;
       }
 
-      const userRef = doc(db, "users", user.uid);
-      const userSnap = await getDoc(userRef);
+      const resolvedUser = await resolveCurrentUserDoc();
 
-      if (!userSnap.exists()) {
+      if (!resolvedUser) {
         setCurrentUserData(null);
         setResolvedContactData(null);
         setClients([]);
@@ -338,12 +612,24 @@ export default function Menu() {
         return;
       }
 
-      const userData = userSnap.data() as CurrentUserData;
+      const { docId: currentUserDocId, data: userData } = resolvedUser;
+
       setCurrentUserData(userData);
 
       setInstagramInput(userData.instagramUrl || "");
       setWhatsappInput(userData.whatsappPhone || "");
       setPhoneInput(userData.contactPhone || userData.phone || "");
+
+      const currentUserUidCandidates = buildUidCandidates(
+        authUser.uid,
+        currentUserDocId,
+        userData.uid,
+        userData.authUid
+      );
+
+      const ownerUidCandidates = userData.role === "owner"
+        ? currentUserUidCandidates
+        : buildUidCandidates(userData.createdByOwnerUid);
 
       let contactSource: ContactData = {
         instagramUrl: userData.instagramUrl,
@@ -351,91 +637,121 @@ export default function Menu() {
         contactPhone: userData.contactPhone,
         phone: userData.phone,
         name: userData.name,
-        uid: user.uid,
+        uid: currentUserDocId,
       };
 
-      if (userData.role === "client" && userData.createdByUid) {
-        try {
-          const coachRef = doc(db, "users", userData.createdByUid);
-          const coachSnap = await getDoc(coachRef);
+      if (userData.role === "client") {
+        const coachUidCandidates = buildUidCandidates(
+          userData.createdByUid,
+          userData.contactOwnerUid
+        );
 
-          if (coachSnap.exists()) {
-            const coachData = coachSnap.data() as CurrentUserData;
-            contactSource = {
-              instagramUrl: coachData.instagramUrl,
-              whatsappPhone: coachData.whatsappPhone,
-              contactPhone: coachData.contactPhone,
-              phone: coachData.phone,
-              name: coachData.name,
-              uid: userData.createdByUid,
-            };
-          } else {
-            contactSource = {
-              instagramUrl: userData.instagramUrl,
-              whatsappPhone: userData.whatsappPhone,
-              contactPhone: userData.contactPhone,
-              phone: userData.phone,
-              name: userData.name,
-              uid: user.uid,
-            };
+        let coachFound = false;
+
+        for (const coachUid of coachUidCandidates) {
+          try {
+            const coachDirectSnap = await getDoc(doc(db, "users", coachUid));
+
+            if (coachDirectSnap.exists()) {
+              const coachData = coachDirectSnap.data() as CurrentUserData;
+              contactSource = {
+                instagramUrl: coachData.instagramUrl,
+                whatsappPhone: coachData.whatsappPhone,
+                contactPhone: coachData.contactPhone,
+                phone: coachData.phone,
+                name: coachData.name,
+                uid: coachDirectSnap.id,
+              };
+              coachFound = true;
+              break;
+            }
+
+            const coachByUidSnap = await getDocs(
+              query(collection(db, "users"), where("uid", "==", coachUid))
+            );
+
+            if (!coachByUidSnap.empty) {
+              const coachDoc = coachByUidSnap.docs[0];
+              const coachData = coachDoc.data() as CurrentUserData;
+              contactSource = {
+                instagramUrl: coachData.instagramUrl,
+                whatsappPhone: coachData.whatsappPhone,
+                contactPhone: coachData.contactPhone,
+                phone: coachData.phone,
+                name: coachData.name,
+                uid: coachDoc.id,
+              };
+              coachFound = true;
+              break;
+            }
+
+            const coachByAuthUidSnap = await getDocs(
+              query(collection(db, "users"), where("authUid", "==", coachUid))
+            );
+
+            if (!coachByAuthUidSnap.empty) {
+              const coachDoc = coachByAuthUidSnap.docs[0];
+              const coachData = coachDoc.data() as CurrentUserData;
+              contactSource = {
+                instagramUrl: coachData.instagramUrl,
+                whatsappPhone: coachData.whatsappPhone,
+                contactPhone: coachData.contactPhone,
+                phone: coachData.phone,
+                name: coachData.name,
+                uid: coachDoc.id,
+              };
+              coachFound = true;
+              break;
+            }
+          } catch (error) {
+            console.error("שגיאה בטעינת פרטי המאמן:", error);
           }
-        } catch (error) {
-          console.error("שגיאה בטעינת פרטי צור קשר של המאמן:", error);
+        }
+
+        if (!coachFound) {
+          contactSource = {
+            instagramUrl: userData.instagramUrl,
+            whatsappPhone: userData.whatsappPhone,
+            contactPhone: userData.contactPhone,
+            phone: userData.phone,
+            name: userData.name,
+            uid: currentUserDocId,
+          };
         }
       }
 
       setResolvedContactData(contactSource);
 
       if (userData.role === "owner") {
-        const clientsQuery = query(collection(db, "users"), where("role", "==", "client"));
-        const clientsSnap = await getDocs(clientsQuery);
+        const ownerCandidates = currentUserUidCandidates;
 
-        const clientsList: ClientItem[] = clientsSnap.docs.map((docSnap) => ({
-          id: docSnap.id,
-          ...(docSnap.data() as Omit<ClientItem, "id">),
-        }));
-
-        clientsList.sort((a, b) => (a.name || "").localeCompare(b.name || "", "he"));
-        setClients(clientsList);
-
-        const adminsQuery = query(
-          collection(db, "users"),
-          where("role", "==", "admin"),
-          where("createdByOwnerUid", "==", user.uid)
-        );
-
-        const adminsSnap = await getDocs(adminsQuery);
-
-        const adminsList: SecondaryAdminItem[] = adminsSnap.docs.map((docSnap) => ({
-          id: docSnap.id,
-          ...(docSnap.data() as Omit<SecondaryAdminItem, "id">),
-        }));
-
-        adminsList.sort((a, b) => (a.name || "").localeCompare(b.name || "", "he"));
+        const adminsList = await fetchAdminsByOwner(ownerCandidates);
         setSecondaryAdmins(adminsList);
-      } else if (userData.role === "admin") {
-        const clientsQuery = query(
-          collection(db, "users"),
-          where("role", "==", "client"),
-          where("createdByUid", "==", user.uid)
+
+        const ownerClients = await fetchAllClientsForOwner(ownerCandidates, adminsList);
+        setClients(ownerClients);
+        return;
+      }
+
+      if (userData.role === "admin") {
+        const adminCandidates = currentUserUidCandidates;
+
+        const adminClients = await fetchAllClientsForAdmin(
+          adminCandidates,
+          ownerUidCandidates
         );
 
-        const clientsSnap = await getDocs(clientsQuery);
-
-        const clientsList: ClientItem[] = clientsSnap.docs.map((docSnap) => ({
-          id: docSnap.id,
-          ...(docSnap.data() as Omit<ClientItem, "id">),
-        }));
-
-        clientsList.sort((a, b) => (a.name || "").localeCompare(b.name || "", "he"));
-        setClients(clientsList);
+        setClients(adminClients);
         setSecondaryAdmins([]);
-      } else {
-        setClients([]);
-        setSecondaryAdmins([]);
+        return;
       }
+
+      setClients([]);
+      setSecondaryAdmins([]);
     } catch (error) {
       console.error("שגיאה בטעינת נתוני תפריט:", error);
+      setClients([]);
+      setSecondaryAdmins([]);
     } finally {
       setLoading(false);
     }
@@ -513,11 +829,19 @@ export default function Menu() {
   };
 
   const handleSaveContactInfo = async () => {
-    const user = auth.currentUser;
-    if (!user) {
+    const authUser = auth.currentUser;
+    if (!authUser) {
       Alert.alert("שגיאה", "לא נמצא משתמש מחובר");
       return;
     }
+
+    const resolvedUser = await resolveCurrentUserDoc();
+    if (!resolvedUser) {
+      Alert.alert("שגיאה", "לא נמצא מסמך משתמש");
+      return;
+    }
+
+    const { docId: currentUserDocId, data: userData } = resolvedUser;
 
     const normalizedInstagram = normalizeInstagramUrl(instagramInput);
     const normalizedWhatsapp = normalizePhoneForWhatsapp(whatsappInput);
@@ -527,7 +851,7 @@ export default function Menu() {
     try {
       setSavingContactInfo(true);
 
-      await updateDoc(doc(db, "users", user.uid), {
+      await updateDoc(doc(db, "users", currentUserDocId), {
         instagramUrl: normalizedInstagram,
         whatsappPhone: normalizedWhatsapp,
         contactPhone: trimmedPhone,
@@ -535,24 +859,25 @@ export default function Menu() {
         contactUpdatedAt: nowIso,
       });
 
-      if (currentUserData?.role === "admin") {
-        const linkedClientsQuery = query(
-          collection(db, "users"),
-          where("role", "==", "client"),
-          where("createdByUid", "==", user.uid)
+      if (userData.role === "admin") {
+        const adminUidCandidates = buildUidCandidates(
+          authUser.uid,
+          currentUserDocId,
+          userData.uid,
+          userData.authUid
         );
 
-        const linkedClientsSnap = await getDocs(linkedClientsQuery);
+        const linkedClients = await fetchClientsForAnyLink(adminUidCandidates);
 
-        if (!linkedClientsSnap.empty) {
+        if (linkedClients.length > 0) {
           const batch = writeBatch(db);
 
-          linkedClientsSnap.docs.forEach((clientDoc) => {
-            batch.update(clientDoc.ref, {
+          linkedClients.forEach((clientItem) => {
+            batch.update(doc(db, "users", clientItem.id), {
               instagramUrl: normalizedInstagram,
               whatsappPhone: normalizedWhatsapp,
               contactPhone: trimmedPhone,
-              contactOwnerUid: user.uid,
+              contactOwnerUid: currentUserDocId,
               contactUpdatedAt: nowIso,
               updatedAt: nowIso,
             });
@@ -562,16 +887,14 @@ export default function Menu() {
         }
       }
 
-      const nextUserData: CurrentUserData | null = currentUserData
-        ? {
-            ...currentUserData,
-            instagramUrl: normalizedInstagram,
-            whatsappPhone: normalizedWhatsapp,
-            contactPhone: trimmedPhone,
-            updatedAt: nowIso,
-            contactUpdatedAt: nowIso,
-          }
-        : currentUserData;
+      const nextUserData: CurrentUserData = {
+        ...userData,
+        instagramUrl: normalizedInstagram,
+        whatsappPhone: normalizedWhatsapp,
+        contactPhone: trimmedPhone,
+        updatedAt: nowIso,
+        contactUpdatedAt: nowIso,
+      };
 
       setCurrentUserData(nextUserData);
 
@@ -579,14 +902,15 @@ export default function Menu() {
         instagramUrl: normalizedInstagram,
         whatsappPhone: normalizedWhatsapp,
         contactPhone: trimmedPhone,
-        phone: currentUserData?.phone,
-        name: currentUserData?.name,
-        uid: user.uid,
+        phone: nextUserData.phone,
+        name: nextUserData.name,
+        uid: currentUserDocId,
       });
 
       setIsEditingContactInfo(false);
-
       Alert.alert("הצלחה", "פרטי צור הקשר נשמרו בהצלחה");
+
+      await fetchMenuData();
     } catch (error) {
       console.error("שגיאה בשמירת פרטי צור קשר:", error);
       Alert.alert("שגיאה", "לא ניתן לשמור את פרטי צור הקשר");
@@ -624,7 +948,22 @@ export default function Menu() {
     if (!confirmed) return;
 
     try {
-      await deleteDoc(doc(db, "users", targetUid));
+      const matchedClient =
+        clients.find((c) => getClientResolvedUid(c) === targetUid) || null;
+
+      const possibleUserDocIds = Array.from(
+        new Set([matchedClient?.id, matchedClient?.uid, matchedClient?.authUid].filter(Boolean))
+      ) as string[];
+
+      let deletedUserDoc = false;
+
+      for (const docId of possibleUserDocIds) {
+        try {
+          await deleteDoc(doc(db, "users", docId));
+          deletedUserDoc = true;
+          break;
+        } catch {}
+      }
 
       const workoutsQuery = query(collection(db, "workouts"), where("uid", "==", targetUid));
       const workoutsSnap = await getDocs(workoutsQuery);
@@ -637,11 +976,20 @@ export default function Menu() {
         ...exercisesSnap.docs.map((d) => deleteDoc(doc(db, "exercises", d.id))),
       ]);
 
-      setClients((prev) => prev.filter((c) => (c.uid || c.id) !== targetUid));
+      setClients((prev) => prev.filter((c) => getClientResolvedUid(c) !== targetUid));
 
       Platform.OS === "web"
-        ? window.alert("הלקוח נמחק מהמערכת")
-        : Alert.alert("הצלחה", "הלקוח נמחק מהמערכת");
+        ? window.alert(
+            deletedUserDoc
+              ? "הלקוח נמחק מהמערכת"
+              : "נתוני האימונים נמחקו, אך מסמך המשתמש לא נמצא"
+          )
+        : Alert.alert(
+            "הצלחה",
+            deletedUserDoc
+              ? "הלקוח נמחק מהמערכת"
+              : "נתוני האימונים נמחקו, אך מסמך המשתמש לא נמצא"
+          );
     } catch (error) {
       console.error("שגיאה במחיקת לקוח:", error);
       Platform.OS === "web"
@@ -1052,7 +1400,7 @@ export default function Menu() {
                                   </View>
                                 ) : (
                                   clients.map((client) => {
-                                    const targetUid = client.uid || client.id;
+                                    const targetUid = getClientResolvedUid(client);
 
                                     return (
                                       <View key={`delete-${client.id}`} style={styles.clientRow}>

@@ -8,12 +8,36 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { addDoc, collection, getDocs, query, where } from "firebase/firestore";
+import {
+  addDoc,
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  where,
+} from "firebase/firestore";
 import { auth, db } from "../../../database/firebase";
 import type { ClientInviteDoc } from "../../types/clientInvite";
+import type { UserRole } from "../../types/user";
 
 type Props = {
   onAfterCreate?: () => void;
+};
+
+type CurrentUserData = {
+  name?: string;
+  email?: string;
+  phone?: string;
+  role?: UserRole;
+  createdByOwnerUid?: string | null;
+  authUid?: string | null;
+  uid?: string | null;
+};
+
+type ResolvedUserDoc = {
+  docId: string;
+  data: CurrentUserData;
 };
 
 function toIsoDateTimeLocal(value: string, fallbackHour = "09:00") {
@@ -33,6 +57,72 @@ function showMessage(title: string, message: string) {
   }
 
   Alert.alert(title, message);
+}
+
+function normalizeEmail(value?: string | null) {
+  return String(value || "").trim().toLowerCase();
+}
+
+async function resolveCurrentUserDoc(): Promise<ResolvedUserDoc | null> {
+  const currentUser = auth.currentUser;
+  if (!currentUser) return null;
+
+  const authUid = String(currentUser.uid || "").trim();
+  const authEmail = normalizeEmail(currentUser.email);
+
+  if (authUid) {
+    const directSnap = await getDoc(doc(db, "users", authUid));
+    if (directSnap.exists()) {
+      return {
+        docId: directSnap.id,
+        data: directSnap.data() as CurrentUserData,
+      };
+    }
+  }
+
+  if (authUid) {
+    const byUidSnap = await getDocs(
+      query(collection(db, "users"), where("uid", "==", authUid))
+    );
+
+    if (!byUidSnap.empty) {
+      const found = byUidSnap.docs[0];
+      return {
+        docId: found.id,
+        data: found.data() as CurrentUserData,
+      };
+    }
+  }
+
+  if (authUid) {
+    const byAuthUidSnap = await getDocs(
+      query(collection(db, "users"), where("authUid", "==", authUid))
+    );
+
+    if (!byAuthUidSnap.empty) {
+      const found = byAuthUidSnap.docs[0];
+      return {
+        docId: found.id,
+        data: found.data() as CurrentUserData,
+      };
+    }
+  }
+
+  if (authEmail) {
+    const byEmailSnap = await getDocs(
+      query(collection(db, "users"), where("email", "==", authEmail))
+    );
+
+    if (!byEmailSnap.empty) {
+      const found = byEmailSnap.docs[0];
+      return {
+        docId: found.id,
+        data: found.data() as CurrentUserData,
+      };
+    }
+  }
+
+  return null;
 }
 
 export default function CoachClientCreator({ onAfterCreate }: Props) {
@@ -61,7 +151,16 @@ export default function CoachClientCreator({ onAfterCreate }: Props) {
       return;
     }
 
-    const normalizedEmail = email.trim().toLowerCase();
+    const resolvedUser = await resolveCurrentUserDoc();
+
+    if (!resolvedUser) {
+      showMessage("שגיאה", "לא נמצא מסמך משתמש");
+      return;
+    }
+
+    const { docId: currentUserDocId, data: currentUserData } = resolvedUser;
+
+    const normalizedEmail = normalizeEmail(email);
     const accessStartAt = toIsoDateTimeLocal(startDate, "09:00");
     const accessEndAt = toIsoDateTimeLocal(endDate, "23:59");
 
@@ -104,7 +203,11 @@ export default function CoachClientCreator({ onAfterCreate }: Props) {
         return;
       }
 
-      const inviteDoc: ClientInviteDoc = {
+      const nowIso = new Date().toISOString();
+
+      const inviteDoc: ClientInviteDoc & {
+        createdByOwnerUid?: string | null;
+      } = {
         name: name.trim(),
         email: normalizedEmail,
         phone: phone.trim(),
@@ -112,15 +215,19 @@ export default function CoachClientCreator({ onAfterCreate }: Props) {
         approvalStatus: "approved",
         accessStartAt,
         accessEndAt,
-        createdByUid: currentUser.uid,
+        createdByUid: currentUserDocId,
+        createdByOwnerUid:
+          currentUserData.role === "owner"
+            ? currentUserDocId
+            : currentUserData.createdByOwnerUid || null,
         inviteStatus: "pending",
         hasLoginAccount: false,
         authUid: null,
         cardsPurchased: 0,
         cardsUsed: 0,
         cardUsageDates: [],
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        createdAt: nowIso,
+        updatedAt: nowIso,
       };
 
       await addDoc(collection(db, "clientInvites"), inviteDoc);
@@ -137,8 +244,23 @@ export default function CoachClientCreator({ onAfterCreate }: Props) {
         "הלקוח נוסף בהצלחה",
         "נוצרה הזמנה ללקוח. כעת הלקוח צריך להירשם עם אותו האימייל כדי להשלים את פתיחת החשבון."
       );
-    } catch (error) {
+    } catch (error: any) {
       console.error("שגיאה ביצירת הזמנת לקוח:", error);
+
+      const errorMessage =
+        typeof error?.message === "string" ? error.message : "";
+
+      if (
+        errorMessage.includes("Missing or insufficient permissions") ||
+        error?.code === "permission-denied"
+      ) {
+        showMessage(
+          "שגיאת הרשאה",
+          "אין הרשאה ליצור הזמנה ללקוח. צריך לעדכן את חוקי Firebase כדי לאפשר לבעלת מערכת או למאמן משני ליצור מסמך ב-clientInvites."
+        );
+        return;
+      }
+
       showMessage("שגיאה", "לא ניתן ליצור הזמנה ללקוח");
     } finally {
       setSaving(false);
