@@ -102,6 +102,30 @@ function ChartIcon({ size = 26, color = '#64748B' }) {
   );
 }
 
+function ExpandIcon({ size = 18, color = '#0F172A' }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M8 3H3v5M16 3h5v5M8 21H3v-5M21 21h-5v-5"
+        stroke={color}
+        strokeWidth={2}
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+function CloseIcon({ size = 22, color = '#FFFFFF' }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Line x1="6" y1="6" x2="18" y2="18" stroke={color} strokeWidth={2.5} strokeLinecap="round" />
+      <Line x1="18" y1="6" x2="6" y2="18" stroke={color} strokeWidth={2.5} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
 export default function GraphScreen() {
   const { width, height } = useWindowDimensions();
 
@@ -149,12 +173,14 @@ export default function GraphScreen() {
   const [deletedExerciseNames, setDeletedExerciseNames] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isFullScreenChartVisible, setIsFullScreenChartVisible] = useState(false);
   const [chartData, setChartData] = useState<{ labels: string[]; datasets: { data: number[] }[] }>({
     labels: [],
     datasets: [{ data: [] }],
   });
 
   const scrollRef = useRef<ScrollView | null>(null);
+  const fullScreenScrollRef = useRef<ScrollView | null>(null);
 
   const chartConfig = useMemo(
     () => ({
@@ -183,18 +209,44 @@ export default function GraphScreen() {
     [isVerySmall]
   );
 
+  const chartConfigFullScreen = useMemo(
+    () => ({
+      backgroundGradientFrom: '#FFFFFF',
+      backgroundGradientTo: '#FFFFFF',
+      decimalPlaces: 1,
+      color: (opacity = 1) => `rgba(15, 23, 42, ${opacity})`,
+      labelColor: () => '#1E293B',
+      propsForBackgroundLines: {
+        strokeDasharray: '',
+        stroke: '#E2E8F0',
+      },
+      propsForDots: {
+        r: '3.2',
+        strokeWidth: '2',
+        stroke: '#0F172A',
+      },
+      strokeWidth: 2,
+      barPercentage: 0.34,
+      fillShadowGradient: '#0F172A',
+      fillShadowGradientOpacity: 0.14,
+      propsForLabels: {
+        fontSize: 9,
+      },
+    }),
+    []
+  );
+
   const textAlignByLanguage = (text: string) => (/[a-zA-Z]/.test(text) ? 'left' : 'right');
 
   const parseWorkoutDate = (dateValue: any) => {
     if (!dateValue) return null;
-
     if (dateValue?.toDate) return dateValue.toDate();
     if (dateValue instanceof Date) return dateValue;
 
     if (typeof dateValue === 'string') {
       const simpleDateMatch = dateValue.match(/^(\d{4})-(\d{2})-(\d{2})$/);
       if (simpleDateMatch) {
-        const [, year, month, day] = dateValue.match(/^(\d{4})-(\d{2})-(\d{2})$/)!;
+        const [, year, month, day] = simpleDateMatch;
         return new Date(Number(year), Number(month) - 1, Number(day));
       }
 
@@ -218,6 +270,12 @@ export default function GraphScreen() {
       year: '2-digit',
     });
 
+  const getFormattedDateLabelShort = (date: Date) =>
+    date.toLocaleDateString('he-IL', {
+      day: '2-digit',
+      month: '2-digit',
+    });
+
   const getExerciseNameFromDoc = (item: any) =>
     String(item?.exerciseName || item?.title || item?.name || '').trim();
 
@@ -225,6 +283,7 @@ export default function GraphScreen() {
     setDataType('');
     setChartType('');
     setChartData({ labels: [], datasets: [{ data: [] }] });
+    setIsFullScreenChartVisible(false);
   };
 
   const loadDeletedExercises = useCallback(async (uid: string) => {
@@ -274,7 +333,6 @@ export default function GraphScreen() {
         .filter(Boolean);
 
       const merged = [...namesFromWorkouts, ...namesFromExercises];
-
       const uniqueVisibleNames: string[] = [];
       const seen = new Set<string>();
 
@@ -348,7 +406,10 @@ export default function GraphScreen() {
   }, [selectedPeriod, selectedExercise, dataType, deletedExerciseNames]);
 
   const generateChartData = (filteredWorkouts: WorkoutLike[]) => {
-    const groupedMap: Record<string, { label: string; sortValue: number; values: number[] }> = {};
+    const groupedMap: Record<
+      string,
+      { label: string; shortLabel: string; sortValue: number; values: number[] }
+    > = {};
 
     const getBucketData = (date: Date) => {
       const d = startOfDay(date);
@@ -358,6 +419,7 @@ export default function GraphScreen() {
           return {
             key: `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`,
             label: getFormattedDateLabel(d),
+            shortLabel: getFormattedDateLabelShort(d),
             sortValue: d.getTime(),
           };
 
@@ -369,6 +431,7 @@ export default function GraphScreen() {
           return {
             key: `biweekly-${start.getFullYear()}-${start.getMonth() + 1}-${start.getDate()}`,
             label: getFormattedDateLabel(start),
+            shortLabel: getFormattedDateLabelShort(start),
             sortValue: start.getTime(),
           };
         }
@@ -378,6 +441,7 @@ export default function GraphScreen() {
           return {
             key: `month-${start.getFullYear()}-${start.getMonth() + 1}`,
             label: getFormattedDateLabel(start),
+            shortLabel: getFormattedDateLabelShort(start),
             sortValue: start.getTime(),
           };
         }
@@ -388,6 +452,7 @@ export default function GraphScreen() {
           return {
             key: `quarter-${d.getFullYear()}-${quarterStartMonth}`,
             label: getFormattedDateLabel(start),
+            shortLabel: getFormattedDateLabelShort(start),
             sortValue: start.getTime(),
           };
         }
@@ -398,6 +463,7 @@ export default function GraphScreen() {
           return {
             key: `half-${d.getFullYear()}-${startMonth}`,
             label: getFormattedDateLabel(start),
+            shortLabel: getFormattedDateLabelShort(start),
             sortValue: start.getTime(),
           };
         }
@@ -407,6 +473,7 @@ export default function GraphScreen() {
           return {
             key: `year-${d.getFullYear()}`,
             label: getFormattedDateLabel(start),
+            shortLabel: getFormattedDateLabelShort(start),
             sortValue: start.getTime(),
           };
         }
@@ -415,6 +482,7 @@ export default function GraphScreen() {
           return {
             key: `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`,
             label: getFormattedDateLabel(d),
+            shortLabel: getFormattedDateLabelShort(d),
             sortValue: d.getTime(),
           };
       }
@@ -443,6 +511,7 @@ export default function GraphScreen() {
       if (!groupedMap[bucket.key]) {
         groupedMap[bucket.key] = {
           label: bucket.label,
+          shortLabel: bucket.shortLabel,
           sortValue: bucket.sortValue,
           values: [],
         };
@@ -454,7 +523,7 @@ export default function GraphScreen() {
     const sortedBuckets = Object.values(groupedMap).sort((a, b) => a.sortValue - b.sortValue);
 
     setChartData({
-      labels: sortedBuckets.map((item) => item.label),
+      labels: sortedBuckets.map((item) => `${item.label}|||${item.shortLabel}`),
       datasets: [
         {
           data: sortedBuckets.map((item) => {
@@ -506,7 +575,6 @@ export default function GraphScreen() {
       );
 
       await fetchExercises();
-
       setSelectedExercise('');
       setExerciseSearchText('');
       resetChartSelections();
@@ -538,7 +606,6 @@ export default function GraphScreen() {
       );
 
       if (!confirmed) return;
-
       await deleteExerciseConfirmed(exerciseName);
       return;
     }
@@ -562,9 +629,7 @@ export default function GraphScreen() {
   const filteredExercises = useMemo(() => {
     const normalizedSearch = normalizeText(exerciseSearchText);
 
-    if (!normalizedSearch) {
-      return availableExercises;
-    }
+    if (!normalizedSearch) return availableExercises;
 
     return availableExercises.filter((exerciseName) =>
       normalizeText(exerciseName).includes(normalizedSearch)
@@ -588,16 +653,77 @@ export default function GraphScreen() {
     setExerciseModalVisible(false);
   };
 
+  const openFullScreenChart = () => {
+    if (!chartData.labels.length) return;
+    setIsFullScreenChartVisible(true);
+  };
+
+  const closeFullScreenChart = () => {
+    setIsFullScreenChartVisible(false);
+  };
+
   if (!fontsLoaded) {
     return <View style={{ flex: 1, backgroundColor: APP_BG }} />;
   }
 
-  const chartViewportWidth = Math.max(dynamic.cardWidth - (isVerySmall ? 20 : 28), 260);
-  const chartWidth = Math.max(chartViewportWidth, chartData.labels.length * (isVerySmall ? 74 : 86));
+  const metricText =
+    dataType === 'חזרות'
+      ? 'ממוצע חזרות'
+      : dataType === 'סטים'
+      ? 'כמות סטים'
+      : 'ממוצע משקל';
 
-  const renderChart = () => {
+  const yAxisText =
+    dataType === 'חזרות'
+      ? 'ממוצע חזרות'
+      : dataType === 'סטים'
+      ? 'מספר סטים'
+      : 'משקל (ק"ג)';
+
+  const regularLabels = chartData.labels.map((label) => label.split('|||')[0] || label);
+  const shortLabels = chartData.labels.map((label) => label.split('|||')[1] || label.split('|||')[0] || label);
+
+  const regularChartData = {
+    labels: regularLabels,
+    datasets: chartData.datasets,
+  };
+
+  const fullScreenChartData = {
+    labels: shortLabels,
+    datasets: chartData.datasets,
+  };
+
+  const chartViewportWidth = Math.max(dynamic.cardWidth - (isVerySmall ? 20 : 28), 260);
+
+  const regularUnitWidth =
+    chartType === 'עמודות'
+      ? isVerySmall
+        ? 58
+        : 68
+      : isVerySmall
+      ? 74
+      : 86;
+
+  const chartWidth = Math.max(chartViewportWidth, regularChartData.labels.length * regularUnitWidth);
+
+  const fakeLandscapeChartWidth = Math.max(height - 30, 320);
+  const fakeLandscapeChartHeight = Math.max(width - 80, 220);
+
+  const compactUnitWidth =
+    chartType === 'עמודות'
+      ? Math.max(14, Math.min(22, Math.floor(fakeLandscapeChartWidth / 14)))
+      : Math.max(18, Math.min(28, Math.floor(fakeLandscapeChartWidth / 12)));
+
+  const fullScreenChartWidth = Math.max(
+    fakeLandscapeChartWidth,
+    fullScreenChartData.labels.length * compactUnitWidth
+  );
+
+  const fullScreenChartHeight = fakeLandscapeChartHeight;
+
+  const renderRegularChart = () => {
     const commonProps = {
-      data: chartData,
+      data: regularChartData,
       width: chartWidth,
       height: dynamic.graphHeight,
       fromZero: true,
@@ -611,7 +737,30 @@ export default function GraphScreen() {
       segments: 5,
     };
 
-    return chartType === 'קווי' ? <LineChart {...commonProps} bezier /> : <BarChart {...commonProps} />;
+    return chartType === 'קווי'
+      ? <LineChart {...commonProps} bezier />
+      : <BarChart {...commonProps} />;
+  };
+
+  const renderFullScreenChart = () => {
+    const commonProps = {
+      data: fullScreenChartData,
+      width: fullScreenChartWidth,
+      height: fullScreenChartHeight,
+      fromZero: true,
+      yAxisLabel: '',
+      yAxisSuffix: dataType === 'משקל' ? ' ק"ג' : '',
+      chartConfig: chartConfigFullScreen,
+      verticalLabelRotation: 0,
+      style: styles.fullScreenChart,
+      withInnerLines: true,
+      withOuterLines: false,
+      segments: 5,
+    };
+
+    return chartType === 'קווי'
+      ? <LineChart {...commonProps} bezier />
+      : <BarChart {...commonProps} />;
   };
 
   const selectorBoxStyle = {
@@ -845,23 +994,24 @@ export default function GraphScreen() {
                   </Text>
 
                   <View style={styles.metricTag}>
-                    <Text style={styles.metricTagText}>
-                      {dataType === 'חזרות'
-                        ? 'ממוצע חזרות'
-                        : dataType === 'סטים'
-                        ? 'כמות סטים'
-                        : 'ממוצע משקל'}
-                    </Text>
+                    <Text style={styles.metricTagText}>{metricText}</Text>
+                  </View>
+
+                  <View style={styles.graphActionsRow}>
+                    <Pressable
+                      onPress={openFullScreenChart}
+                      style={({ pressed }) => [
+                        styles.expandButton,
+                        pressed && styles.expandButtonPressed,
+                      ]}
+                    >
+                      <ExpandIcon size={16} color="#0F172A" />
+                      <Text style={styles.expandButtonText}>הגדל גרף</Text>
+                    </Pressable>
                   </View>
 
                   <View style={styles.graphCard}>
-                    <Text style={styles.yAxisTitle}>
-                      {dataType === 'חזרות'
-                        ? 'ממוצע חזרות'
-                        : dataType === 'סטים'
-                        ? 'מספר סטים'
-                        : 'משקל (ק"ג)'}
-                    </Text>
+                    <Text style={styles.yAxisTitle}>{yAxisText}</Text>
 
                     <View style={styles.chartViewport}>
                       <ScrollView
@@ -870,7 +1020,7 @@ export default function GraphScreen() {
                         ref={scrollRef}
                         contentContainerStyle={styles.chartScrollContent}
                       >
-                        {renderChart()}
+                        {renderRegularChart()}
                       </ScrollView>
                     </View>
 
@@ -955,6 +1105,78 @@ export default function GraphScreen() {
             </View>
           </View>
         </Modal>
+
+        <Modal
+          visible={isFullScreenChartVisible}
+          animationType="slide"
+          transparent={false}
+          onRequestClose={closeFullScreenChart}
+        >
+          <View style={styles.fakeLandscapeRoot}>
+            <Pressable
+              onPress={closeFullScreenChart}
+              style={({ pressed }) => [
+                styles.fullScreenExitButton,
+                pressed && styles.fullScreenExitButtonPressed,
+              ]}
+              hitSlop={14}
+            >
+              <CloseIcon size={22} color="#FFFFFF" />
+            </Pressable>
+
+            <View style={styles.fullScreenTopBar}>
+              <Text style={styles.fakeLandscapeTitle}>גרף התקדמות</Text>
+              <Text style={styles.fakeLandscapeSubtitle}>
+                {selectedExercise} · {selectedPeriod} · {metricText}
+              </Text>
+            </View>
+
+            <View style={styles.fakeLandscapeInfoRow}>
+              <View style={styles.fakeLandscapeMetricTag}>
+                <Text style={styles.fakeLandscapeMetricTagText}>{yAxisText}</Text>
+              </View>
+              <Text style={styles.fakeLandscapeHintTop}>
+                במצב מוגדל התאריכים מוצגים בלי שנה
+              </Text>
+            </View>
+
+            <View style={styles.fakeLandscapeStage}>
+              <View
+                style={[
+                  styles.rotatedCanvasWrap,
+                  {
+                    width: height,
+                    height: width,
+                    transform: [{ rotate: '90deg' }],
+                  },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.rotatedCanvasInner,
+                    {
+                      width: height,
+                      height: width,
+                    },
+                  ]}
+                >
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator
+                    ref={fullScreenScrollRef}
+                    contentContainerStyle={styles.fullScreenChartScrollContent}
+                  >
+                    {renderFullScreenChart()}
+                  </ScrollView>
+                </View>
+              </View>
+            </View>
+
+            <Text style={styles.fakeLandscapeBottomHint}>
+              לחצי על X כדי לצאת מהגרף המוגדל
+            </Text>
+          </View>
+        </Modal>
       </AppLayout>
     </SafeAreaView>
   );
@@ -973,7 +1195,6 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     alignItems: 'center',
   },
-
   card: {
     backgroundColor: '#FFFFFF',
     borderRadius: 24,
@@ -984,7 +1205,6 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     elevation: 6,
   },
-
   header: {
     alignItems: 'center',
     marginBottom: 24,
@@ -999,7 +1219,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 6,
   },
-
   section: {
     marginBottom: 20,
     width: '100%',
@@ -1010,7 +1229,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     textAlign: 'right',
   },
-
   inputBox: {
     borderWidth: 1,
     borderColor: '#D7DFE9',
@@ -1019,7 +1237,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     justifyContent: 'center',
   },
-
   singleExerciseBox: {
     borderWidth: 1,
     borderColor: '#CBD5E1',
@@ -1045,7 +1262,6 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     color: '#8A94A6',
   },
-
   selectorInnerRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1061,7 +1277,6 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     color: '#94A3B8',
   },
-
   deleteWrapper: {
     marginTop: 10,
     alignItems: 'flex-end',
@@ -1085,7 +1300,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 14,
   },
-
   loaderWrapper: {
     alignItems: 'center',
     paddingVertical: 24,
@@ -1094,7 +1308,6 @@ const styles = StyleSheet.create({
     marginTop: 10,
     color: '#64748B',
   },
-
   graphSection: {
     marginTop: 10,
   },
@@ -1109,7 +1322,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 10,
   },
-
   metricTag: {
     alignSelf: 'center',
     backgroundColor: '#EEF2F7',
@@ -1123,7 +1335,30 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 13,
   },
-
+  graphActionsRow: {
+    width: '100%',
+    alignItems: 'flex-end',
+    marginBottom: 10,
+  },
+  expandButton: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#E2E8F0',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+  },
+  expandButtonPressed: {
+    opacity: 0.86,
+  },
+  expandButtonText: {
+    color: '#0F172A',
+    fontWeight: '700',
+    fontSize: 14,
+  },
   graphCard: {
     backgroundColor: '#F8FAFC',
     borderRadius: 16,
@@ -1132,13 +1367,11 @@ const styles = StyleSheet.create({
     padding: 14,
     alignItems: 'center',
   },
-
   yAxisTitle: {
     fontWeight: '700',
     color: '#1E293B',
     marginBottom: 10,
   },
-
   chartViewport: {
     width: '100%',
   },
@@ -1148,14 +1381,12 @@ const styles = StyleSheet.create({
   chart: {
     borderRadius: 16,
   },
-
   scrollHint: {
     marginTop: 6,
     fontSize: 12,
     color: '#64748B',
     textAlign: 'center',
   },
-
   emptyState: {
     marginTop: 16,
     backgroundColor: '#F8FAFC',
@@ -1171,7 +1402,6 @@ const styles = StyleSheet.create({
     color: '#64748B',
     textAlign: 'center',
   },
-
   modalOverlay: {
     backgroundColor: 'rgba(0,0,0,0.35)',
   },
@@ -1186,7 +1416,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#111827',
   },
-
   exerciseModalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.38)',
@@ -1275,5 +1504,113 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '700',
     fontSize: 15,
+  },
+
+  fakeLandscapeRoot: {
+    flex: 1,
+    backgroundColor: '#0F172A',
+  },
+  fullScreenExitButton: {
+    position: 'absolute',
+    top: 18,
+    left: 14,
+    zIndex: 999,
+    elevation: 30,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fullScreenExitButtonPressed: {
+    opacity: 0.82,
+  },
+  fullScreenTopBar: {
+    position: 'absolute',
+    top: 20,
+    right: 14,
+    left: 78,
+    zIndex: 50,
+  },
+  fakeLandscapeTitle: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '800',
+    textAlign: 'right',
+  },
+  fakeLandscapeSubtitle: {
+    color: 'rgba(255,255,255,0.82)',
+    fontSize: 12,
+    textAlign: 'right',
+    marginTop: 4,
+  },
+  fakeLandscapeInfoRow: {
+    position: 'absolute',
+    top: 78,
+    left: 14,
+    right: 14,
+    zIndex: 50,
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  fakeLandscapeMetricTag: {
+    backgroundColor: '#E2E8F0',
+    borderRadius: 999,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+  },
+  fakeLandscapeMetricTagText: {
+    color: '#1E293B',
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  fakeLandscapeHintTop: {
+    flex: 1,
+    color: 'rgba(255,255,255,0.82)',
+    fontSize: 11,
+    textAlign: 'left',
+  },
+  fakeLandscapeStage: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    paddingTop: 40,
+  },
+  rotatedCanvasWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rotatedCanvasInner: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingVertical: 6,
+    paddingHorizontal: 0,
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  fullScreenChartScrollContent: {
+    paddingHorizontal: 0,
+    alignItems: 'center',
+  },
+  fullScreenChart: {
+    borderRadius: 16,
+  },
+  fakeLandscapeBottomHint: {
+    position: 'absolute',
+    bottom: 14,
+    left: 14,
+    right: 14,
+    textAlign: 'center',
+    color: 'rgba(255,255,255,0.82)',
+    fontSize: 11,
+    zIndex: 50,
   },
 });

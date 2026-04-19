@@ -3,23 +3,31 @@
     "name": "Replog",
     "slug": "replog",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/images/Replog.png",
     "scheme": "replog",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
 
     "plugins": [
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "expo-screen-orientation",
+        {
+          "initialOrientation": "DEFAULT"
+        }
+      ]
     ],
 
     "ios": {
       "supportsTablet": true,
+      "requireFullScreen": true,
       "bundleIdentifier": "com.hadartaizi.repLog",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
     },
+
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/Replog.png",
@@ -35,6 +43,7 @@
       ],
       "package": "com.hadartaizi.repLog"
     },
+
     "web": {
       "bundler": "metro",
       "output": "static",
