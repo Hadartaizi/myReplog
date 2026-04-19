@@ -8,6 +8,11 @@
     "scheme": "replog",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+
+    "plugins": [
+      "@react-native-community/datetimepicker"
+    ],
+
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.hadartaizi.repLog",

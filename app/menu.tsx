@@ -126,6 +126,13 @@ type ResolvedUserDoc = {
   data: CurrentUserData;
 };
 
+type SecondaryAdminCountItem = {
+  adminId: string;
+  adminName: string;
+  adminEmail: string;
+  clientCount: number;
+};
+
 function AdminIcon({ size = 20, color = "#1E293B" }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
@@ -627,9 +634,10 @@ export default function Menu() {
         userData.authUid
       );
 
-      const ownerUidCandidates = userData.role === "owner"
-        ? currentUserUidCandidates
-        : buildUidCandidates(userData.createdByOwnerUid);
+      const ownerUidCandidates =
+        userData.role === "owner"
+          ? currentUserUidCandidates
+          : buildUidCandidates(userData.createdByOwnerUid);
 
       let contactSource: ContactData = {
         instagramUrl: userData.instagramUrl,
@@ -724,7 +732,6 @@ export default function Menu() {
 
       if (userData.role === "owner") {
         const ownerCandidates = currentUserUidCandidates;
-
         const adminsList = await fetchAdminsByOwner(ownerCandidates);
         setSecondaryAdmins(adminsList);
 
@@ -760,6 +767,28 @@ export default function Menu() {
   useEffect(() => {
     fetchMenuData();
   }, [fetchMenuData]);
+
+  const secondaryAdminClientCounts = useMemo<SecondaryAdminCountItem[]>(() => {
+    if (!isOwner || secondaryAdmins.length === 0) return [];
+
+    return secondaryAdmins.map((admin) => {
+      const adminUidCandidates = buildUidCandidates(admin.uid, admin.authUid, admin.id);
+
+      const linkedClients = uniqueClientsByUid(
+        clients.filter((client) => {
+          const links = buildUidCandidates(client.createdByUid, client.contactOwnerUid);
+          return links.some((value) => adminUidCandidates.includes(value));
+        })
+      );
+
+      return {
+        adminId: String(admin.id || admin.uid || admin.authUid || ""),
+        adminName: String(admin.name || "ללא שם"),
+        adminEmail: String(admin.email || "ללא אימייל"),
+        clientCount: linkedClients.length,
+      };
+    });
+  }, [isOwner, secondaryAdmins, clients]);
 
   if (!fontsLoaded) {
     return <View style={{ flex: 1, backgroundColor: APP_BG }} />;
@@ -1321,6 +1350,54 @@ export default function Menu() {
 
                             {secondaryAdminsOpen && (
                               <View style={styles.categoryContent}>
+                                <View style={styles.secondaryAdminStatsContainer}>
+                                  <View style={styles.secondaryAdminStatsHeader}>
+                                    <Text style={styles.secondaryAdminStatsTitle}>
+                                      כמות מתאמנים לכל מאמן משני
+                                    </Text>
+                                    <Text style={styles.secondaryAdminStatsSubtitle}>
+                                      הנתון מחושב לפי הלקוחות שמקושרים לכל מאמן משני
+                                    </Text>
+                                  </View>
+
+                                  {secondaryAdminClientCounts.length === 0 ? (
+                                    <View style={styles.emptyClientsBox}>
+                                      <Text style={styles.emptyClientsText}>
+                                        עדיין אין מאמנים משניים להצגה
+                                      </Text>
+                                    </View>
+                                  ) : (
+                                    <View style={styles.secondaryAdminStatsList}>
+                                      {secondaryAdminClientCounts.map((item) => (
+                                        <View
+                                          key={item.adminId}
+                                          style={styles.secondaryAdminStatCard}
+                                        >
+                                          <View style={styles.secondaryAdminCountBadge}>
+                                            <Text style={styles.secondaryAdminCountBadgeText}>
+                                              {item.clientCount}
+                                            </Text>
+                                          </View>
+
+                                          <View style={styles.secondaryAdminStatContent}>
+                                            <Text style={styles.secondaryAdminStatName}>
+                                              {item.adminName}
+                                            </Text>
+                                            <Text style={styles.secondaryAdminStatEmail}>
+                                              {item.adminEmail}
+                                            </Text>
+                                            <Text style={styles.secondaryAdminStatMeta}>
+                                              {item.clientCount === 1
+                                                ? "מתאמן אחד"
+                                                : `${item.clientCount} מתאמנים`}
+                                            </Text>
+                                          </View>
+                                        </View>
+                                      ))}
+                                    </View>
+                                  )}
+                                </View>
+
                                 <SecondaryAdminsManager onAfterUpdate={fetchMenuData} />
                               </View>
                             )}
@@ -1992,6 +2069,84 @@ const styles = StyleSheet.create({
     gap: 10,
     borderRightWidth: 2,
     borderRightColor: "#E2E8F0",
+  },
+  secondaryAdminStatsContainer: {
+    width: "100%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#DCE7F5",
+    padding: 14,
+    gap: 12,
+  },
+  secondaryAdminStatsHeader: {
+    alignItems: "flex-end",
+    gap: 4,
+  },
+  secondaryAdminStatsTitle: {
+    color: "#0F172A",
+    fontSize: 16,
+    fontWeight: "800",
+    textAlign: "right",
+  },
+  secondaryAdminStatsSubtitle: {
+    color: "#64748B",
+    fontSize: 13,
+    lineHeight: 20,
+    textAlign: "right",
+  },
+  secondaryAdminStatsList: {
+    gap: 10,
+  },
+  secondaryAdminStatCard: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    gap: 12,
+  },
+  secondaryAdminCountBadge: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: "#E0E7FF",
+    borderWidth: 1,
+    borderColor: "#C7D2FE",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  secondaryAdminCountBadgeText: {
+    color: "#3730A3",
+    fontSize: 18,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  secondaryAdminStatContent: {
+    flex: 1,
+    alignItems: "flex-end",
+    gap: 3,
+  },
+  secondaryAdminStatName: {
+    color: "#0F172A",
+    fontSize: 15,
+    fontWeight: "800",
+    textAlign: "right",
+  },
+  secondaryAdminStatEmail: {
+    color: "#64748B",
+    fontSize: 13,
+    textAlign: "right",
+  },
+  secondaryAdminStatMeta: {
+    color: "#1D4ED8",
+    fontSize: 13,
+    fontWeight: "700",
+    textAlign: "right",
+    marginTop: 2,
   },
   accessCard: {
     width: "100%",

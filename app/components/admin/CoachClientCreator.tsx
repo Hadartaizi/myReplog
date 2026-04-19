@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import {
   Alert,
   Platform,
@@ -8,6 +8,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import {
   addDoc,
   collection,
@@ -40,14 +41,19 @@ type ResolvedUserDoc = {
   data: CurrentUserData;
 };
 
-function toIsoDateTimeLocal(value: string, fallbackHour = "09:00") {
-  if (!value?.trim()) return null;
+function toIsoDateTimeFromDate(date: Date | null, endOfDay = false) {
+  if (!date) return null;
 
-  const normalized = value.includes("T") ? value : `${value}T${fallbackHour}`;
-  const date = new Date(normalized);
+  const copy = new Date(date);
 
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toISOString();
+  if (endOfDay) {
+    copy.setHours(23, 59, 0, 0);
+  } else {
+    copy.setHours(9, 0, 0, 0);
+  }
+
+  if (Number.isNaN(copy.getTime())) return null;
+  return copy.toISOString();
 }
 
 function showMessage(title: string, message: string) {
@@ -61,6 +67,14 @@ function showMessage(title: string, message: string) {
 
 function normalizeEmail(value?: string | null) {
   return String(value || "").trim().toLowerCase();
+}
+
+function formatDateToInputValue(date: Date | null) {
+  if (!date) return "";
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 async function resolveCurrentUserDoc(): Promise<ResolvedUserDoc | null> {
@@ -131,17 +145,42 @@ export default function CoachClientCreator({ onAfterCreate }: Props) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+
+  const [startDate, setStartDate] = useState<Date | null>(null);
+  const [endDate, setEndDate] = useState<Date | null>(null);
+
+  const [showStartPicker, setShowStartPicker] = useState(false);
+  const [showEndPicker, setShowEndPicker] = useState(false);
+
+  const startInputRef = useRef<HTMLInputElement | null>(null);
+  const endInputRef = useRef<HTMLInputElement | null>(null);
 
   const canSubmit = useMemo(() => {
     return (
       name.trim().length > 1 &&
       email.trim().includes("@") &&
-      startDate.trim().length > 0 &&
-      endDate.trim().length > 0
+      !!startDate &&
+      !!endDate
     );
   }, [name, email, startDate, endDate]);
+
+  const openWebDatePicker = (ref: React.RefObject<HTMLInputElement | null>) => {
+    if (Platform.OS !== "web") return;
+    const input = ref.current;
+    if (!input) return;
+
+    const inputWithShowPicker = input as HTMLInputElement & {
+      showPicker?: () => void;
+    };
+
+    input.focus();
+
+    if (typeof inputWithShowPicker.showPicker === "function") {
+      inputWithShowPicker.showPicker();
+    } else {
+      input.click();
+    }
+  };
 
   const handleCreateInvite = async () => {
     const currentUser = auth.currentUser;
@@ -161,8 +200,8 @@ export default function CoachClientCreator({ onAfterCreate }: Props) {
     const { docId: currentUserDocId, data: currentUserData } = resolvedUser;
 
     const normalizedEmail = normalizeEmail(email);
-    const accessStartAt = toIsoDateTimeLocal(startDate, "09:00");
-    const accessEndAt = toIsoDateTimeLocal(endDate, "23:59");
+    const accessStartAt = toIsoDateTimeFromDate(startDate, false);
+    const accessEndAt = toIsoDateTimeFromDate(endDate, true);
 
     if (!name.trim()) {
       showMessage("שגיאה", "יש להזין שם לקוח");
@@ -235,8 +274,8 @@ export default function CoachClientCreator({ onAfterCreate }: Props) {
       setName("");
       setEmail("");
       setPhone("");
-      setStartDate("");
-      setEndDate("");
+      setStartDate(null);
+      setEndDate(null);
 
       onAfterCreate?.();
 
@@ -301,21 +340,95 @@ export default function CoachClientCreator({ onAfterCreate }: Props) {
         style={styles.input}
       />
 
-      <TextInput
-        value={startDate}
-        onChangeText={setStartDate}
-        placeholder="תאריך התחלה YYYY-MM-DD"
-        placeholderTextColor="#94A3B8"
-        style={styles.input}
-      />
+      {Platform.OS === "web" ? (
+        <>
+          <Pressable
+            onPress={() => openWebDatePicker(startInputRef)}
+            style={styles.dateField}
+          >
+            <Text style={[styles.dateFieldText, !startDate && styles.placeholderText]}>
+              {startDate ? startDate.toLocaleDateString("he-IL") : "תאריך התחלה"}
+            </Text>
+            <input
+              ref={startInputRef}
+              type="date"
+              value={formatDateToInputValue(startDate)}
+              onChange={(e) => {
+                const value = e.target.value;
+                setStartDate(value ? new Date(`${value}T00:00:00`) : null);
+              }}
+              style={webHiddenInput}
+            />
+          </Pressable>
 
-      <TextInput
-        value={endDate}
-        onChangeText={setEndDate}
-        placeholder="תאריך סיום YYYY-MM-DD"
-        placeholderTextColor="#94A3B8"
-        style={styles.input}
-      />
+          <Pressable
+            onPress={() => openWebDatePicker(endInputRef)}
+            style={styles.dateField}
+          >
+            <Text style={[styles.dateFieldText, !endDate && styles.placeholderText]}>
+              {endDate ? endDate.toLocaleDateString("he-IL") : "תאריך סיום"}
+            </Text>
+            <input
+              ref={endInputRef}
+              type="date"
+              value={formatDateToInputValue(endDate)}
+              onChange={(e) => {
+                const value = e.target.value;
+                setEndDate(value ? new Date(`${value}T00:00:00`) : null);
+              }}
+              style={webHiddenInput}
+            />
+          </Pressable>
+        </>
+      ) : (
+        <>
+          <Pressable
+            onPress={() => setShowStartPicker(true)}
+            style={styles.dateField}
+          >
+            <Text style={[styles.dateFieldText, !startDate && styles.placeholderText]}>
+              {startDate ? startDate.toLocaleDateString("he-IL") : "תאריך התחלה"}
+            </Text>
+          </Pressable>
+
+          <Pressable
+            onPress={() => setShowEndPicker(true)}
+            style={styles.dateField}
+          >
+            <Text style={[styles.dateFieldText, !endDate && styles.placeholderText]}>
+              {endDate ? endDate.toLocaleDateString("he-IL") : "תאריך סיום"}
+            </Text>
+          </Pressable>
+
+          {showStartPicker && (
+            <DateTimePicker
+              value={startDate || new Date()}
+              mode="date"
+              display="default"
+              onChange={(_, selectedDate) => {
+                setShowStartPicker(false);
+                if (selectedDate) {
+                  setStartDate(selectedDate);
+                }
+              }}
+            />
+          )}
+
+          {showEndPicker && (
+            <DateTimePicker
+              value={endDate || startDate || new Date()}
+              mode="date"
+              display="default"
+              onChange={(_, selectedDate) => {
+                setShowEndPicker(false);
+                if (selectedDate) {
+                  setEndDate(selectedDate);
+                }
+              }}
+            />
+          )}
+        </>
+      )}
 
       <Pressable
         onPress={handleCreateInvite}
@@ -368,6 +481,28 @@ const styles = StyleSheet.create({
     textAlign: "right",
     writingDirection: "rtl",
   },
+  dateField: {
+    width: "100%",
+    minHeight: 48,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    backgroundColor: "#F8FAFC",
+    paddingHorizontal: 14,
+    justifyContent: "center",
+    alignItems: "flex-end",
+    position: "relative",
+    overflow: "hidden",
+  },
+  dateFieldText: {
+    width: "100%",
+    fontSize: 14,
+    color: "#0F172A",
+    textAlign: "right",
+  },
+  placeholderText: {
+    color: "#94A3B8",
+  },
   primaryButton: {
     minHeight: 50,
     borderRadius: 14,
@@ -389,3 +524,12 @@ const styles = StyleSheet.create({
     opacity: 0.85,
   },
 });
+
+const webHiddenInput: React.CSSProperties = {
+  position: "absolute",
+  inset: 0,
+  width: "100%",
+  height: "100%",
+  opacity: 0,
+  cursor: "pointer",
+};
