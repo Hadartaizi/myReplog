@@ -39,6 +39,7 @@ import {
   formatDateTimeIL,
   getRemainingTimeLabel,
 } from "./components/admin/accessUtils";
+import ClientExerciseLibrary from "./components/clientWorkout/ClientExerciseLibrary";
 import ClientProgressTracker from "./components/clientWorkout/ClientProgressTracker";
 import ClientTrainingProgramManager from "./components/trainingProgram/ClientTrainingProgramManager";
 import ClientTrainingProgramViewer from "./components/trainingProgram/ClientTrainingProgramViewer";
@@ -592,6 +593,7 @@ export default function Menu() {
   const [accessInfoOpen, setAccessInfoOpen] = useState(false);
   const [cardHistoryOpen, setCardHistoryOpen] = useState(false);
   const [clientTrainingProgramOpen, setClientTrainingProgramOpen] = useState(false);
+  const [clientExerciseLibraryOpen, setClientExerciseLibraryOpen] = useState(false);
 
   const isOwner = currentUserData?.role === "owner";
   const isAdmin = currentUserData?.role === "admin";
@@ -1352,6 +1354,36 @@ export default function Menu() {
                     {clientTrainingProgramOpen && (
                       <View style={styles.userSectionContent}>
                         <ClientTrainingProgramViewer />
+                      </View>
+                    )}
+
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.userSectionButton,
+                        { minHeight: dynamic.buttonHeight },
+                        pressed && styles.pressedLight,
+                      ]}
+                      onPress={() => setClientExerciseLibraryOpen((prev) => !prev)}
+                    >
+                      <View style={styles.buttonRow}>
+                        <Text
+                          style={[
+                            styles.userSectionButtonText,
+                            { fontSize: dynamic.textSize },
+                          ]}
+                        >
+                          מאגר תרגילים
+                        </Text>
+
+                        <Text style={styles.expandText}>
+                          {clientExerciseLibraryOpen ? "הסתרה" : "הצגה"}
+                        </Text>
+                      </View>
+                    </Pressable>
+
+                    {clientExerciseLibraryOpen && (
+                      <View style={styles.userSectionContent}>
+                        <ClientExerciseLibrary />
                       </View>
                     )}
                   </View>

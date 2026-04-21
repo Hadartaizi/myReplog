@@ -38,16 +38,6 @@ const normalizeDateOnly = (date: Date) => {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 };
 
-const normalizeExerciseName = (value: string) =>
-  String(value || '')
-    .trim()
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[֑-ׇ]/g, '')
-    .replace(/[^֐-׿\w\s]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-
 const hasOwn = (obj: any, key: string) =>
   !!obj && Object.prototype.hasOwnProperty.call(obj, key);
 
@@ -264,12 +254,6 @@ export default function Steps() {
 
         const updated = { ...w, [field]: value };
 
-        if (field === 'exerciseName') {
-          updated.exerciseName = value;
-          updated.name = value;
-          updated.title = value;
-        }
-
         if (field === 'numSets') {
           const cleanedValue = String(value).replace(/[^0-9]/g, '');
           updated.numSets = cleanedValue;
@@ -354,69 +338,7 @@ export default function Steps() {
     });
   };
 
-  const updateExerciseNameEverywhere = async (params: {
-    uid: string;
-    oldName: string;
-    newName: string;
-    currentWorkoutId: string;
-  }) => {
-    const { uid, oldName, newName, currentWorkoutId } = params;
-
-    const normalizedOld = normalizeExerciseName(oldName);
-    const normalizedNew = normalizeExerciseName(newName);
-
-    if (!normalizedOld || !normalizedNew || normalizedOld === normalizedNew) {
-      return;
-    }
-
-    const workoutsQuery = query(collection(db, 'workouts'), where('uid', '==', uid));
-    const workoutsSnapshot = await getDocs(workoutsQuery);
-
-    const workoutUpdatePromises = workoutsSnapshot.docs
-      .filter((docSnap) => {
-        if (docSnap.id === currentWorkoutId) return false;
-        const data = docSnap.data();
-        const currentName = getExerciseNameValue(data).trim();
-        return normalizeExerciseName(currentName) === normalizedOld;
-      })
-      .map((docSnap) =>
-        updateDoc(doc(db, 'workouts', docSnap.id), {
-          exerciseName: newName.trim(),
-          name: newName.trim(),
-          title: newName.trim(),
-          updatedAt: new Date().toISOString(),
-        })
-      );
-
-    const exercisesQuery = query(collection(db, 'exercises'), where('uid', '==', uid));
-    const exercisesSnapshot = await getDocs(exercisesQuery);
-
-    const exerciseUpdatePromises = exercisesSnapshot.docs
-      .filter((docSnap) => {
-        const data = docSnap.data();
-        const currentName = getExerciseNameValue(data).trim();
-        return normalizeExerciseName(currentName) === normalizedOld;
-      })
-      .map((docSnap) =>
-        updateDoc(doc(db, 'exercises', docSnap.id), {
-          exerciseName: newName.trim(),
-          name: newName.trim(),
-          title: newName.trim(),
-          updatedAt: new Date().toISOString(),
-        })
-      );
-
-    await Promise.all([...workoutUpdatePromises, ...exerciseUpdatePromises]);
-  };
-
   const saveWorkout = async (workout: any) => {
-    const newExerciseName = String(workout?.exerciseName ?? '').trim();
-
-    if (!newExerciseName) {
-      Alert.alert('שגיאה', 'שם התרגיל לא יכול להיות ריק');
-      return;
-    }
-
     const confirmed = await confirmAction(
       'אישור שמירה',
       'האם אתה בטוח שברצונך לשמור את השינויים?'
@@ -424,33 +346,15 @@ export default function Steps() {
 
     if (!confirmed) return;
 
-    const user = auth.currentUser;
-    if (!user) {
-      Alert.alert('שגיאה', 'המשתמש לא מחובר');
-      return;
-    }
-
     try {
       setSavingId(workout.id);
 
       const docRef = doc(db, 'workouts', workout.id);
-      const { id, ...dataToSave } = workout;
-
-      const oldExerciseName = String(getExerciseNameValue(originalWorkout)).trim();
 
       await updateDoc(docRef, {
-        ...dataToSave,
-        exerciseName: newExerciseName,
-        name: newExerciseName,
-        title: newExerciseName,
+        numSets: String(workout.numSets ?? ''),
+        repsPerSet: workout.repsPerSet || {},
         updatedAt: new Date().toISOString(),
-      });
-
-      await updateExerciseNameEverywhere({
-        uid: user.uid,
-        oldName: oldExerciseName,
-        newName: newExerciseName,
-        currentWorkoutId: workout.id,
       });
 
       setEditingId(null);
@@ -460,9 +364,9 @@ export default function Steps() {
       await fetchWorkouts(selectedDate);
 
       if (Platform.OS === 'web') {
-        window.alert('שם התרגיל עודכן בהצלחה');
+        window.alert('השינויים נשמרו');
       } else {
-        Alert.alert('הצלחה', 'שם התרגיל עודכן בהצלחה');
+        Alert.alert('הצלחה', 'השינויים נשמרו');
       }
     } catch (error) {
       console.error('Error saving workout:', error);
@@ -632,30 +536,9 @@ export default function Steps() {
                         </View>
 
                         <View style={styles.cardHeaderRight}>
-                          {isEditing ? (
-                            <TextInput
-                              style={[
-                                styles.inputBox,
-                                styles.textInput,
-                                {
-                                  fontSize: dynamic.textSize + 1,
-                                  minHeight: dynamic.inputHeight,
-                                },
-                              ]}
-                              value={String(workout.exerciseName ?? '')}
-                              onChangeText={(val) =>
-                                handleFieldChange(workout.id, 'exerciseName', val)
-                              }
-                              editable={!isSavingThis && !isDeletingThis}
-                              textAlign="right"
-                              placeholder="שם התרגיל"
-                              placeholderTextColor="#8A94A6"
-                            />
-                          ) : (
-                            <Text style={[styles.cardTitle, { fontSize: dynamic.textSize + 1 }]}>
-                              {getExerciseDisplayName(workout)}
-                            </Text>
-                          )}
+                          <Text style={[styles.cardTitle, { fontSize: dynamic.textSize + 1 }]}>
+                            {getExerciseDisplayName(workout)}
+                          </Text>
                         </View>
                       </Pressable>
 
@@ -804,7 +687,9 @@ export default function Steps() {
                                   onPress={() => {
                                     setFilteredWorkouts((prev) =>
                                       prev.map((w) =>
-                                        w.id === workout.id ? JSON.parse(JSON.stringify(originalWorkout || w)) : w
+                                        w.id === workout.id
+                                          ? JSON.parse(JSON.stringify(originalWorkout || w))
+                                          : w
                                       )
                                     );
                                     setEditingId(null);

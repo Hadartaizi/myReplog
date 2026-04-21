@@ -274,6 +274,7 @@ export default function GraphScreen() {
     date.toLocaleDateString('he-IL', {
       day: '2-digit',
       month: '2-digit',
+      year: '2-digit',
     });
 
   const getExerciseNameFromDoc = (item: any) =>
@@ -408,7 +409,7 @@ export default function GraphScreen() {
 
     const groupedMap: Record<
       string,
-      { label: string; shortLabel: string; sortValue: number; values: number[] }
+      { label: string; sortValue: number; values: number[] }
     > = {};
 
     const dayMs = 24 * 60 * 60 * 1000;
@@ -433,16 +434,12 @@ export default function GraphScreen() {
       return nextDate;
     };
 
-    const getDateRangeLabel = (startDate: Date, endDate: Date, includeYear: boolean) => {
-      const formatDate = (date: Date) =>
-        date.toLocaleDateString('he-IL', {
-          day: '2-digit',
-          month: '2-digit',
-          ...(includeYear ? { year: '2-digit' } : {}),
-        });
-
-      return `${formatDate(startDate)} - ${formatDate(endDate)}`;
-    };
+    const getBucketStartLabel = (date: Date, includeYear: boolean) =>
+      date.toLocaleDateString('he-IL', {
+        day: '2-digit',
+        month: '2-digit',
+        ...(includeYear ? { year: '2-digit' } : {}),
+      });
 
     const getRelativeBucketData = (date: Date, bucketDays: number, bucketPrefix: string) => {
       const normalizedDate = startOfDay(date);
@@ -451,12 +448,11 @@ export default function GraphScreen() {
       );
       const bucketIndex = Math.max(0, Math.floor(diffDays / bucketDays));
       const bucketStart = addDays(anchorDate, bucketIndex * bucketDays);
-      const bucketEnd = addDays(bucketStart, bucketDays - 1);
 
       return {
         key: `${bucketPrefix}-${bucketIndex}`,
-        label: getDateRangeLabel(bucketStart, bucketEnd, true),
-        shortLabel: getDateRangeLabel(bucketStart, bucketEnd, false),
+        label: getBucketStartLabel(bucketStart, true),
+
         sortValue: bucketStart.getTime(),
       };
     };
@@ -469,7 +465,7 @@ export default function GraphScreen() {
           return {
             key: `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`,
             label: getFormattedDateLabel(d),
-            shortLabel: getFormattedDateLabelShort(d),
+
             sortValue: d.getTime(),
           };
 
@@ -492,7 +488,7 @@ export default function GraphScreen() {
           return {
             key: `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`,
             label: getFormattedDateLabel(d),
-            shortLabel: getFormattedDateLabelShort(d),
+
             sortValue: d.getTime(),
           };
       }
@@ -516,12 +512,17 @@ export default function GraphScreen() {
       } else if (dataType === 'משקל') {
         const totalWeight = sets.reduce((sum, s) => sum + (parseFloat(s.weight || '0') || 0), 0);
         value = totalWeight / sets.length;
+      } else if (dataType === 'נפח אימון') {
+        value = sets.reduce((sum, s) => {
+          const reps = parseFloat(s.reps || '0') || 0;
+          const weight = parseFloat(s.weight || '0') || 0;
+          return sum + weight * reps;
+        }, 0);
       }
 
       if (!groupedMap[bucket.key]) {
         groupedMap[bucket.key] = {
           label: bucket.label,
-          shortLabel: bucket.shortLabel,
           sortValue: bucket.sortValue,
           values: [],
         };
@@ -532,14 +533,35 @@ export default function GraphScreen() {
 
     const sortedBuckets = Object.values(groupedMap).sort((a, b) => a.sortValue - b.sortValue);
 
+    const averagedValues = sortedBuckets.map((item) => {
+      const values = item.values;
+      return values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0;
+    });
+
+    let finalValues = averagedValues;
+
+    if (dataType === 'נפח אימון') {
+      const validVolumeValues = averagedValues.filter((value) => value > 0);
+
+      if (validVolumeValues.length > 0) {
+        const minVolume = Math.min(...validVolumeValues);
+        const maxVolume = Math.max(...validVolumeValues);
+
+        finalValues = averagedValues.map((value) => {
+          if (value <= 0) return 0;
+          if (maxVolume === minVolume) return 5;
+
+          const normalized = 1 + ((value - minVolume) / (maxVolume - minVolume)) * 9;
+          return parseFloat(normalized.toFixed(1));
+        });
+      }
+    }
+
     setChartData({
-      labels: sortedBuckets.map((item) => `${item.label}|||${item.shortLabel}`),
+      labels: sortedBuckets.map((item) => item.label),
       datasets: [
         {
-          data: sortedBuckets.map((item) => {
-            const values = item.values;
-            return values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0;
-          }),
+          data: finalValues,
         },
       ],
     });
@@ -681,27 +703,27 @@ export default function GraphScreen() {
       ? 'ממוצע חזרות'
       : dataType === 'סטים'
       ? 'כמות סטים'
-      : 'ממוצע משקל';
+      : dataType === 'משקל'
+      ? 'ממוצע משקל'
+      : 'עוצמת נפח';
 
   const yAxisText =
     dataType === 'חזרות'
       ? 'ממוצע חזרות'
       : dataType === 'סטים'
       ? 'מספר סטים'
-      : 'משקל (ק"ג)';
+      : dataType === 'משקל'
+      ? 'משקל (ק"ג)'
+      : 'עוצמת נפח (1–10)';
 
-  const regularLabels = chartData.labels.map((label) => label.split('|||')[0] || label);
-  const shortLabels = chartData.labels.map(
-    (label) => label.split('|||')[1] || label.split('|||')[0] || label
-  );
-
+  const regularLabels = chartData.labels;
   const regularChartData = {
     labels: regularLabels,
     datasets: chartData.datasets,
   };
 
   const fullScreenChartData = {
-    labels: shortLabels,
+    labels: regularLabels,
     datasets: chartData.datasets,
   };
 
@@ -933,6 +955,7 @@ export default function GraphScreen() {
                         { key: 0, label: 'חזרות', value: 'חזרות' },
                         { key: 1, label: 'סטים', value: 'סטים' },
                         { key: 2, label: 'משקל', value: 'משקל' },
+                        { key: 3, label: 'נפח אימון', value: 'נפח אימון' },
                       ]}
                       onChange={(option) => {
                         setDataType(option.value);
@@ -1148,7 +1171,7 @@ export default function GraphScreen() {
                   <Text style={styles.fakeLandscapeMetricTagText}>{yAxisText}</Text>
                 </View>
                 <Text style={styles.fakeLandscapeHintTop}>
-                  התאריכים כאן מוצגים בלי שנה כדי שיהיה יותר ברור
+                  התאריכים כאן מוצגים לפי תחילת כל תקופה כדי שיהיה יותר ברור
                 </Text>
               </View>
 
