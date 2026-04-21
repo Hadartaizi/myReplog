@@ -52,7 +52,7 @@ type ProgramSection = {
   exercises: ProgramExercise[];
 };
 
-type TrainingSplitType = "fullbody" | "ab" | "abc";
+type TrainingSplitType = "fullbody" | "ab" | "abc" | "abcd";
 
 type TrainingProgramDoc = {
   clientUid: string;
@@ -100,10 +100,19 @@ function getSectionsBySplit(splitType: TrainingSplitType): ProgramSection[] {
     return [createSection("אימון A"), createSection("אימון B")];
   }
 
+  if (splitType === "abc") {
+    return [
+      createSection("אימון A"),
+      createSection("אימון B"),
+      createSection("אימון C"),
+    ];
+  }
+
   return [
     createSection("אימון A"),
     createSection("אימון B"),
     createSection("אימון C"),
+    createSection("אימון D"),
   ];
 }
 
@@ -131,60 +140,82 @@ function SplitTypeButtons({
   onChange: (next: TrainingSplitType) => void;
 }) {
   return (
-    <View style={styles.splitButtonsRow}>
-      <TouchableOpacity
-        activeOpacity={0.85}
-        onPress={() => onChange("fullbody")}
-        style={[
-          styles.splitButton,
-          value === "fullbody" && styles.splitButtonActive,
-        ]}
-      >
-        <Text
+    <View style={styles.splitButtonsWrap}>
+      <View style={styles.splitButtonsRow}>
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={() => onChange("fullbody")}
           style={[
-            styles.splitButtonText,
-            value === "fullbody" && styles.splitButtonTextActive,
+            styles.splitButton,
+            value === "fullbody" && styles.splitButtonActive,
           ]}
         >
-          פול באדי
-        </Text>
-      </TouchableOpacity>
+          <Text
+            style={[
+              styles.splitButtonText,
+              value === "fullbody" && styles.splitButtonTextActive,
+            ]}
+          >
+            פול באדי
+          </Text>
+        </TouchableOpacity>
 
-      <TouchableOpacity
-        activeOpacity={0.85}
-        onPress={() => onChange("ab")}
-        style={[
-          styles.splitButton,
-          value === "ab" && styles.splitButtonActive,
-        ]}
-      >
-        <Text
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={() => onChange("ab")}
           style={[
-            styles.splitButtonText,
-            value === "ab" && styles.splitButtonTextActive,
+            styles.splitButton,
+            value === "ab" && styles.splitButtonActive,
           ]}
         >
-          AB
-        </Text>
-      </TouchableOpacity>
+          <Text
+            style={[
+              styles.splitButtonText,
+              value === "ab" && styles.splitButtonTextActive,
+            ]}
+          >
+            AB
+          </Text>
+        </TouchableOpacity>
+      </View>
 
-      <TouchableOpacity
-        activeOpacity={0.85}
-        onPress={() => onChange("abc")}
-        style={[
-          styles.splitButton,
-          value === "abc" && styles.splitButtonActive,
-        ]}
-      >
-        <Text
+      <View style={styles.splitButtonsRow}>
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={() => onChange("abc")}
           style={[
-            styles.splitButtonText,
-            value === "abc" && styles.splitButtonTextActive,
+            styles.splitButton,
+            value === "abc" && styles.splitButtonActive,
           ]}
         >
-          ABC
-        </Text>
-      </TouchableOpacity>
+          <Text
+            style={[
+              styles.splitButtonText,
+              value === "abc" && styles.splitButtonTextActive,
+            ]}
+          >
+            ABC
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={() => onChange("abcd")}
+          style={[
+            styles.splitButton,
+            value === "abcd" && styles.splitButtonActive,
+          ]}
+        >
+          <Text
+            style={[
+              styles.splitButtonText,
+              value === "abcd" && styles.splitButtonTextActive,
+            ]}
+          >
+            ABCD
+          </Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -279,9 +310,10 @@ export default function ClientTrainingProgramManager({
             programText?: string;
           };
 
-          const savedSplitType =
+          const savedSplitType: TrainingSplitType =
             data.splitType === "ab" ||
             data.splitType === "abc" ||
+            data.splitType === "abcd" ||
             data.splitType === "fullbody"
               ? data.splitType
               : "fullbody";
@@ -573,7 +605,7 @@ export default function ClientTrainingProgramManager({
                       <TextInput
                         value={section.title}
                         onChangeText={(value) => updateSectionTitle(section.id, value)}
-                        placeholder="כותרת לדוגמה: פול באדי / אימון A / אימון B / אימון C"
+                        placeholder="כותרת לדוגמה: פול באדי / אימון A / אימון B / אימון C / אימון D"
                         placeholderTextColor="#94A3B8"
                         style={styles.sectionTitleInput}
                         textAlign="right"
@@ -814,6 +846,10 @@ const styles = StyleSheet.create({
     zIndex: 20,
     elevation: 20,
   },
+  splitButtonsWrap: {
+    width: "100%",
+    gap: 8,
+  },
   splitButtonsRow: {
     width: "100%",
     flexDirection: "row-reverse",
@@ -867,6 +903,8 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 15,
     color: "#0F172A",
+    textAlign: "right",
+    writingDirection: "rtl",
   },
   exerciseCard: {
     width: "100%",
@@ -901,6 +939,8 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     fontSize: 14,
     color: "#0F172A",
+    textAlign: "right",
+    writingDirection: "rtl",
   },
   rowInputs: {
     width: "100%",
@@ -920,6 +960,8 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     fontSize: 14,
     color: "#0F172A",
+    textAlign: "right",
+    writingDirection: "rtl",
   },
   notesArea: {
     width: "100%",
@@ -932,6 +974,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     fontSize: 15,
     color: "#0F172A",
+    textAlign: "right",
     textAlignVertical: "top",
     writingDirection: "rtl",
   },

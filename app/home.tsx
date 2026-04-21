@@ -1217,7 +1217,7 @@ export default function Home() {
                     <>
                       <SaveIcon size={20} color="#FFFFFF" />
                       <Text style={[styles.saveButtonText, { fontSize: dynamic.textSize }]}>
-                        שמור תרגיל
+                        שמור אימון
                       </Text>
                     </>
                   )}

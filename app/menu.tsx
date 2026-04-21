@@ -573,6 +573,7 @@ export default function Menu() {
   const [resolvedContactData, setResolvedContactData] = useState<ContactData | null>(null);
   const [clients, setClients] = useState<ClientItem[]>([]);
   const [secondaryAdmins, setSecondaryAdmins] = useState<SecondaryAdminItem[]>([]);
+  const [currentUserDocId, setCurrentUserDocId] = useState<string>("");
 
   const [instagramInput, setInstagramInput] = useState("");
   const [whatsappInput, setWhatsappInput] = useState("");
@@ -606,6 +607,7 @@ export default function Menu() {
         setResolvedContactData(null);
         setClients([]);
         setSecondaryAdmins([]);
+        setCurrentUserDocId("");
         return;
       }
 
@@ -616,11 +618,13 @@ export default function Menu() {
         setResolvedContactData(null);
         setClients([]);
         setSecondaryAdmins([]);
+        setCurrentUserDocId("");
         return;
       }
 
-      const { docId: currentUserDocId, data: userData } = resolvedUser;
+      const { docId: resolvedDocId, data: userData } = resolvedUser;
 
+      setCurrentUserDocId(resolvedDocId);
       setCurrentUserData(userData);
 
       setInstagramInput(userData.instagramUrl || "");
@@ -629,7 +633,7 @@ export default function Menu() {
 
       const currentUserUidCandidates = buildUidCandidates(
         authUser.uid,
-        currentUserDocId,
+        resolvedDocId,
         userData.uid,
         userData.authUid
       );
@@ -645,7 +649,7 @@ export default function Menu() {
         contactPhone: userData.contactPhone,
         phone: userData.phone,
         name: userData.name,
-        uid: currentUserDocId,
+        uid: resolvedDocId,
       };
 
       if (userData.role === "client") {
@@ -723,7 +727,7 @@ export default function Menu() {
             contactPhone: userData.contactPhone,
             phone: userData.phone,
             name: userData.name,
-            uid: currentUserDocId,
+            uid: resolvedDocId,
           };
         }
       }
@@ -758,6 +762,7 @@ export default function Menu() {
       console.error("שגיאה בטעינת נתוני תפריט:", error);
       setClients([]);
       setSecondaryAdmins([]);
+      setCurrentUserDocId("");
     } finally {
       setLoading(false);
     }
@@ -788,6 +793,58 @@ export default function Menu() {
       };
     });
   }, [isOwner, secondaryAdmins, clients]);
+
+  const trainingProgramTargets = useMemo(() => {
+    const baseClients = uniqueClientsByUid(clients);
+
+    if (!isManager || !currentUserData) {
+      return baseClients;
+    }
+
+    const selfUid = String(
+      currentUserData.authUid || currentUserData.uid || currentUserDocId || auth.currentUser?.uid || ""
+    ).trim();
+
+    if (!selfUid) {
+      return baseClients;
+    }
+
+    const selfNameBase = String(currentUserData.name || "").trim();
+    const selfRoleLabel = isOwner ? "בעלת המערכת" : "מאמן";
+    const selfDisplayName = selfNameBase
+      ? `${selfNameBase} (אני)`
+      : `${selfRoleLabel} (אני)`;
+
+    const selfAsClientItem: ClientItem = {
+      id: currentUserDocId || selfUid,
+      uid: selfUid,
+      authUid: String(currentUserData.authUid || auth.currentUser?.uid || selfUid).trim(),
+      name: selfDisplayName,
+      email: currentUserData.email || "",
+      phone: currentUserData.phone || "",
+      role: currentUserData.role,
+      approvalStatus: currentUserData.approvalStatus,
+      accessStartAt: currentUserData.accessStartAt || null,
+      accessEndAt: currentUserData.accessEndAt || null,
+      createdByUid: currentUserData.createdByUid || null,
+      createdByOwnerUid: currentUserData.createdByOwnerUid || null,
+      hasLoginAccount: currentUserData.hasLoginAccount,
+      cardsPurchased: currentUserData.cardsPurchased,
+      cardsUsed: currentUserData.cardsUsed,
+      cardUsageDates: currentUserData.cardUsageDates,
+      instagramUrl: currentUserData.instagramUrl,
+      whatsappPhone: currentUserData.whatsappPhone,
+      contactPhone: currentUserData.contactPhone,
+      contactOwnerUid: currentUserData.contactOwnerUid || null,
+      contactUpdatedAt: currentUserData.contactUpdatedAt || null,
+    };
+
+    const withoutSelfDuplicate = baseClients.filter(
+      (client) => getClientResolvedUid(client) !== selfUid
+    );
+
+    return uniqueClientsByUid([selfAsClientItem, ...withoutSelfDuplicate]);
+  }, [clients, currentUserData, currentUserDocId, isManager, isOwner]);
 
   if (!fontsLoaded) {
     return <View style={{ flex: 1, backgroundColor: APP_BG }} />;
@@ -869,7 +926,7 @@ export default function Menu() {
       return;
     }
 
-    const { docId: currentUserDocId, data: userData } = resolvedUser;
+    const { docId: resolvedDocId, data: userData } = resolvedUser;
 
     const normalizedInstagram = normalizeInstagramUrl(instagramInput);
     const normalizedWhatsapp = normalizePhoneForWhatsapp(whatsappInput);
@@ -879,7 +936,7 @@ export default function Menu() {
     try {
       setSavingContactInfo(true);
 
-      await updateDoc(doc(db, "users", currentUserDocId), {
+      await updateDoc(doc(db, "users", resolvedDocId), {
         instagramUrl: normalizedInstagram,
         whatsappPhone: normalizedWhatsapp,
         contactPhone: trimmedPhone,
@@ -890,7 +947,7 @@ export default function Menu() {
       if (userData.role === "admin") {
         const adminUidCandidates = buildUidCandidates(
           authUser.uid,
-          currentUserDocId,
+          resolvedDocId,
           userData.uid,
           userData.authUid
         );
@@ -905,7 +962,7 @@ export default function Menu() {
               instagramUrl: normalizedInstagram,
               whatsappPhone: normalizedWhatsapp,
               contactPhone: trimmedPhone,
-              contactOwnerUid: currentUserDocId,
+              contactOwnerUid: resolvedDocId,
               contactUpdatedAt: nowIso,
               updatedAt: nowIso,
             });
@@ -932,7 +989,7 @@ export default function Menu() {
         contactPhone: trimmedPhone,
         phone: nextUserData.phone,
         name: nextUserData.name,
-        uid: currentUserDocId,
+        uid: resolvedDocId,
       });
 
       setIsEditingContactInfo(false);
@@ -1103,7 +1160,7 @@ export default function Menu() {
                   {isOwner
                     ? "כאן אפשר ליצור קשר, להתנתק ולנהל גם לקוחות וגם מאמנים משניים"
                     : isAdmin
-                    ? "כאן אפשר ליצור קשר, להתנתק ולנהל את הלקוחות שנוצרו על ידך"
+                    ? "כאן אפשר ליצור קשר, להתנתק, לנהל לקוחות ולבנות גם לעצמך תוכנית אימון"
                     : "כאן אפשר ליצור קשר, להתנתק ולראות את מצב הגישה שלך"}
                 </Text>
               </View>
@@ -1614,13 +1671,13 @@ export default function Menu() {
 
                             {trainingProgramManagerOpen && (
                               <View style={styles.subActionContent}>
-                                {clients.length === 0 ? (
+                                {trainingProgramTargets.length === 0 ? (
                                   <View style={styles.emptyClientsBox}>
-                                    <Text style={styles.emptyClientsText}>אין לקוחות להצגה</Text>
+                                    <Text style={styles.emptyClientsText}>אין מתאמנים להצגה</Text>
                                   </View>
                                 ) : (
                                   <ClientTrainingProgramManager
-                                    clients={clients}
+                                    clients={trainingProgramTargets}
                                     currentUserData={currentUserData}
                                     onAfterSave={fetchMenuData}
                                   />
