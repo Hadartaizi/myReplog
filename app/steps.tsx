@@ -631,7 +631,7 @@ export default function Steps() {
                                       value={String(workout.repsPerSet[setIdx]?.weight || '')}
                                       placeholder="לדוגמה 20"
                                       placeholderTextColor="#8A94A6"
-                                      keyboardType="numeric"
+                                      keyboardType={Platform.OS === "ios" ? "numbers-and-punctuation" : "decimal-pad"}
                                       onChangeText={(val) =>
                                         handleRepsWeightChange(workout.id, setIdx, 'weight', val)
                                       }

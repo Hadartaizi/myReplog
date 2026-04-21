@@ -33,7 +33,7 @@ import { auth, db } from '../database/firebase';
 import AppLayout from './components/AppLayout';
 
 const APP_BG = '#F4F7FB';
-const DECIMAL_KEYBOARD = Platform.OS === 'ios' ? 'decimal-pad' : 'numeric';
+const DECIMAL_KEYBOARD = Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'decimal-pad';
 const INTEGER_KEYBOARD = Platform.OS === 'ios' ? 'number-pad' : 'numeric';
 
 const normalizeText = (text: string) =>

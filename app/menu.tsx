@@ -1,6 +1,7 @@
 import { useFonts } from "expo-font";
 import { router } from "expo-router";
 import {
+  addDoc,
   collection,
   deleteDoc,
   doc,
@@ -13,6 +14,9 @@ import {
 } from "firebase/firestore";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Svg, { Circle, Line, Path, Rect } from "react-native-svg";
+import DateTimePicker, {
+  DateTimePickerEvent,
+} from "@react-native-community/datetimepicker";
 import {
   ActivityIndicator,
   Alert,
@@ -134,6 +138,20 @@ type SecondaryAdminCountItem = {
   adminName: string;
   adminEmail: string;
   clientCount: number;
+};
+
+type ManualExerciseRow = {
+  id: string;
+  exerciseName: string;
+  sets: string;
+  reps: string;
+  weight: string;
+};
+
+type ManualWorkoutEntryManagerProps = {
+  clients: ClientItem[];
+  currentUserData: CurrentUserData | null;
+  onAfterSave?: () => Promise<void> | void;
 };
 
 function AdminIcon({ size = 20, color = "#1E293B" }) {
@@ -309,6 +327,83 @@ const buildUidCandidates = (...values: Array<string | null | undefined>) => {
     new Set(values.map((value) => String(value || "").trim()).filter(Boolean))
   );
 };
+
+function getTodayDateInputValue() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = `${now.getMonth() + 1}`.padStart(2, "0");
+  const day = `${now.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function normalizeDateInputToIso(value?: string) {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    const now = new Date();
+    return {
+      iso: now.toISOString(),
+      dateKey: getTodayDateInputValue(),
+      display: getTodayDateInputValue(),
+    };
+  }
+
+  const yyyyMmDdMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (yyyyMmDdMatch) {
+    const [, year, month, day] = yyyyMmDdMatch;
+    const iso = new Date(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      12,
+      0,
+      0,
+      0
+    ).toISOString();
+
+    return {
+      iso,
+      dateKey: `${year}-${month}-${day}`,
+      display: `${year}-${month}-${day}`,
+    };
+  }
+
+  const ddMmYyyyMatch = raw.match(/^(\d{2})[./-](\d{2})[./-](\d{4})$/);
+  if (ddMmYyyyMatch) {
+    const [, day, month, year] = ddMmYyyyMatch;
+    const iso = new Date(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      12,
+      0,
+      0,
+      0
+    ).toISOString();
+
+    return {
+      iso,
+      dateKey: `${year}-${month}-${day}`,
+      display: `${year}-${month}-${day}`,
+    };
+  }
+
+  const now = new Date();
+  return {
+    iso: now.toISOString(),
+    dateKey: getTodayDateInputValue(),
+    display: getTodayDateInputValue(),
+  };
+}
+
+function createEmptyManualExerciseRow(): ManualExerciseRow {
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+    exerciseName: "",
+    sets: "",
+    reps: "",
+    weight: "",
+  };
+}
 
 async function resolveCurrentUserDoc(): Promise<ResolvedUserDoc | null> {
   const authUser = auth.currentUser;
@@ -527,6 +622,510 @@ async function fetchAllClientsForAdmin(
   return uniqueClientsByUid(collectedClients);
 }
 
+function ManualWorkoutEntryManager({
+  clients,
+  currentUserData,
+  onAfterSave,
+}: ManualWorkoutEntryManagerProps) {
+  const { width } = useWindowDimensions();
+  const isSmallScreen = width < 380;
+
+  const [selectedClientId, setSelectedClientId] = useState<string>("");
+  const [workoutDate, setWorkoutDate] = useState(getTodayDateInputValue());
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [tempWorkoutDate, setTempWorkoutDate] = useState<Date>(new Date());
+  const [exerciseRows, setExerciseRows] = useState<ManualExerciseRow[]>([
+    createEmptyManualExerciseRow(),
+  ]);
+  const [savingWorkout, setSavingWorkout] = useState(false);
+
+  const sortedClients = useMemo(
+    () =>
+      [...clients].sort((a, b) =>
+        String(a.name || "").localeCompare(String(b.name || ""), "he")
+      ),
+    [clients]
+  );
+
+  const selectedClient = useMemo(
+    () => sortedClients.find((client) => client.id === selectedClientId) || null,
+    [sortedClients, selectedClientId]
+  );
+
+  const parsedWorkoutDate = useMemo(() => {
+    const normalized = normalizeDateInputToIso(workoutDate);
+    const parsed = new Date(normalized.iso);
+    return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  }, [workoutDate]);
+
+  const workoutDateDisplay = useMemo(() => {
+    const [year, month, day] = workoutDate.split("-");
+    if (year && month && day) {
+      return `${day}.${month}.${year}`;
+    }
+
+    const normalized = normalizeDateInputToIso(workoutDate).dateKey;
+    const [fallbackYear, fallbackMonth, fallbackDay] = normalized.split("-");
+    return `${fallbackDay}.${fallbackMonth}.${fallbackYear}`;
+  }, [workoutDate]);
+
+  const formatPickerDateToKey = useCallback((date: Date) => {
+    const year = date.getFullYear();
+    const month = `${date.getMonth() + 1}`.padStart(2, "0");
+    const day = `${date.getDate()}`.padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }, []);
+
+  const openDatePicker = useCallback(() => {
+    const normalized = normalizeDateInputToIso(workoutDate);
+    const nextDate = new Date(normalized.iso);
+    setTempWorkoutDate(Number.isNaN(nextDate.getTime()) ? new Date() : nextDate);
+    setShowDatePicker(true);
+  }, [workoutDate]);
+
+  const handleDateChange = useCallback(
+    (event: DateTimePickerEvent, selectedDate?: Date) => {
+      if (Platform.OS === "android") {
+        setShowDatePicker(false);
+
+        if (event.type === "dismissed" || !selectedDate) {
+          return;
+        }
+
+        setWorkoutDate(formatPickerDateToKey(selectedDate));
+        return;
+      }
+
+      if (selectedDate) {
+        setTempWorkoutDate(selectedDate);
+      }
+    },
+    [formatPickerDateToKey]
+  );
+
+  const confirmIosDateSelection = useCallback(() => {
+    setWorkoutDate(formatPickerDateToKey(tempWorkoutDate));
+    setShowDatePicker(false);
+  }, [formatPickerDateToKey, tempWorkoutDate]);
+
+  const cancelIosDateSelection = useCallback(() => {
+    setShowDatePicker(false);
+  }, []);
+
+  const updateExerciseRow = useCallback(
+    (rowId: string, field: keyof Omit<ManualExerciseRow, "id">, value: string) => {
+      setExerciseRows((prev) =>
+        prev.map((row) => (row.id === rowId ? { ...row, [field]: value } : row))
+      );
+    },
+    []
+  );
+
+  const addExerciseRow = useCallback(() => {
+    setExerciseRows((prev) => [...prev, createEmptyManualExerciseRow()]);
+  }, []);
+
+  const removeExerciseRow = useCallback((rowId: string) => {
+    setExerciseRows((prev) => {
+      if (prev.length <= 1) {
+        return [createEmptyManualExerciseRow()];
+      }
+      return prev.filter((row) => row.id !== rowId);
+    });
+  }, []);
+
+  const resetForm = useCallback(() => {
+    setSelectedClientId("");
+    setWorkoutDate(getTodayDateInputValue());
+    setShowDatePicker(false);
+    setTempWorkoutDate(new Date());
+    setExerciseRows([createEmptyManualExerciseRow()]);
+  }, []);
+
+  const handleSaveManualWorkout = useCallback(async () => {
+    if (!selectedClient) {
+      Alert.alert("שגיאה", "יש לבחור לקוח לפני שמירה");
+      return;
+    }
+
+    const targetUid = getClientResolvedUid(selectedClient);
+    if (!targetUid) {
+      Alert.alert("שגיאה", "לא נמצא מזהה תקין ללקוח");
+      return;
+    }
+
+    const filteredRows = exerciseRows
+      .map((row) => ({
+        ...row,
+        exerciseName: row.exerciseName.trim(),
+        sets: row.sets.trim(),
+        reps: row.reps.trim(),
+        weight: row.weight.trim(),
+      }))
+      .filter(
+        (row) =>
+          row.exerciseName ||
+          row.sets ||
+          row.reps ||
+          row.weight
+      );
+
+    if (filteredRows.length === 0) {
+      Alert.alert("שגיאה", "יש להזין לפחות תרגיל אחד");
+      return;
+    }
+
+    const rowsWithName = filteredRows.filter((row) => row.exerciseName);
+    if (rowsWithName.length !== filteredRows.length) {
+      Alert.alert("שגיאה", "יש להזין שם תרגיל בכל שורה שממלאים");
+      return;
+    }
+
+    try {
+      setSavingWorkout(true);
+
+      const nowIso = new Date().toISOString();
+      const normalizedDate = normalizeDateInputToIso(workoutDate);
+      const workoutTitle = `אימון ${selectedClient.name || "לקוח"}`;
+
+      const embeddedExercises = filteredRows.map((row, index) => ({
+        id: `${Date.now()}-${index}`,
+        exerciseName: row.exerciseName,
+        name: row.exerciseName,
+        sets: row.sets,
+        reps: row.reps,
+        weight: row.weight,
+        date: normalizedDate.iso,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        enteredManuallyByCoach: true,
+      }));
+
+      const workoutDocPayload = {
+        uid: targetUid,
+        title: workoutTitle,
+        name: workoutTitle,
+        date: normalizedDate.iso,
+        dateKey: normalizedDate.dateKey,
+        note: "",
+        notes: "",
+        exercises: embeddedExercises,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        enteredByCoach: true,
+        enteredByManager: true,
+        enteredByUid: String(
+          auth.currentUser?.uid ||
+            currentUserData?.authUid ||
+            currentUserData?.uid ||
+            ""
+        ).trim(),
+        enteredByName: String(currentUserData?.name || "").trim(),
+        clientId: selectedClient.id,
+        clientUid: targetUid,
+        clientName: selectedClient.name || "",
+      };
+
+      const workoutRef = await addDoc(collection(db, "workouts"), workoutDocPayload);
+
+      const exerciseWrites = filteredRows.map((row) =>
+        addDoc(collection(db, "exercises"), {
+          uid: targetUid,
+          workoutId: workoutRef.id,
+          exerciseName: row.exerciseName,
+          name: row.exerciseName,
+          sets: row.sets,
+          reps: row.reps,
+          weight: row.weight,
+          date: normalizedDate.iso,
+          createdAt: nowIso,
+          updatedAt: nowIso,
+          enteredByCoach: true,
+          enteredByManager: true,
+          enteredByUid: String(
+            auth.currentUser?.uid ||
+              currentUserData?.authUid ||
+              currentUserData?.uid ||
+              ""
+          ).trim(),
+          enteredByName: String(currentUserData?.name || "").trim(),
+          clientId: selectedClient.id,
+          clientUid: targetUid,
+          clientName: selectedClient.name || "",
+        })
+      );
+
+      await Promise.all(exerciseWrites);
+
+      Alert.alert("נשמר בהצלחה", "האימון הידני נשמר ללקוח ויופיע כחלק מהאימונים שלו");
+      resetForm();
+      await onAfterSave?.();
+    } catch (error) {
+      console.error("שגיאה בשמירת אימון ידני:", error);
+      Alert.alert("שגיאה", "לא ניתן לשמור את האימון הידני");
+    } finally {
+      setSavingWorkout(false);
+    }
+  }, [selectedClient, exerciseRows, workoutDate, currentUserData, onAfterSave, resetForm]);
+
+  return (
+    <View style={styles.manualWorkoutCard}>
+      <View style={styles.manualWorkoutHeader}>
+        <Text style={styles.manualWorkoutTitle}>הזנת אימון ידני ללקוח</Text>
+        <Text style={styles.manualWorkoutSubtitle}>
+          כאן המאמן יכול להזין אימון עבור לקוח, והוא יישמר כמו אימון רגיל של הלקוח
+        </Text>
+      </View>
+
+      {sortedClients.length === 0 ? (
+        <View style={styles.emptyClientsBox}>
+          <Text style={styles.emptyClientsText}>אין לקוחות להצגה</Text>
+        </View>
+      ) : (
+        <>
+          <Text style={styles.manualWorkoutSectionLabel}>בחירת לקוח</Text>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.manualWorkoutClientsScroll}
+          >
+            {sortedClients.map((client) => {
+              const isSelected = client.id === selectedClientId;
+
+              return (
+                <Pressable
+                  key={`manual-client-${client.id}`}
+                  onPress={() => setSelectedClientId(client.id)}
+                  style={({ pressed }) => [
+                    styles.manualWorkoutClientPill,
+                    isSelected && styles.manualWorkoutClientPillActive,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.manualWorkoutClientPillText,
+                      isSelected && styles.manualWorkoutClientPillTextActive,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {client.name || "ללא שם"}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+
+          <View style={styles.manualWorkoutFormBox}>
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>תאריך האימון</Text>
+
+              <Pressable
+                onPress={openDatePicker}
+                style={({ pressed }) => [
+                  styles.datePickerButton,
+                  pressed && styles.pressedLight,
+                ]}
+              >
+                <Text style={styles.datePickerButtonText}>{workoutDateDisplay}</Text>
+                {/* <Text style={styles.datePickerButtonHint}>לחצי לפתיחת יומן</Text> */}
+              </Pressable>
+
+              {showDatePicker && Platform.OS === "android" && (
+                <DateTimePicker
+                  value={parsedWorkoutDate}
+                  mode="date"
+                  display="calendar"
+                  onChange={handleDateChange}
+                />
+              )}
+
+              <Modal
+                visible={showDatePicker && Platform.OS === "ios"}
+                transparent
+                animationType="fade"
+                onRequestClose={cancelIosDateSelection}
+              >
+                <View style={styles.dateModalOverlay}>
+                  <View style={styles.dateModalCard}>
+                    <Text style={styles.dateModalTitle}>בחירת תאריך אימון</Text>
+
+                    <DateTimePicker
+                      value={tempWorkoutDate}
+                      mode="date"
+                      display="spinner"
+                      onChange={handleDateChange}
+                      style={styles.iosDatePicker}
+                    />
+
+                    <View style={styles.dateModalButtonsRow}>
+                      <Pressable
+                        onPress={cancelIosDateSelection}
+                        style={({ pressed }) => [
+                          styles.dateModalSecondaryButton,
+                          pressed && styles.pressedLight,
+                        ]}
+                      >
+                        <Text style={styles.dateModalSecondaryButtonText}>ביטול</Text>
+                      </Pressable>
+
+                      <Pressable
+                        onPress={confirmIosDateSelection}
+                        style={({ pressed }) => [
+                          styles.dateModalPrimaryButton,
+                          pressed && styles.pressed,
+                        ]}
+                      >
+                        <Text style={styles.dateModalPrimaryButtonText}>אישור</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                </View>
+              </Modal>
+            </View>
+
+            <View style={styles.manualWorkoutExercisesHeader}>
+              <Text style={styles.manualWorkoutSectionLabel}>תרגילים</Text>
+            </View>
+
+            <View style={styles.manualExerciseList}>
+              {exerciseRows.map((row, index) => (
+                <View key={row.id} style={styles.manualExerciseCard}>
+                  <View style={styles.manualExerciseCardTopRow}>
+                    <Text style={styles.manualExerciseCardTitle}>
+                      תרגיל {index + 1}
+                    </Text>
+
+                    <Pressable
+                      onPress={() => removeExerciseRow(row.id)}
+                      style={({ pressed }) => [
+                        styles.removeExerciseRowButton,
+                        pressed && styles.deletePressed,
+                      ]}
+                    >
+                      <Text style={styles.removeExerciseRowButtonText}>הסרה</Text>
+                    </Pressable>
+                  </View>
+
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>שם התרגיל</Text>
+                    <TextInput
+                      value={row.exerciseName}
+                      onChangeText={(value) =>
+                        updateExerciseRow(row.id, "exerciseName", value)
+                      }
+                      placeholder="לדוגמה: סקוואט"
+                      placeholderTextColor="#94A3B8"
+                      style={styles.input}
+                      textAlign="right"
+                    />
+                  </View>
+
+                  <View style={styles.manualExerciseStatsRow}>
+                    <View style={styles.manualExerciseStatCol}>
+                      <Text style={styles.inputLabel}>משקל</Text>
+                      <TextInput
+                        value={row.weight}
+                        onChangeText={(value) =>
+                          updateExerciseRow(row.id, "weight", value)
+                        }
+                        placeholder="ק״ג"
+                        placeholderTextColor="#94A3B8"
+                        style={styles.input}
+                        textAlign="right"
+                        keyboardType={Platform.OS === "ios" ? "numbers-and-punctuation" : "decimal-pad"}
+                      />
+                    </View>
+
+                    <View style={styles.manualExerciseStatCol}>
+                      <Text style={styles.inputLabel}>חזרות</Text>
+                      <TextInput
+                        value={row.reps}
+                        onChangeText={(value) =>
+                          updateExerciseRow(row.id, "reps", value)
+                        }
+                        placeholder="12"
+                        placeholderTextColor="#94A3B8"
+                        style={styles.input}
+                        textAlign="right"
+                        keyboardType={Platform.OS === "ios" ? "numbers-and-punctuation" : "numeric"}
+                      />
+                    </View>
+
+                    <View style={styles.manualExerciseStatCol}>
+                      <Text style={styles.inputLabel}>סטים</Text>
+                      <TextInput
+                        value={row.sets}
+                        onChangeText={(value) =>
+                          updateExerciseRow(row.id, "sets", value)
+                        }
+                        placeholder="3"
+                        placeholderTextColor="#94A3B8"
+                        style={styles.input}
+                        textAlign="right"
+                        keyboardType={Platform.OS === "ios" ? "numbers-and-punctuation" : "numeric"}
+                      />
+                    </View>
+                  </View>
+                </View>
+              ))}
+            </View>
+
+            <Pressable
+              onPress={addExerciseRow}
+              disabled={savingWorkout}
+              style={({ pressed }) => [
+                styles.addExerciseRowButtonBelowSave,
+                pressed && styles.pressedLight,
+                savingWorkout && styles.disabledButton,
+              ]}
+            >
+              <Text style={styles.addExerciseRowButtonText}>הוספת תרגיל</Text>
+            </Pressable>
+
+            <Pressable
+              onPress={handleSaveManualWorkout}
+              disabled={savingWorkout}
+              style={({ pressed }) => [
+                styles.saveManualWorkoutButton,
+                pressed && styles.pressed,
+                savingWorkout && styles.disabledButton,
+              ]}
+            >
+              {savingWorkout ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.saveManualWorkoutButtonText}>שמור אימון ידני</Text>
+              )}
+            </Pressable>
+
+
+            <Pressable
+              onPress={resetForm}
+              disabled={savingWorkout}
+              style={({ pressed }) => [
+                styles.clearManualWorkoutButton,
+                pressed && styles.pressedLight,
+                savingWorkout && styles.disabledButton,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.clearManualWorkoutButtonText,
+                  { fontSize: isSmallScreen ? 13 : 14 },
+                ]}
+              >
+                ניקוי הטופס
+              </Text>
+            </Pressable>
+          </View>
+        </>
+      )}
+    </View>
+  );
+}
+
 export default function Menu() {
   const { width, height } = useWindowDimensions();
 
@@ -590,6 +1189,7 @@ export default function Menu() {
   const [clientWorkoutTrackingOpen, setClientWorkoutTrackingOpen] = useState(false);
   const [clientCardManagerOpen, setClientCardManagerOpen] = useState(false);
   const [trainingProgramManagerOpen, setTrainingProgramManagerOpen] = useState(false);
+  const [manualWorkoutEntryOpen, setManualWorkoutEntryOpen] = useState(false);
   const [accessInfoOpen, setAccessInfoOpen] = useState(false);
   const [cardHistoryOpen, setCardHistoryOpen] = useState(false);
   const [clientTrainingProgramOpen, setClientTrainingProgramOpen] = useState(false);
@@ -1755,6 +2355,40 @@ export default function Menu() {
                                 { minHeight: dynamic.buttonHeight - 8 },
                                 pressed && styles.pressedLight,
                               ]}
+                              onPress={() => setManualWorkoutEntryOpen((prev) => !prev)}
+                            >
+                              <View style={styles.buttonRow}>
+                                <Text style={styles.subActionButtonText}>
+                                  הזנת אימון ידני ללקוח
+                                </Text>
+                                <Text style={styles.subActionExpandText}>
+                                  {manualWorkoutEntryOpen ? "הסתרה" : "הצגה"}
+                                </Text>
+                              </View>
+                            </Pressable>
+
+                            {manualWorkoutEntryOpen && (
+                              <View style={styles.subActionContent}>
+                                {clients.length === 0 ? (
+                                  <View style={styles.emptyClientsBox}>
+                                    <Text style={styles.emptyClientsText}>אין לקוחות להצגה</Text>
+                                  </View>
+                                ) : (
+                                  <ManualWorkoutEntryManager
+                                    clients={clients}
+                                    currentUserData={currentUserData}
+                                    onAfterSave={fetchMenuData}
+                                  />
+                                )}
+                              </View>
+                            )}
+
+                            <Pressable
+                              style={({ pressed }) => [
+                                styles.subActionButton,
+                                { minHeight: dynamic.buttonHeight - 8 },
+                                pressed && styles.pressedLight,
+                              ]}
                               onPress={() => setClientWorkoutTrackingOpen((prev) => !prev)}
                             >
                               <View style={styles.buttonRow}>
@@ -2720,6 +3354,10 @@ const styles = StyleSheet.create({
     color: "#0F172A",
     writingDirection: "rtl",
   },
+  multilineInput: {
+    minHeight: 96,
+    textAlignVertical: "top",
+  },
   saveContactButton: {
     marginTop: 4,
     borderRadius: 16,
@@ -2769,6 +3407,273 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlign: "center",
   },
+
+  manualWorkoutCard: {
+    width: "100%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#DCE7F5",
+    padding: 14,
+    gap: 14,
+  },
+  manualWorkoutHeader: {
+    alignItems: "flex-end",
+    gap: 4,
+  },
+  manualWorkoutTitle: {
+    color: "#0F172A",
+    fontSize: 17,
+    fontWeight: "800",
+    textAlign: "right",
+  },
+  manualWorkoutSubtitle: {
+    color: "#64748B",
+    fontSize: 13,
+    lineHeight: 20,
+    textAlign: "right",
+  },
+  manualWorkoutSectionLabel: {
+    color: "#0F172A",
+    fontSize: 14,
+    fontWeight: "800",
+    textAlign: "right",
+  },
+  manualWorkoutClientsScroll: {
+    gap: 10,
+    paddingVertical: 2,
+  },
+  manualWorkoutClientPill: {
+    minWidth: 110,
+    maxWidth: 180,
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  manualWorkoutClientPillActive: {
+    backgroundColor: "#E0E7FF",
+    borderColor: "#A5B4FC",
+  },
+  manualWorkoutClientPillText: {
+    color: "#0F172A",
+    fontSize: 14,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  manualWorkoutClientPillTextActive: {
+    color: "#3730A3",
+  },
+  manualWorkoutFormBox: {
+    gap: 12,
+  },
+  manualWorkoutExercisesHeader: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  addExerciseRowButton: {
+    backgroundColor: "#EEF2FF",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#C7D2FE",
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+  },
+  addExerciseRowButtonBelowSave: {
+    borderRadius: 16,
+    backgroundColor: "#EEF2FF",
+    borderWidth: 1,
+    borderColor: "#C7D2FE",
+    minHeight: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 16,
+  },
+  addExerciseRowButtonText: {
+    color: "#4338CA",
+    fontSize: 13,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  manualExerciseList: {
+    gap: 12,
+  },
+  manualExerciseCard: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    padding: 12,
+    gap: 10,
+  },
+  manualExerciseCardTopRow: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  manualExerciseCardTitle: {
+    color: "#0F172A",
+    fontSize: 14,
+    fontWeight: "800",
+    textAlign: "right",
+  },
+  removeExerciseRowButton: {
+    backgroundColor: "#FEF2F2",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#FECACA",
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+  },
+  removeExerciseRowButtonText: {
+    color: "#DC2626",
+    fontSize: 12,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  manualExerciseStatsRow: {
+    flexDirection: "row-reverse",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  manualExerciseStatCol: {
+    flex: 1,
+    gap: 6,
+  },
+  saveManualWorkoutButton: {
+    marginTop: 4,
+    borderRadius: 16,
+    backgroundColor: "#2563EB",
+    minHeight: 52,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 16,
+  },
+  saveManualWorkoutButtonText: {
+    color: "#FFFFFF",
+    fontWeight: "800",
+    fontSize: 15,
+    textAlign: "center",
+  },
+  clearManualWorkoutButton: {
+    borderRadius: 16,
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    minHeight: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 16,
+  },
+  clearManualWorkoutButtonText: {
+    color: "#334155",
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  datePickerButton: {
+    width: "100%",
+    minHeight: 52,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    alignItems: "flex-end",
+    justifyContent: "center",
+    gap: 4,
+  },
+  datePickerButtonText: {
+    color: "#0F172A",
+    fontSize: 15,
+    fontWeight: "700",
+    textAlign: "right",
+  },
+  datePickerButtonHint: {
+    color: "#64748B",
+    fontSize: 12,
+    fontWeight: "600",
+    textAlign: "right",
+  },
+  dateModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(15,23,42,0.35)",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 20,
+  },
+  dateModalCard: {
+    width: "100%",
+    maxWidth: 360,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 22,
+    paddingVertical: 18,
+    paddingHorizontal: 16,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  dateModalTitle: {
+    color: "#0F172A",
+    fontSize: 18,
+    fontWeight: "800",
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  iosDatePicker: {
+    width: "100%",
+    height: 180,
+  },
+  dateModalButtonsRow: {
+    width: "100%",
+    flexDirection: "row-reverse",
+    gap: 10,
+    marginTop: 12,
+  },
+  dateModalPrimaryButton: {
+    flex: 1,
+    minHeight: 46,
+    borderRadius: 14,
+    backgroundColor: "#2563EB",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+  },
+  dateModalPrimaryButtonText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  dateModalSecondaryButton: {
+    flex: 1,
+    minHeight: 46,
+    borderRadius: 14,
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+  },
+  dateModalSecondaryButtonText: {
+    color: "#334155",
+    fontSize: 14,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+
   pressed: {
     opacity: 0.85,
   },

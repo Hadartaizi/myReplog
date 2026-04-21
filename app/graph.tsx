@@ -58,10 +58,15 @@ type WorkoutLike = {
   title?: string;
   name?: string;
   date?: any;
-  numSets?: number;
+  numSets?: number | string;
+  sets?: number | string;
+  reps?: number | string;
+  weight?: number | string;
   repsPerSet?: Record<string, { reps?: string; weight?: string }>;
   createdAt?: any;
   updatedAt?: any;
+  workoutId?: string;
+  sourceCollection?: 'workouts' | 'exercises';
 };
 
 function ArrowDownIcon({ size = 20, color = '#5B6470' }) {
@@ -280,6 +285,70 @@ export default function GraphScreen() {
   const getExerciseNameFromDoc = (item: any) =>
     String(item?.exerciseName || item?.title || item?.name || '').trim();
 
+  const toPositiveInteger = (value: any) => {
+    const parsed = parseInt(String(value ?? '').trim(), 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  };
+
+  const toNonNegativeNumber = (value: any) => {
+    const normalized = String(value ?? '').replace(',', '.').trim();
+    const parsed = parseFloat(normalized);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+  };
+
+  const getSetEntriesFromDoc = (item: WorkoutLike) => {
+    const repsPerSetEntries = Object.values(item?.repsPerSet || {});
+
+    if (repsPerSetEntries.length > 0) {
+      return repsPerSetEntries.map((setItem) => ({
+        reps: toNonNegativeNumber(setItem?.reps),
+        weight: toNonNegativeNumber(setItem?.weight),
+      }));
+    }
+
+    const setsCount =
+      toPositiveInteger(item?.numSets) ||
+      toPositiveInteger(item?.sets) ||
+      (item?.reps || item?.weight ? 1 : 0);
+
+    if (!setsCount) {
+      return [];
+    }
+
+    const repsValue = toNonNegativeNumber(item?.reps);
+    const weightValue = toNonNegativeNumber(item?.weight);
+
+    return Array.from({ length: setsCount }, () => ({
+      reps: repsValue,
+      weight: weightValue,
+    }));
+  };
+
+  const getMetricValueFromDoc = (item: WorkoutLike, metric: string) => {
+    const setEntries = getSetEntriesFromDoc(item);
+    if (!setEntries.length) return null;
+
+    if (metric === 'חזרות') {
+      const totalReps = setEntries.reduce((sum, setItem) => sum + setItem.reps, 0);
+      return totalReps / setEntries.length;
+    }
+
+    if (metric === 'סטים') {
+      return setEntries.length;
+    }
+
+    if (metric === 'משקל') {
+      const totalWeight = setEntries.reduce((sum, setItem) => sum + setItem.weight, 0);
+      return totalWeight / setEntries.length;
+    }
+
+    if (metric === 'נפח אימון') {
+      return setEntries.reduce((sum, setItem) => sum + setItem.weight * setItem.reps, 0);
+    }
+
+    return null;
+  };
+
   const resetChartSelections = () => {
     setDataType('');
     setChartType('');
@@ -367,29 +436,50 @@ export default function GraphScreen() {
       }
 
       try {
-        const q = query(collection(db, 'workouts'), where('uid', '==', user.uid));
-        const snapshot = await getDocs(q);
-
         const selectedNormalized = normalizeText(selectedExercise);
 
-        let filteredWorkouts = snapshot.docs
-          .map((docItem) => docItem.data())
-          .filter((workout: any) => {
+        const [workoutsSnapshot, exercisesSnapshot] = await Promise.all([
+          getDocs(query(collection(db, 'workouts'), where('uid', '==', user.uid))),
+          getDocs(query(collection(db, 'exercises'), where('uid', '==', user.uid))),
+        ]);
+
+        const workoutDocs: WorkoutLike[] = workoutsSnapshot.docs
+          .map((docItem) => ({
+            id: docItem.id,
+            sourceCollection: 'workouts' as const,
+            ...(docItem.data() as WorkoutLike),
+          }))
+          .filter((workout) => {
             const normalizedName = normalizeText(getExerciseNameFromDoc(workout));
             if (!normalizedName) return false;
             if (deletedExerciseNames.has(normalizedName)) return false;
-            return normalizedName === selectedNormalized;
+            if (normalizedName !== selectedNormalized) return false;
+            return getSetEntriesFromDoc(workout).length > 0;
           });
 
-        filteredWorkouts = filteredWorkouts
-          .filter((workout: any) => !!parseWorkoutDate(workout.date))
-          .sort((a: any, b: any) => {
+        const manualExerciseDocs: WorkoutLike[] = exercisesSnapshot.docs
+          .map((docItem) => ({
+            id: docItem.id,
+            sourceCollection: 'exercises' as const,
+            ...(docItem.data() as WorkoutLike),
+          }))
+          .filter((exercise) => {
+            const normalizedName = normalizeText(getExerciseNameFromDoc(exercise));
+            if (!normalizedName) return false;
+            if (deletedExerciseNames.has(normalizedName)) return false;
+            if (normalizedName !== selectedNormalized) return false;
+            return getSetEntriesFromDoc(exercise).length > 0;
+          });
+
+        const combinedDocs = [...workoutDocs, ...manualExerciseDocs]
+          .filter((item) => !!parseWorkoutDate(item.date))
+          .sort((a, b) => {
             const dateA = parseWorkoutDate(a.date);
             const dateB = parseWorkoutDate(b.date);
             return (dateA?.getTime() || 0) - (dateB?.getTime() || 0);
           });
 
-        generateChartData(filteredWorkouts);
+        generateChartData(combinedDocs);
       } catch (error) {
         console.error('Error fetching workout data:', error);
         setChartData({ labels: [], datasets: [{ data: [] }] });
@@ -402,6 +492,7 @@ export default function GraphScreen() {
   }, [selectedPeriod, selectedExercise, dataType, deletedExerciseNames]);
 
   const generateChartData = (filteredWorkouts: WorkoutLike[]) => {
+
     if (!filteredWorkouts.length) {
       setChartData({ labels: [], datasets: [{ data: [] }] });
       return;
@@ -494,31 +585,14 @@ export default function GraphScreen() {
       }
     };
 
-    filteredWorkouts.forEach((w: any) => {
-      const workoutDate = parseWorkoutDate(w.date);
+    filteredWorkouts.forEach((workoutItem) => {
+      const workoutDate = parseWorkoutDate(workoutItem.date);
       if (!workoutDate) return;
 
+      const value = getMetricValueFromDoc(workoutItem, dataType);
+      if (value === null) return;
+
       const bucket = getBucketData(workoutDate);
-      const sets = Object.values(w.repsPerSet || {}) as { reps?: string; weight?: string }[];
-      if (sets.length === 0) return;
-
-      let value = 0;
-
-      if (dataType === 'חזרות') {
-        const totalReps = sets.reduce((sum, s) => sum + (parseInt(s.reps || '0', 10) || 0), 0);
-        value = totalReps / sets.length;
-      } else if (dataType === 'סטים') {
-        value = parseInt(String(w.numSets || '0'), 10) || 0;
-      } else if (dataType === 'משקל') {
-        const totalWeight = sets.reduce((sum, s) => sum + (parseFloat(s.weight || '0') || 0), 0);
-        value = totalWeight / sets.length;
-      } else if (dataType === 'נפח אימון') {
-        value = sets.reduce((sum, s) => {
-          const reps = parseFloat(s.reps || '0') || 0;
-          const weight = parseFloat(s.weight || '0') || 0;
-          return sum + weight * reps;
-        }, 0);
-      }
 
       if (!groupedMap[bucket.key]) {
         groupedMap[bucket.key] = {
