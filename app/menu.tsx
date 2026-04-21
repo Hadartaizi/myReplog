@@ -35,12 +35,14 @@ import ClientAccessManager from "./components/admin/ClientAccessManager";
 import ClientCardManager from "./components/admin/ClientCardManager";
 import CoachClientCreator from "./components/admin/CoachClientCreator";
 import SecondaryAdminsManager from "./components/admin/SecondaryAdminsManager";
-import ClientProgressTracker from "./components/clientWorkout/ClientProgressTracker";
-import type { UserRole } from "./types/user";
 import {
   formatDateTimeIL,
   getRemainingTimeLabel,
 } from "./components/admin/accessUtils";
+import ClientProgressTracker from "./components/clientWorkout/ClientProgressTracker";
+import ClientTrainingProgramManager from "./components/trainingProgram/ClientTrainingProgramManager";
+import ClientTrainingProgramViewer from "./components/trainingProgram/ClientTrainingProgramViewer";
+import type { UserRole } from "./types/user";
 
 const APP_BG = "#F4F7FB";
 
@@ -267,7 +269,7 @@ const normalizeEmail = (value?: string | null) =>
     .toLowerCase();
 
 const getClientResolvedUid = (client: ClientItem) =>
-  String(client.uid || client.authUid || client.id || "").trim();
+  String(client.authUid || client.uid || client.id || "").trim();
 
 const uniqueClientsByUid = (clients: ClientItem[]) => {
   const map = new Map<string, ClientItem>();
@@ -303,11 +305,7 @@ const mapUserDocToClient = (docSnap: any): ClientItem => {
 
 const buildUidCandidates = (...values: Array<string | null | undefined>) => {
   return Array.from(
-    new Set(
-      values
-        .map((value) => String(value || "").trim())
-        .filter(Boolean)
-    )
+    new Set(values.map((value) => String(value || "").trim()).filter(Boolean))
   );
 };
 
@@ -589,8 +587,10 @@ export default function Menu() {
   const [secondaryAdminsOpen, setSecondaryAdminsOpen] = useState(false);
   const [clientWorkoutTrackingOpen, setClientWorkoutTrackingOpen] = useState(false);
   const [clientCardManagerOpen, setClientCardManagerOpen] = useState(false);
+  const [trainingProgramManagerOpen, setTrainingProgramManagerOpen] = useState(false);
   const [accessInfoOpen, setAccessInfoOpen] = useState(false);
   const [cardHistoryOpen, setCardHistoryOpen] = useState(false);
+  const [clientTrainingProgramOpen, setClientTrainingProgramOpen] = useState(false);
 
   const isOwner = currentUserData?.role === "owner";
   const isAdmin = currentUserData?.role === "admin";
@@ -742,7 +742,6 @@ export default function Menu() {
 
       if (userData.role === "admin") {
         const adminCandidates = currentUserUidCandidates;
-
         const adminClients = await fetchAllClientsForAdmin(
           adminCandidates,
           ownerUidCandidates
@@ -1268,6 +1267,36 @@ export default function Menu() {
                         </View>
                       </View>
                     )}
+
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.userSectionButton,
+                        { minHeight: dynamic.buttonHeight },
+                        pressed && styles.pressedLight,
+                      ]}
+                      onPress={() => setClientTrainingProgramOpen((prev) => !prev)}
+                    >
+                      <View style={styles.buttonRow}>
+                        <Text
+                          style={[
+                            styles.userSectionButtonText,
+                            { fontSize: dynamic.textSize },
+                          ]}
+                        >
+                          תוכנית אימון
+                        </Text>
+
+                        <Text style={styles.expandText}>
+                          {clientTrainingProgramOpen ? "הסתרה" : "הצגה"}
+                        </Text>
+                      </View>
+                    </Pressable>
+
+                    {clientTrainingProgramOpen && (
+                      <View style={styles.userSectionContent}>
+                        <ClientTrainingProgramViewer />
+                      </View>
+                    )}
                   </View>
                 )}
 
@@ -1567,6 +1596,38 @@ export default function Menu() {
 
                         {trainingManagementOpen && (
                           <View style={styles.categoryContent}>
+                            <Pressable
+                              style={({ pressed }) => [
+                                styles.subActionButton,
+                                { minHeight: dynamic.buttonHeight - 8 },
+                                pressed && styles.pressedLight,
+                              ]}
+                              onPress={() => setTrainingProgramManagerOpen((prev) => !prev)}
+                            >
+                              <View style={styles.buttonRow}>
+                                <Text style={styles.subActionButtonText}>תוכנית אימון</Text>
+                                <Text style={styles.subActionExpandText}>
+                                  {trainingProgramManagerOpen ? "הסתרה" : "הצגה"}
+                                </Text>
+                              </View>
+                            </Pressable>
+
+                            {trainingProgramManagerOpen && (
+                              <View style={styles.subActionContent}>
+                                {clients.length === 0 ? (
+                                  <View style={styles.emptyClientsBox}>
+                                    <Text style={styles.emptyClientsText}>אין לקוחות להצגה</Text>
+                                  </View>
+                                ) : (
+                                  <ClientTrainingProgramManager
+                                    clients={clients}
+                                    currentUserData={currentUserData}
+                                    onAfterSave={fetchMenuData}
+                                  />
+                                )}
+                              </View>
+                            )}
+
                             <Pressable
                               style={({ pressed }) => [
                                 styles.subActionButton,

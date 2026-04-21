@@ -1,19 +1,20 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
+import * as Clipboard from 'expo-clipboard';
 import { useFonts } from 'expo-font';
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
   query,
   where,
-  deleteDoc,
 } from 'firebase/firestore';
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert,
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -136,6 +137,29 @@ type LastExerciseRow = {
   weight: string;
 };
 
+type TrainingProgramExercise = {
+  id?: string;
+  name?: string;
+  sets?: string;
+  reps?: string;
+  notes?: string;
+};
+
+type TrainingProgramSection = {
+  id?: string;
+  title?: string;
+  exercises?: TrainingProgramExercise[];
+};
+
+type TrainingProgramDoc = {
+  clientUid?: string;
+  clientName?: string;
+  clientEmail?: string;
+  sections?: TrainingProgramSection[];
+  notes?: string;
+  updatedAt?: string;
+};
+
 function SaveIcon({ size = 20, color = '#FFFFFF' }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
@@ -180,6 +204,37 @@ function CloseIcon({ size = 24, color = '#222222' }) {
     <Svg width={size} height={size} viewBox="0 0 24 24">
       <Line x1="6" y1="6" x2="18" y2="18" stroke={color} strokeWidth={2.4} strokeLinecap="round" />
       <Line x1="18" y1="6" x2="6" y2="18" stroke={color} strokeWidth={2.4} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+function CopyIcon({ size = 16, color = '#334155' }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Rect x="9" y="9" width="11" height="11" rx="2" stroke={color} strokeWidth={2} fill="none" />
+      <Path
+        d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3"
+        stroke={color}
+        strokeWidth={2}
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+function CheckIcon({ size = 16, color = '#15803D' }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M20 6L9 17l-5-5"
+        stroke={color}
+        strokeWidth={2.4}
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </Svg>
   );
 }
@@ -231,6 +286,13 @@ export default function Home() {
   const [lastExerciseData, setLastExerciseData] = useState<Record<string, LastExerciseRow[]>>({});
   const [selectedExerciseForModal, setSelectedExerciseForModal] = useState<string | null>(null);
 
+  const [trainingProgram, setTrainingProgram] = useState<TrainingProgramDoc | null>(null);
+  const [isLoadingTrainingProgram, setIsLoadingTrainingProgram] = useState(true);
+  const [showTrainingProgramModal, setShowTrainingProgramModal] = useState(false);
+  const [copiedExerciseName, setCopiedExerciseName] = useState('');
+  const [copiedExerciseKey, setCopiedExerciseKey] = useState('');
+  const copyResetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const [exercise, setExercise] = useState<ExerciseType>({
     name: '',
     numSets: '',
@@ -239,6 +301,14 @@ export default function Home() {
     showSuggestions: false,
     error: '',
   });
+
+  useEffect(() => {
+    return () => {
+      if (copyResetTimeoutRef.current) {
+        clearTimeout(copyResetTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const getExerciseNameFromDoc = (item: any) => {
     if (!item) return '';
@@ -249,6 +319,31 @@ export default function Home() {
 
     return '';
   };
+
+  const hasTrainingProgramContent = useMemo(() => {
+    if (!trainingProgram) return false;
+
+    const sections = Array.isArray(trainingProgram.sections) ? trainingProgram.sections : [];
+    const hasSections = sections.some((section) => {
+      const title = String(section?.title || '').trim();
+      const exercises = Array.isArray(section?.exercises) ? section.exercises : [];
+
+      const hasExercises = exercises.some((item) => {
+        return (
+          String(item?.name || '').trim() ||
+          String(item?.sets || '').trim() ||
+          String(item?.reps || '').trim() ||
+          String(item?.notes || '').trim()
+        );
+      });
+
+      return !!title || hasExercises;
+    });
+
+    const hasNotes = String(trainingProgram.notes || '').trim().length > 0;
+
+    return hasSections || hasNotes;
+  }, [trainingProgram]);
 
   const loadDeletedExercises = useCallback(async (uid: string) => {
     try {
@@ -271,26 +366,47 @@ export default function Home() {
     }
   }, []);
 
+  const fetchTrainingProgram = useCallback(async (uid: string) => {
+    try {
+      setIsLoadingTrainingProgram(true);
+      const programRef = doc(db, 'clientTrainingPrograms', uid);
+      const programSnap = await getDoc(programRef);
+
+      if (!programSnap.exists()) {
+        setTrainingProgram(null);
+        return;
+      }
+
+      const data = programSnap.data() as TrainingProgramDoc;
+      setTrainingProgram(data || null);
+    } catch (error) {
+      console.error('שגיאה בטעינת תוכנית אימון:', error);
+      setTrainingProgram(null);
+    } finally {
+      setIsLoadingTrainingProgram(false);
+    }
+  }, []);
+
   const fetchUserData = useCallback(async () => {
     try {
       const user = auth.currentUser;
       if (!user) return;
 
       const userRef = doc(db, 'users', user.uid);
-      const userSnap = await getDoc(userRef);
+      const workoutsQuery = query(collection(db, 'workouts'), where('uid', '==', user.uid));
+      const exercisesQuery = query(collection(db, 'exercises'), where('uid', '==', user.uid));
+
+      const [userSnap, deletedSet, workoutsSnapshot, exercisesSnapshot] = await Promise.all([
+        getDoc(userRef),
+        loadDeletedExercises(user.uid),
+        getDocs(workoutsQuery),
+        getDocs(exercisesQuery),
+      ]);
 
       if (userSnap.exists()) {
         const data = userSnap.data();
         setUserName((data?.name || '').trim());
       }
-
-      const deletedSet = await loadDeletedExercises(user.uid);
-
-      const workoutsQuery = query(collection(db, 'workouts'), where('uid', '==', user.uid));
-      const workoutsSnapshot = await getDocs(workoutsQuery);
-
-      const exercisesQuery = query(collection(db, 'exercises'), where('uid', '==', user.uid));
-      const exercisesSnapshot = await getDocs(exercisesQuery);
 
       const mergedNames = [
         ...workoutsSnapshot.docs.map((item) => getExerciseNameFromDoc(item.data())),
@@ -312,6 +428,18 @@ export default function Home() {
       console.error('שגיאה בשליפת נתוני משתמש:', error);
     }
   }, [loadDeletedExercises]);
+
+  useEffect(() => {
+    const user = auth.currentUser;
+
+    if (!user) {
+      setTrainingProgram(null);
+      setIsLoadingTrainingProgram(false);
+      return;
+    }
+
+    fetchTrainingProgram(user.uid);
+  }, [fetchTrainingProgram]);
 
   useEffect(() => {
     fetchUserData();
@@ -466,6 +594,56 @@ export default function Home() {
       return [];
     } finally {
       setIsLoadingLastExercise(false);
+    }
+  };
+
+  const copyExerciseName = async (name: string, exerciseKey: string) => {
+    const textToCopy = String(name || '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!textToCopy) {
+      showToast('אין שם תרגיל להעתקה');
+      return;
+    }
+
+    try {
+      if (Platform.OS === 'web') {
+        const activeElement = document.activeElement as HTMLElement | null;
+
+        if (activeElement && typeof activeElement.blur === 'function') {
+          activeElement.blur();
+        }
+
+        const selection = window.getSelection?.();
+        if (selection && selection.rangeCount > 0) {
+          selection.removeAllRanges();
+        }
+
+        if (navigator?.clipboard?.writeText) {
+          await navigator.clipboard.writeText(textToCopy);
+        } else {
+          await Clipboard.setStringAsync(textToCopy);
+        }
+      } else {
+        await Clipboard.setStringAsync(textToCopy);
+      }
+
+      if (copyResetTimeoutRef.current) {
+        clearTimeout(copyResetTimeoutRef.current);
+      }
+
+      setCopiedExerciseName(textToCopy);
+      setCopiedExerciseKey(exerciseKey);
+      showToast('שם התרגיל הועתק');
+
+      copyResetTimeoutRef.current = setTimeout(() => {
+        setCopiedExerciseKey('');
+        setCopiedExerciseName('');
+      }, 1600);
+    } catch (error) {
+      console.error('שגיאה בהעתקה:', error);
+      showToast('לא ניתן להעתיק כרגע');
     }
   };
 
@@ -728,6 +906,8 @@ export default function Home() {
       ? lastExerciseData[selectedExerciseForModal]
       : null;
 
+  const trainingSections = Array.isArray(trainingProgram?.sections) ? trainingProgram?.sections : [];
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.screen}>
@@ -797,6 +977,24 @@ export default function Home() {
                     שמרי תרגיל חדש בצורה מסודרת, נקייה ונוחה
                   </Text>
                 </View>
+
+                {isLoadingTrainingProgram ? (
+                  <View style={styles.trainingProgramLoader}>
+                    <ActivityIndicator color="#0F172A" />
+                  </View>
+                ) : hasTrainingProgramContent ? (
+                  <Pressable
+                    style={[
+                      styles.trainingProgramButton,
+                      { minHeight: dynamic.buttonHeight - 4 },
+                    ]}
+                    onPress={() => setShowTrainingProgramModal(true)}
+                  >
+                    <Text style={[styles.trainingProgramButtonText, { fontSize: dynamic.textSize }]}>
+                      צפייה בתוכנית אימון
+                    </Text>
+                  </Pressable>
+                ) : null}
 
                 <View style={styles.section}>
                   <Text style={[styles.label, { fontSize: dynamic.labelSize }]}>
@@ -1019,7 +1217,7 @@ export default function Home() {
                     <>
                       <SaveIcon size={20} color="#FFFFFF" />
                       <Text style={[styles.saveButtonText, { fontSize: dynamic.textSize }]}>
-                        שמור אימון
+                        שמור תרגיל
                       </Text>
                     </>
                   )}
@@ -1138,6 +1336,160 @@ export default function Home() {
             </View>
           </View>
         </Modal>
+
+        <Modal
+          visible={showTrainingProgramModal}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowTrainingProgramModal(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.programModalCard, { width: Math.min(width * 0.92, 500) }]}>
+              <View style={styles.programHeaderRow}>
+                <Pressable
+                  style={styles.modalClose}
+                  onPress={() => {
+                    setShowTrainingProgramModal(false);
+                    setCopiedExerciseName('');
+                    setCopiedExerciseKey('');
+                    if (copyResetTimeoutRef.current) {
+                      clearTimeout(copyResetTimeoutRef.current);
+                    }
+                  }}
+                >
+                  <CloseIcon size={24} color="#222222" />
+                </Pressable>
+
+                <Text style={styles.programModalTitle}>תוכנית האימון שלך</Text>
+              </View>
+
+              <View style={styles.modalDivider} />
+
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.programScrollContent}
+              >
+                {trainingSections.length > 0 ? (
+                  trainingSections.map((section, sectionIndex) => {
+                    const sectionTitle = String(section?.title || '').trim();
+                    const exercises = Array.isArray(section?.exercises) ? section.exercises : [];
+
+                    if (!sectionTitle && exercises.length === 0) return null;
+
+                    return (
+                      <View
+                        key={section?.id || `section-${sectionIndex}`}
+                        style={styles.programSectionCard}
+                      >
+                        {!!sectionTitle && (
+                          <Text style={styles.programSectionTitle}>{sectionTitle}</Text>
+                        )}
+
+                        {exercises.map((item, exerciseIndex) => {
+                          const exerciseName = String(item?.name || '').trim();
+                          const sets = String(item?.sets || '').trim();
+                          const reps = String(item?.reps || '').trim();
+                          const notes = String(item?.notes || '').trim();
+
+                          if (!exerciseName && !sets && !reps && !notes) return null;
+
+                          const exerciseKey = item?.id || `exercise-${sectionIndex}-${exerciseIndex}`;
+                          const isCopied = copiedExerciseKey === exerciseKey;
+
+                          return (
+                            <View
+                              key={exerciseKey}
+                              style={styles.programExerciseCard}
+                            >
+                              <View style={styles.programExerciseHeader}>
+                                <Pressable
+                                  style={[
+                                    styles.copyButton,
+                                    isCopied && styles.copyButtonActive,
+                                  ]}
+                                  onPress={(event) => {
+                                    event.stopPropagation();
+                                    copyExerciseName(exerciseName, exerciseKey);
+                                  }}
+                                  onPressIn={() => {
+                                    if (Platform.OS === 'web') {
+                                      const activeElement = document.activeElement as HTMLElement | null;
+
+                                      if (activeElement && typeof activeElement.blur === 'function') {
+                                        activeElement.blur();
+                                      }
+
+                                      const selection = window.getSelection?.();
+                                      if (selection && selection.rangeCount > 0) {
+                                        selection.removeAllRanges();
+                                      }
+                                    }
+                                  }}
+                                >
+                                  {isCopied ? (
+                                    <CheckIcon size={16} color="#15803D" />
+                                  ) : (
+                                    <CopyIcon size={16} color="#334155" />
+                                  )}
+
+                                  <Text
+                                    style={[
+                                      styles.copyButtonText,
+                                      isCopied && styles.copyButtonTextActive,
+                                    ]}
+                                  >
+                                    {isCopied ? 'הועתק' : 'העתקה'}
+                                  </Text>
+                                </Pressable>
+
+                                <Text style={styles.programExerciseName}>
+                                  {exerciseName || 'ללא שם תרגיל'}
+                                </Text>
+                              </View>
+
+                              {(sets || reps) && (
+                                <View style={styles.programMetaRow}>
+                                  {!!sets && (
+                                    <View style={styles.programMetaChip}>
+                                      <Text style={styles.programMetaChipText}>סטים: {sets}</Text>
+                                    </View>
+                                  )}
+
+                                  {!!reps && (
+                                    <View style={styles.programMetaChip}>
+                                      <Text style={styles.programMetaChipText}>חזרות: {reps}</Text>
+                                    </View>
+                                  )}
+                                </View>
+                              )}
+
+                              {!!notes && (
+                                <Text style={styles.programExerciseNotes}>{notes}</Text>
+                              )}
+                            </View>
+                          );
+                        })}
+                      </View>
+                    );
+                  })
+                ) : (
+                  <Text style={styles.emptyProgramText}>לא נמצאה תוכנית אימון</Text>
+                )}
+
+                {!!String(trainingProgram?.notes || '').trim() && (
+                  <View style={styles.generalNotesCard}>
+                    <Text style={styles.generalNotesTitle}>הערות כלליות</Text>
+                    <Text style={styles.generalNotesText}>{trainingProgram?.notes}</Text>
+                  </View>
+                )}
+
+                {!!copiedExerciseName && (
+                  <Text style={styles.copiedHint}>הועתק: {copiedExerciseName}</Text>
+                )}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
       </View>
     </SafeAreaView>
   );
@@ -1200,13 +1552,41 @@ const styles = StyleSheet.create({
   },
 
   subtitle: {
+    marginTop: 10,
     color: '#64748B',
     textAlign: 'center',
-    marginTop: 10,
-    lineHeight: 22,
+    writingDirection: 'rtl',
+  },
+
+  trainingProgramLoader: {
+    width: '100%',
+    minHeight: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 18,
+  },
+
+  trainingProgramButton: {
+    width: '100%',
+    backgroundColor: '#E0F2FE',
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 18,
+    paddingHorizontal: 14,
+  },
+
+  trainingProgramButtonText: {
+    color: '#0C4A6E',
+    fontWeight: '800',
+    textAlign: 'center',
+    writingDirection: 'rtl',
   },
 
   section: {
+    width: '100%',
     marginBottom: 18,
   },
 
@@ -1215,33 +1595,31 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'right',
     marginBottom: 8,
+    writingDirection: 'rtl',
   },
 
   inputBox: {
     width: '100%',
-    borderWidth: 1,
-    borderColor: '#D7DFE9',
-    borderRadius: 16,
     backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 16,
     paddingHorizontal: 14,
-    flexDirection: 'row-reverse',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
   },
 
   textInput: {
-    color: '#111827',
+    color: '#0F172A',
     textAlign: 'right',
     writingDirection: 'rtl',
-    paddingVertical: 0,
   },
 
   dateField: {
     width: '100%',
-    borderWidth: 1,
-    borderColor: '#D7DFE9',
-    borderRadius: 16,
     backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 16,
     paddingHorizontal: 14,
     flexDirection: 'row-reverse',
     alignItems: 'center',
@@ -1249,29 +1627,31 @@ const styles = StyleSheet.create({
   },
 
   dateFieldPressed: {
-    opacity: 0.9,
+    opacity: 0.85,
   },
 
   dateFieldRight: {
     flex: 1,
     alignItems: 'flex-end',
-    marginRight: 10,
+    marginLeft: 12,
   },
 
   dateValue: {
-    color: '#111827',
+    color: '#0F172A',
     fontWeight: '700',
     textAlign: 'right',
   },
 
   dateHint: {
     marginTop: 2,
-    fontSize: 12,
     color: '#64748B',
+    fontSize: 12,
     textAlign: 'right',
+    writingDirection: 'rtl',
   },
 
   exerciseRow: {
+    width: '100%',
     flexDirection: 'row-reverse',
     alignItems: 'stretch',
     gap: 10,
@@ -1287,71 +1667,73 @@ const styles = StyleSheet.create({
 
   fullWidthOnSmall: {
     width: '100%',
-    flex: undefined,
+  },
+
+  iconButton: {
+    width: 58,
+    borderRadius: 16,
+    backgroundColor: '#0F172A',
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'stretch',
   },
 
   fullWidthButtonOnSmall: {
     width: '100%',
-    minWidth: '100%',
-  },
-
-  iconButton: {
-    minWidth: 52,
-    paddingHorizontal: 14,
-    borderRadius: 16,
-    backgroundColor: '#556070',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
 
   suggestionsContainer: {
     marginTop: 8,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#D7DFE9',
-    backgroundColor: '#FFFFFF',
     maxHeight: 180,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
     overflow: 'hidden',
   },
 
   suggestionItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 14,
     borderBottomWidth: 1,
-    borderBottomColor: '#EEF2F7',
+    borderBottomColor: '#F1F5F9',
   },
 
   suggestionText: {
-    paddingVertical: 14,
-    paddingHorizontal: 14,
+    color: '#0F172A',
     textAlign: 'right',
-    color: '#1F2937',
+    writingDirection: 'rtl',
   },
 
   errorText: {
-    color: '#DC2626',
     marginTop: 8,
+    color: '#DC2626',
     textAlign: 'right',
-    fontWeight: '500',
+    fontWeight: '600',
+    writingDirection: 'rtl',
   },
 
   setCard: {
+    width: '100%',
     backgroundColor: '#F8FAFC',
-    borderRadius: 18,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    padding: 14,
-    marginBottom: 12,
+    borderRadius: 18,
+    padding: 12,
+    marginBottom: 14,
   },
 
   setTitle: {
+    color: '#0F172A',
+    fontWeight: '800',
     textAlign: 'right',
-    fontWeight: '700',
-    color: '#1E293B',
     marginBottom: 10,
+    writingDirection: 'rtl',
   },
 
   setInputsRow: {
+    width: '100%',
     flexDirection: 'row-reverse',
-    justifyContent: 'space-between',
     gap: 10,
   },
 
@@ -1361,15 +1743,15 @@ const styles = StyleSheet.create({
 
   setInputWrapper: {
     flex: 1,
-    minWidth: 120,
   },
 
   miniLabel: {
-    textAlign: 'right',
     color: '#64748B',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'right',
     marginBottom: 6,
-    fontSize: 13,
-    fontWeight: '600',
+    writingDirection: 'rtl',
   },
 
   smallInput: {
@@ -1377,71 +1759,77 @@ const styles = StyleSheet.create({
   },
 
   saveButton: {
-    marginTop: 16,
+    width: '100%',
     borderRadius: 18,
     backgroundColor: '#0F172A',
     flexDirection: 'row-reverse',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    paddingHorizontal: 16,
+    gap: 10,
+    marginTop: 6,
+  },
+
+  saveButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+    textAlign: 'center',
+    writingDirection: 'rtl',
   },
 
   disabledButton: {
     opacity: 0.6,
   },
 
-  saveButtonText: {
-    color: '#FFFFFF',
-    fontWeight: '800',
-  },
-
   dateModalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15,23,42,0.45)',
-    justifyContent: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.28)',
     alignItems: 'center',
-    paddingHorizontal: 20,
+    justifyContent: 'center',
+    padding: 20,
   },
 
   dateModalCard: {
     width: '100%',
     maxWidth: 360,
     backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 20,
+    borderRadius: 22,
+    padding: 18,
     alignItems: 'center',
   },
 
   dateModalTitle: {
+    color: '#0F172A',
     fontSize: 18,
     fontWeight: '800',
-    color: '#0F172A',
     marginBottom: 12,
     textAlign: 'center',
+    writingDirection: 'rtl',
   },
 
   dateModalButton: {
-    marginTop: 16,
-    backgroundColor: '#0F172A',
+    minWidth: 110,
+    minHeight: 44,
+    paddingHorizontal: 18,
     borderRadius: 14,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
+    backgroundColor: '#0F172A',
     alignItems: 'center',
     justifyContent: 'center',
+    marginTop: 12,
   },
 
   dateModalButtonText: {
     color: '#FFFFFF',
+    fontSize: 14,
     fontWeight: '700',
-    fontSize: 15,
+    textAlign: 'center',
   },
 
   iosButtonsRow: {
+    width: '100%',
     flexDirection: 'row-reverse',
+    justifyContent: 'space-between',
     gap: 10,
     marginTop: 8,
-    width: '100%',
   },
 
   iosHalfButton: {
@@ -1450,48 +1838,238 @@ const styles = StyleSheet.create({
 
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15,23,42,0.45)',
-    justifyContent: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.35)',
     alignItems: 'center',
-    paddingHorizontal: 20,
+    justifyContent: 'center',
+    padding: 18,
   },
 
   modalCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 24,
     padding: 20,
+    position: 'relative',
   },
 
   modalClose: {
     alignSelf: 'flex-start',
-    marginBottom: 6,
+    padding: 4,
   },
 
   modalTitle: {
-    textAlign: 'center',
-    fontWeight: '800',
-    fontSize: 20,
     color: '#0F172A',
-    marginBottom: 12,
+    fontSize: 20,
+    fontWeight: '800',
+    textAlign: 'center',
+    writingDirection: 'rtl',
+    marginTop: 4,
   },
 
   modalDivider: {
+    width: '100%',
     height: 1,
     backgroundColor: '#E2E8F0',
-    marginBottom: 12,
+    marginVertical: 14,
   },
 
   modalRow: {
+    width: '100%',
     flexDirection: 'row-reverse',
     justifyContent: 'space-between',
-    paddingVertical: 8,
-    gap: 10,
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    gap: 8,
   },
 
   modalText: {
-    fontSize: 15,
     color: '#334155',
+    fontSize: 14,
+    fontWeight: '600',
     textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+
+  programModalCard: {
+    maxHeight: '85%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 18,
+  },
+
+  programHeaderRow: {
+    width: '100%',
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+
+  programModalTitle: {
     flex: 1,
+    color: '#0F172A',
+    fontSize: 20,
+    fontWeight: '800',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+
+  programScrollContent: {
+    paddingBottom: 12,
+  },
+
+  programSectionCard: {
+    width: '100%',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 18,
+    padding: 12,
+    marginBottom: 12,
+  },
+
+  programSectionTitle: {
+    color: '#0F172A',
+    fontSize: 17,
+    fontWeight: '800',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+    marginBottom: 10,
+  },
+
+  programExerciseCard: {
+    width: '100%',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 16,
+    padding: 12,
+    marginBottom: 10,
+  },
+
+  programExerciseHeader: {
+    width: '100%',
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    marginBottom: 8,
+  },
+
+  programExerciseName: {
+    flex: 1,
+    color: '#0F172A',
+    fontSize: 15,
+    fontWeight: '800',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+
+  copyButton: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    minWidth: 90,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+  },
+
+  copyButtonActive: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#86EFAC',
+  },
+
+  copyButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#334155',
+    textAlign: 'center',
+    writingDirection: 'rtl',
+  },
+
+  copyButtonTextActive: {
+    color: '#15803D',
+  },
+
+  programMetaRow: {
+    width: '100%',
+    flexDirection: 'row-reverse',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 8,
+  },
+
+  programMetaChip: {
+    backgroundColor: '#E2E8F0',
+    borderRadius: 999,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+  },
+
+  programMetaChipText: {
+    color: '#334155',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+    writingDirection: 'rtl',
+  },
+
+  programExerciseNotes: {
+    color: '#475569',
+    fontSize: 13,
+    lineHeight: 20,
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+
+  emptyProgramText: {
+    color: '#64748B',
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+    writingDirection: 'rtl',
+    paddingVertical: 12,
+  },
+
+  generalNotesCard: {
+    width: '100%',
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 18,
+    padding: 14,
+    marginTop: 4,
+  },
+
+  generalNotesTitle: {
+    color: '#92400E',
+    fontSize: 15,
+    fontWeight: '800',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+    marginBottom: 8,
+  },
+
+  generalNotesText: {
+    color: '#78350F',
+    fontSize: 14,
+    lineHeight: 22,
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+
+  copiedHint: {
+    marginTop: 10,
+    color: '#166534',
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'center',
+    writingDirection: 'rtl',
   },
 });

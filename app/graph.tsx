@@ -246,7 +246,7 @@ export default function GraphScreen() {
     if (typeof dateValue === 'string') {
       const simpleDateMatch = dateValue.match(/^(\d{4})-(\d{2})-(\d{2})$/);
       if (simpleDateMatch) {
-        const [, year, month, day] = simpleDateMatch;
+        const [, year, month, day] = dateValue.match(/^(\d{4})-(\d{2})-(\d{2})$/)!;
         return new Date(Number(year), Number(month) - 1, Number(day));
       }
 
@@ -380,18 +380,13 @@ export default function GraphScreen() {
             return normalizedName === selectedNormalized;
           });
 
-        const daysBack = timeOptions[selectedPeriod as keyof typeof timeOptions];
-
-        if (daysBack !== 'all') {
-          const sinceDate = startOfDay(new Date());
-          sinceDate.setDate(sinceDate.getDate() - Number(daysBack));
-
-          filteredWorkouts = filteredWorkouts.filter((workout: any) => {
-            const workoutDate = parseWorkoutDate(workout.date);
-            if (!workoutDate) return false;
-            return startOfDay(workoutDate) >= sinceDate;
+        filteredWorkouts = filteredWorkouts
+          .filter((workout: any) => !!parseWorkoutDate(workout.date))
+          .sort((a: any, b: any) => {
+            const dateA = parseWorkoutDate(a.date);
+            const dateB = parseWorkoutDate(b.date);
+            return (dateA?.getTime() || 0) - (dateB?.getTime() || 0);
           });
-        }
 
         generateChartData(filteredWorkouts);
       } catch (error) {
@@ -406,10 +401,65 @@ export default function GraphScreen() {
   }, [selectedPeriod, selectedExercise, dataType, deletedExerciseNames]);
 
   const generateChartData = (filteredWorkouts: WorkoutLike[]) => {
+    if (!filteredWorkouts.length) {
+      setChartData({ labels: [], datasets: [{ data: [] }] });
+      return;
+    }
+
     const groupedMap: Record<
       string,
       { label: string; shortLabel: string; sortValue: number; values: number[] }
     > = {};
+
+    const dayMs = 24 * 60 * 60 * 1000;
+
+    const validDates = filteredWorkouts
+      .map((workout) => parseWorkoutDate(workout.date))
+      .filter((date): date is Date => !!date)
+      .map((date) => startOfDay(date))
+      .sort((a, b) => a.getTime() - b.getTime());
+
+    if (!validDates.length) {
+      setChartData({ labels: [], datasets: [{ data: [] }] });
+      return;
+    }
+
+    const anchorDate = validDates[0];
+
+    const addDays = (baseDate: Date, daysToAdd: number) => {
+      const nextDate = new Date(baseDate);
+      nextDate.setDate(nextDate.getDate() + daysToAdd);
+      nextDate.setHours(0, 0, 0, 0);
+      return nextDate;
+    };
+
+    const getDateRangeLabel = (startDate: Date, endDate: Date, includeYear: boolean) => {
+      const formatDate = (date: Date) =>
+        date.toLocaleDateString('he-IL', {
+          day: '2-digit',
+          month: '2-digit',
+          ...(includeYear ? { year: '2-digit' } : {}),
+        });
+
+      return `${formatDate(startDate)} - ${formatDate(endDate)}`;
+    };
+
+    const getRelativeBucketData = (date: Date, bucketDays: number, bucketPrefix: string) => {
+      const normalizedDate = startOfDay(date);
+      const diffDays = Math.floor(
+        (normalizedDate.getTime() - anchorDate.getTime()) / dayMs
+      );
+      const bucketIndex = Math.max(0, Math.floor(diffDays / bucketDays));
+      const bucketStart = addDays(anchorDate, bucketIndex * bucketDays);
+      const bucketEnd = addDays(bucketStart, bucketDays - 1);
+
+      return {
+        key: `${bucketPrefix}-${bucketIndex}`,
+        label: getDateRangeLabel(bucketStart, bucketEnd, true),
+        shortLabel: getDateRangeLabel(bucketStart, bucketEnd, false),
+        sortValue: bucketStart.getTime(),
+      };
+    };
 
     const getBucketData = (date: Date) => {
       const d = startOfDay(date);
@@ -423,60 +473,20 @@ export default function GraphScreen() {
             sortValue: d.getTime(),
           };
 
-        case 'דו שבועי': {
-          const start = new Date(d);
-          start.setDate(d.getDate() - ((d.getDate() - 1) % 14));
-          start.setHours(0, 0, 0, 0);
+        case 'דו שבועי':
+          return getRelativeBucketData(d, 14, 'biweekly');
 
-          return {
-            key: `biweekly-${start.getFullYear()}-${start.getMonth() + 1}-${start.getDate()}`,
-            label: getFormattedDateLabel(start),
-            shortLabel: getFormattedDateLabelShort(start),
-            sortValue: start.getTime(),
-          };
-        }
+        case 'חודשי':
+          return getRelativeBucketData(d, 30, 'monthly');
 
-        case 'חודשי': {
-          const start = new Date(d.getFullYear(), d.getMonth(), 1);
-          return {
-            key: `month-${start.getFullYear()}-${start.getMonth() + 1}`,
-            label: getFormattedDateLabel(start),
-            shortLabel: getFormattedDateLabelShort(start),
-            sortValue: start.getTime(),
-          };
-        }
+        case 'רבעוני':
+          return getRelativeBucketData(d, 90, 'quarterly');
 
-        case 'רבעוני': {
-          const quarterStartMonth = Math.floor(d.getMonth() / 3) * 3;
-          const start = new Date(d.getFullYear(), quarterStartMonth, 1);
-          return {
-            key: `quarter-${d.getFullYear()}-${quarterStartMonth}`,
-            label: getFormattedDateLabel(start),
-            shortLabel: getFormattedDateLabelShort(start),
-            sortValue: start.getTime(),
-          };
-        }
+        case 'חצי שנתי':
+          return getRelativeBucketData(d, 182, 'halfyear');
 
-        case 'חצי שנתי': {
-          const startMonth = d.getMonth() < 6 ? 0 : 6;
-          const start = new Date(d.getFullYear(), startMonth, 1);
-          return {
-            key: `half-${d.getFullYear()}-${startMonth}`,
-            label: getFormattedDateLabel(start),
-            shortLabel: getFormattedDateLabelShort(start),
-            sortValue: start.getTime(),
-          };
-        }
-
-        case 'שנתי': {
-          const start = new Date(d.getFullYear(), 0, 1);
-          return {
-            key: `year-${d.getFullYear()}`,
-            label: getFormattedDateLabel(start),
-            shortLabel: getFormattedDateLabelShort(start),
-            sortValue: start.getTime(),
-          };
-        }
+        case 'שנתי':
+          return getRelativeBucketData(d, 365, 'yearly');
 
         default:
           return {
@@ -681,7 +691,9 @@ export default function GraphScreen() {
       : 'משקל (ק"ג)';
 
   const regularLabels = chartData.labels.map((label) => label.split('|||')[0] || label);
-  const shortLabels = chartData.labels.map((label) => label.split('|||')[1] || label.split('|||')[0] || label);
+  const shortLabels = chartData.labels.map(
+    (label) => label.split('|||')[1] || label.split('|||')[0] || label
+  );
 
   const regularChartData = {
     labels: regularLabels,
@@ -792,136 +804,60 @@ export default function GraphScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <AppLayout>
-        <View style={styles.screen}>
-          <ScrollView
-            keyboardShouldPersistTaps="handled"
-            contentContainerStyle={[
-              styles.scrollContent,
-              {
-                paddingTop: Math.max(height * 0.025, 18),
-                paddingBottom: Math.max(height * 0.05, 32),
-                paddingHorizontal: dynamic.horizontalPadding,
-              },
-            ]}
-            showsVerticalScrollIndicator={false}
-          >
-            <View
-              style={[
-                styles.card,
+      <View style={styles.root}>
+        <AppLayout>
+          <View style={styles.screen}>
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={[
+                styles.scrollContent,
                 {
-                  width: dynamic.cardWidth,
-                  paddingHorizontal: dynamic.cardPaddingHorizontal,
-                  paddingVertical: dynamic.cardPaddingVertical,
+                  paddingTop: Math.max(height * 0.025, 18),
+                  paddingBottom: Math.max(height * 0.05, 32),
+                  paddingHorizontal: dynamic.horizontalPadding,
                 },
               ]}
+              showsVerticalScrollIndicator={false}
+              scrollEnabled={!isFullScreenChartVisible}
             >
-              <View style={styles.header}>
-                <Text
-                  style={[
-                    styles.title,
-                    {
-                      fontSize: dynamic.titleSize,
-                      lineHeight: dynamic.titleSize * 1.45,
-                    },
-                  ]}
-                >
-                  מסך גרפים
-                </Text>
-
-                <Text style={[styles.subtitle, { fontSize: dynamic.textSize - 1 }]}>
-                  צפייה במגמות התקדמות לפי תרגיל, תקופה ונתוני אימון
-                </Text>
-              </View>
-
-              <View style={styles.section}>
-                <Text style={[styles.label, { fontSize: dynamic.labelSize }]}>תקופה</Text>
-                <ModalSelector
-                  data={Object.keys(timeOptions).map((label, index) => ({
-                    key: index,
-                    label,
-                    value: label,
-                  }))}
-                  onChange={(option) => {
-                    setSelectedPeriod(option.value);
-                  }}
-                  cancelText="ביטול"
-                  optionContainerStyle={selectorBoxStyle}
-                  optionTextStyle={(text: string) => ({
-                    fontSize: dynamic.selectorFont,
-                    textAlign: textAlignByLanguage(text),
-                  })}
-                  overlayStyle={styles.modalOverlay}
-                  cancelStyle={styles.modalCancelButton}
-                  cancelTextStyle={styles.modalCancelText}
-                >
-                  <View style={[styles.inputBox, { minHeight: dynamic.inputHeight }]}>
-                    {selectorRow({
-                      value: selectedPeriod,
-                      placeholder: 'בחרי תקופה',
-                      fontSize: dynamic.textSize,
-                    })}
-                  </View>
-                </ModalSelector>
-              </View>
-
-              {selectedPeriod !== '' && (
-                <View style={styles.section}>
-                  <Text style={[styles.label, { fontSize: dynamic.labelSize }]}>חפש/י תרגיל</Text>
-
-                  <Pressable
-                    onPress={openExerciseModal}
-                    style={({ pressed }) => [
-                      styles.singleExerciseBox,
-                      { minHeight: dynamic.inputHeight },
-                      pressed && styles.singleExerciseBoxPressed,
+              <View
+                style={[
+                  styles.card,
+                  {
+                    width: dynamic.cardWidth,
+                    paddingHorizontal: dynamic.cardPaddingHorizontal,
+                    paddingVertical: dynamic.cardPaddingVertical,
+                  },
+                ]}
+              >
+                <View style={styles.header}>
+                  <Text
+                    style={[
+                      styles.title,
+                      {
+                        fontSize: dynamic.titleSize,
+                        lineHeight: dynamic.titleSize * 1.45,
+                      },
                     ]}
                   >
-                    <ArrowDownIcon size={22} color="#5B6470" />
-                    <Text
-                      style={[
-                        selectedExercise ? styles.singleExerciseText : styles.singleExercisePlaceholder,
-                        { fontSize: dynamic.textSize },
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {selectedExercise || 'חפשי את התרגיל'}
-                    </Text>
-                  </Pressable>
+                    מסך גרפים
+                  </Text>
 
-                  {selectedExercise !== '' && (
-                    <View style={styles.deleteWrapper}>
-                      <Pressable
-                        onPress={() => handleDeleteExercise(selectedExercise)}
-                        disabled={isDeleting}
-                        hitSlop={12}
-                        style={({ pressed }) => [
-                          styles.deleteButton,
-                          isDeleting && styles.deleteButtonDisabled,
-                          pressed && { opacity: 0.82 },
-                        ]}
-                      >
-                        <DeleteIcon size={18} color="#DC2626" />
-                        <Text style={styles.deleteButtonText}>
-                          {isDeleting ? 'מוחק...' : 'מחקי תרגיל'}
-                        </Text>
-                      </Pressable>
-                    </View>
-                  )}
+                  <Text style={[styles.subtitle, { fontSize: dynamic.textSize - 1 }]}>
+                    צפייה במגמות התקדמות לפי תרגיל, תקופה ונתוני אימון
+                  </Text>
                 </View>
-              )}
 
-              {selectedExercise !== '' && (
                 <View style={styles.section}>
-                  <Text style={[styles.label, { fontSize: dynamic.labelSize }]}>מה להציג</Text>
+                  <Text style={[styles.label, { fontSize: dynamic.labelSize }]}>תקופה</Text>
                   <ModalSelector
-                    data={[
-                      { key: 0, label: 'חזרות', value: 'חזרות' },
-                      { key: 1, label: 'סטים', value: 'סטים' },
-                      { key: 2, label: 'משקל', value: 'משקל' },
-                    ]}
+                    data={Object.keys(timeOptions).map((label, index) => ({
+                      key: index,
+                      label,
+                      value: label,
+                    }))}
                     onChange={(option) => {
-                      setDataType(option.value);
+                      setSelectedPeriod(option.value);
                     }}
                     cancelText="ביטול"
                     optionContainerStyle={selectorBoxStyle}
@@ -935,111 +871,191 @@ export default function GraphScreen() {
                   >
                     <View style={[styles.inputBox, { minHeight: dynamic.inputHeight }]}>
                       {selectorRow({
-                        value: dataType,
-                        placeholder: 'בחרי נתון',
+                        value: selectedPeriod,
+                        placeholder: 'בחרי תקופה',
                         fontSize: dynamic.textSize,
                       })}
                     </View>
                   </ModalSelector>
                 </View>
-              )}
 
-              {dataType !== '' && (
-                <View style={styles.section}>
-                  <Text style={[styles.label, { fontSize: dynamic.labelSize }]}>סוג גרף</Text>
-                  <ModalSelector
-                    data={[
-                      { key: 0, label: 'גרף קווי', value: 'קווי' },
-                      { key: 1, label: 'גרף עמודות', value: 'עמודות' },
-                    ]}
-                    onChange={(option) => setChartType(option.value)}
-                    cancelText="ביטול"
-                    optionContainerStyle={selectorBoxStyle}
-                    optionTextStyle={(text: string) => ({
-                      fontSize: dynamic.selectorFont,
-                      textAlign: textAlignByLanguage(text),
-                    })}
-                    overlayStyle={styles.modalOverlay}
-                    cancelStyle={styles.modalCancelButton}
-                    cancelTextStyle={styles.modalCancelText}
-                  >
-                    <View style={[styles.inputBox, { minHeight: dynamic.inputHeight }]}>
-                      {selectorRow({
-                        value: chartType,
-                        placeholder: 'בחרי סוג גרף',
-                        fontSize: dynamic.textSize,
-                      })}
-                    </View>
-                  </ModalSelector>
-                </View>
-              )}
+                {selectedPeriod !== '' && (
+                  <View style={styles.section}>
+                    <Text style={[styles.label, { fontSize: dynamic.labelSize }]}>חפש/י תרגיל</Text>
 
-              {loading && (
-                <View style={styles.loaderWrapper}>
-                  <ActivityIndicator size="large" color="#0F172A" />
-                  <Text style={[styles.loaderText, { fontSize: dynamic.textSize - 1 }]}>
-                    טוען נתונים...
-                  </Text>
-                </View>
-              )}
-
-              {!loading && selectedExercise && dataType && chartType && chartData.labels.length > 0 && (
-                <View style={styles.graphSection}>
-                  <Text style={[styles.graphTitle, { fontSize: dynamic.labelSize + 2 }]}>
-                    גרף התקדמות
-                  </Text>
-
-                  <Text style={[styles.graphSubTitle, { fontSize: dynamic.textSize - 1 }]}>
-                    מגמה לפי: {dataType}
-                  </Text>
-
-                  <View style={styles.metricTag}>
-                    <Text style={styles.metricTagText}>{metricText}</Text>
-                  </View>
-
-                  <View style={styles.graphActionsRow}>
                     <Pressable
-                      onPress={openFullScreenChart}
+                      onPress={openExerciseModal}
                       style={({ pressed }) => [
-                        styles.expandButton,
-                        pressed && styles.expandButtonPressed,
+                        styles.singleExerciseBox,
+                        { minHeight: dynamic.inputHeight },
+                        pressed && styles.singleExerciseBoxPressed,
                       ]}
                     >
-                      <ExpandIcon size={16} color="#0F172A" />
-                      <Text style={styles.expandButtonText}>הגדל גרף</Text>
-                    </Pressable>
-                  </View>
-
-                  <View style={styles.graphCard}>
-                    <Text style={styles.yAxisTitle}>{yAxisText}</Text>
-
-                    <View style={styles.chartViewport}>
-                      <ScrollView
-                        horizontal
-                        showsHorizontalScrollIndicator
-                        ref={scrollRef}
-                        contentContainerStyle={styles.chartScrollContent}
+                      <ArrowDownIcon size={22} color="#5B6470" />
+                      <Text
+                        style={[
+                          selectedExercise ? styles.singleExerciseText : styles.singleExercisePlaceholder,
+                          { fontSize: dynamic.textSize },
+                        ]}
+                        numberOfLines={1}
                       >
-                        {renderRegularChart()}
-                      </ScrollView>
+                        {selectedExercise || 'חפשי את התרגיל'}
+                      </Text>
+                    </Pressable>
+
+                    {selectedExercise !== '' && (
+                      <View style={styles.deleteWrapper}>
+                        <Pressable
+                          onPress={() => handleDeleteExercise(selectedExercise)}
+                          disabled={isDeleting}
+                          hitSlop={12}
+                          style={({ pressed }) => [
+                            styles.deleteButton,
+                            isDeleting && styles.deleteButtonDisabled,
+                            pressed && { opacity: 0.82 },
+                          ]}
+                        >
+                          <DeleteIcon size={18} color="#DC2626" />
+                          <Text style={styles.deleteButtonText}>
+                            {isDeleting ? 'מוחק...' : 'מחקי תרגיל'}
+                          </Text>
+                        </Pressable>
+                      </View>
+                    )}
+                  </View>
+                )}
+
+                {selectedExercise !== '' && (
+                  <View style={styles.section}>
+                    <Text style={[styles.label, { fontSize: dynamic.labelSize }]}>מה להציג</Text>
+                    <ModalSelector
+                      data={[
+                        { key: 0, label: 'חזרות', value: 'חזרות' },
+                        { key: 1, label: 'סטים', value: 'סטים' },
+                        { key: 2, label: 'משקל', value: 'משקל' },
+                      ]}
+                      onChange={(option) => {
+                        setDataType(option.value);
+                      }}
+                      cancelText="ביטול"
+                      optionContainerStyle={selectorBoxStyle}
+                      optionTextStyle={(text: string) => ({
+                        fontSize: dynamic.selectorFont,
+                        textAlign: textAlignByLanguage(text),
+                      })}
+                      overlayStyle={styles.modalOverlay}
+                      cancelStyle={styles.modalCancelButton}
+                      cancelTextStyle={styles.modalCancelText}
+                    >
+                      <View style={[styles.inputBox, { minHeight: dynamic.inputHeight }]}>
+                        {selectorRow({
+                          value: dataType,
+                          placeholder: 'בחרי נתון',
+                          fontSize: dynamic.textSize,
+                        })}
+                      </View>
+                    </ModalSelector>
+                  </View>
+                )}
+
+                {dataType !== '' && (
+                  <View style={styles.section}>
+                    <Text style={[styles.label, { fontSize: dynamic.labelSize }]}>סוג גרף</Text>
+                    <ModalSelector
+                      data={[
+                        { key: 0, label: 'גרף קווי', value: 'קווי' },
+                        { key: 1, label: 'גרף עמודות', value: 'עמודות' },
+                      ]}
+                      onChange={(option) => setChartType(option.value)}
+                      cancelText="ביטול"
+                      optionContainerStyle={selectorBoxStyle}
+                      optionTextStyle={(text: string) => ({
+                        fontSize: dynamic.selectorFont,
+                        textAlign: textAlignByLanguage(text),
+                      })}
+                      overlayStyle={styles.modalOverlay}
+                      cancelStyle={styles.modalCancelButton}
+                      cancelTextStyle={styles.modalCancelText}
+                    >
+                      <View style={[styles.inputBox, { minHeight: dynamic.inputHeight }]}>
+                        {selectorRow({
+                          value: chartType,
+                          placeholder: 'בחרי סוג גרף',
+                          fontSize: dynamic.textSize,
+                        })}
+                      </View>
+                    </ModalSelector>
+                  </View>
+                )}
+
+                {loading && (
+                  <View style={styles.loaderWrapper}>
+                    <ActivityIndicator size="large" color="#0F172A" />
+                    <Text style={[styles.loaderText, { fontSize: dynamic.textSize - 1 }]}>
+                      טוען נתונים...
+                    </Text>
+                  </View>
+                )}
+
+                {!loading && selectedExercise && dataType && chartType && chartData.labels.length > 0 && (
+                  <View style={styles.graphSection}>
+                    <Text style={[styles.graphTitle, { fontSize: dynamic.labelSize + 2 }]}>
+                      גרף התקדמות
+                    </Text>
+
+                    <Text style={[styles.graphSubTitle, { fontSize: dynamic.textSize - 1 }]}>
+                      מגמה לפי: {dataType}
+                    </Text>
+
+                    <View style={styles.metricTag}>
+                      <Text style={styles.metricTagText}>{metricText}</Text>
                     </View>
 
-                    <Text style={styles.scrollHint}>גללי הצידה כדי לראות תאריכים נוספים</Text>
-                  </View>
-                </View>
-              )}
+                    <View style={styles.graphActionsRow}>
+                      <Pressable
+                        onPress={openFullScreenChart}
+                        style={({ pressed }) => [
+                          styles.expandButton,
+                          pressed && styles.expandButtonPressed,
+                        ]}
+                      >
+                        <ExpandIcon size={16} color="#0F172A" />
+                        <Text style={styles.expandButtonText}>הגדל גרף</Text>
+                      </Pressable>
+                    </View>
 
-              {!loading && chartData.labels.length === 0 && selectedExercise && dataType && chartType && (
-                <View style={styles.emptyState}>
-                  <ChartIcon size={28} color="#64748B" />
-                  <Text style={[styles.noData, { fontSize: dynamic.textSize - 1 }]}>
-                    אין נתונים להצגה עבור הבחירה הנוכחית
-                  </Text>
-                </View>
-              )}
-            </View>
-          </ScrollView>
-        </View>
+                    <View style={styles.graphCard} collapsable={false}>
+                      <Text style={styles.yAxisTitle}>{yAxisText}</Text>
+
+                      <View style={styles.chartViewport} collapsable={false}>
+                        <ScrollView
+                          horizontal
+                          showsHorizontalScrollIndicator
+                          ref={scrollRef}
+                          contentContainerStyle={styles.chartScrollContent}
+                          removeClippedSubviews={false}
+                        >
+                          {renderRegularChart()}
+                        </ScrollView>
+                      </View>
+
+                      <Text style={styles.scrollHint}>גללי הצידה כדי לראות תאריכים נוספים</Text>
+                    </View>
+                  </View>
+                )}
+
+                {!loading && chartData.labels.length === 0 && selectedExercise && dataType && chartType && (
+                  <View style={styles.emptyState}>
+                    <ChartIcon size={28} color="#64748B" />
+                    <Text style={[styles.noData, { fontSize: dynamic.textSize - 1 }]}>
+                      אין נתונים להצגה עבור הבחירה הנוכחית
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </ScrollView>
+          </View>
+        </AppLayout>
 
         <Modal
           visible={exerciseModalVisible}
@@ -1106,83 +1122,84 @@ export default function GraphScreen() {
           </View>
         </Modal>
 
-        <Modal
-          visible={isFullScreenChartVisible}
-          animationType="slide"
-          transparent={false}
-          onRequestClose={closeFullScreenChart}
-        >
-          <View style={styles.fakeLandscapeRoot}>
-            <Pressable
-              onPress={closeFullScreenChart}
-              style={({ pressed }) => [
-                styles.fullScreenExitButton,
-                pressed && styles.fullScreenExitButtonPressed,
-              ]}
-              hitSlop={14}
-            >
-              <CloseIcon size={22} color="#FFFFFF" />
-            </Pressable>
-
-            <View style={styles.fullScreenTopBar}>
-              <Text style={styles.fakeLandscapeTitle}>גרף התקדמות</Text>
-              <Text style={styles.fakeLandscapeSubtitle}>
-                {selectedExercise} · {selectedPeriod} · {metricText}
-              </Text>
-            </View>
-
-            <View style={styles.fakeLandscapeInfoRow}>
-              <View style={styles.fakeLandscapeMetricTag}>
-                <Text style={styles.fakeLandscapeMetricTagText}>{yAxisText}</Text>
-              </View>
-              <Text style={styles.fakeLandscapeHintTop}>
-                במצב מוגדל התאריכים מוצגים בלי שנה
-              </Text>
-            </View>
-
-            <View style={styles.fakeLandscapeStage}>
-              <View
-                style={[
-                  styles.rotatedCanvasWrap,
-                  {
-                    width: height,
-                    height: width,
-                    transform: [{ rotate: '90deg' }],
-                  },
+        {isFullScreenChartVisible && (
+          <View style={styles.fullScreenOverlay}>
+            <View style={styles.fakeLandscapeRoot}>
+              <Pressable
+                onPress={closeFullScreenChart}
+                style={({ pressed }) => [
+                  styles.fullScreenExitButton,
+                  pressed && styles.fullScreenExitButtonPressed,
                 ]}
+                hitSlop={16}
               >
+                <CloseIcon size={22} color="#FFFFFF" />
+              </Pressable>
+
+              <View style={styles.fakeLandscapeHeaderTextWrap}>
+                <Text style={styles.fakeLandscapeTitle}>גרף התקדמות</Text>
+                <Text style={styles.fakeLandscapeSubtitle}>
+                  {selectedExercise} · {selectedPeriod} · {metricText}
+                </Text>
+              </View>
+
+              <View style={styles.fakeLandscapeInfoRow}>
+                <View style={styles.fakeLandscapeMetricTag}>
+                  <Text style={styles.fakeLandscapeMetricTagText}>{yAxisText}</Text>
+                </View>
+                <Text style={styles.fakeLandscapeHintTop}>
+                  התאריכים כאן מוצגים בלי שנה כדי שיהיה יותר ברור
+                </Text>
+              </View>
+
+              <View style={styles.fakeLandscapeStage}>
                 <View
                   style={[
-                    styles.rotatedCanvasInner,
+                    styles.rotatedCanvasWrap,
                     {
                       width: height,
                       height: width,
+                      transform: [{ rotate: '90deg' }],
                     },
                   ]}
                 >
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator
-                    ref={fullScreenScrollRef}
-                    contentContainerStyle={styles.fullScreenChartScrollContent}
+                  <View
+                    style={[
+                      styles.rotatedCanvasInner,
+                      {
+                        width: height,
+                        height: width,
+                      },
+                    ]}
                   >
-                    {renderFullScreenChart()}
-                  </ScrollView>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator
+                      ref={fullScreenScrollRef}
+                      contentContainerStyle={styles.fullScreenChartScrollContent}
+                      removeClippedSubviews={false}
+                    >
+                      {renderFullScreenChart()}
+                    </ScrollView>
+                  </View>
                 </View>
               </View>
-            </View>
 
-            <Text style={styles.fakeLandscapeBottomHint}>
-              לחצי על X כדי לצאת מהגרף המוגדל
-            </Text>
+              <Text style={styles.fakeLandscapeBottomHint}>
+                לחצי על ה־X כדי לצאת מהגרף המוגדל
+              </Text>
+            </View>
           </View>
-        </Modal>
-      </AppLayout>
+        )}
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
   safeArea: {
     flex: 1,
     backgroundColor: '#F4F7FB',
@@ -1505,35 +1522,45 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 15,
   },
-
+  fullScreenOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 999,
+    elevation: 999,
+    backgroundColor: '#0F172A',
+  },
   fakeLandscapeRoot: {
     flex: 1,
     backgroundColor: '#0F172A',
   },
   fullScreenExitButton: {
     position: 'absolute',
-    top: 18,
-    left: 14,
-    zIndex: 999,
-    elevation: 30,
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.25)',
+    top: 16,
+    left: 16,
+    zIndex: 50,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(15,23,42,0.72)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.65)',
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.28,
+    shadowRadius: 8,
+    elevation: 12,
   },
   fullScreenExitButtonPressed: {
     opacity: 0.82,
+    transform: [{ scale: 0.96 }],
   },
-  fullScreenTopBar: {
+  fakeLandscapeHeaderTextWrap: {
     position: 'absolute',
     top: 20,
     right: 14,
     left: 78,
-    zIndex: 50,
+    zIndex: 20,
   },
   fakeLandscapeTitle: {
     color: '#FFFFFF',
@@ -1552,7 +1579,7 @@ const styles = StyleSheet.create({
     top: 78,
     left: 14,
     right: 14,
-    zIndex: 50,
+    zIndex: 20,
     flexDirection: 'row-reverse',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -1580,7 +1607,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
-    paddingTop: 40,
   },
   rotatedCanvasWrap: {
     alignItems: 'center',
@@ -1611,6 +1637,5 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: 'rgba(255,255,255,0.82)',
     fontSize: 11,
-    zIndex: 50,
   },
 });
