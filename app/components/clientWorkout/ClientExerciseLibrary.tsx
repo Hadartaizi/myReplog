@@ -47,12 +47,14 @@ const getExerciseDisplayName = (exercise: ExerciseItem) =>
 
 export default function ClientExerciseLibrary() {
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [exercises, setExercises] = useState<ExerciseItem[]>([]);
+  const [searchText, setSearchText] = useState("");
   const [editingExerciseId, setEditingExerciseId] = useState("");
   const [editingName, setEditingName] = useState("");
   const [savingExerciseId, setSavingExerciseId] = useState("");
   const [deletingExerciseId, setDeletingExerciseId] = useState("");
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [isEditFocused, setIsEditFocused] = useState(false);
 
   const currentUid = String(auth.currentUser?.uid || "").trim();
 
@@ -154,40 +156,43 @@ export default function ClientExerciseLibrary() {
     }
   }, [fetchExercisesDocs]);
 
-  const loadExercises = useCallback(
-    async (isRefresh = false) => {
-      if (!currentUid) {
-        setExercises([]);
-        setLoading(false);
-        setRefreshing(false);
-        return;
-      }
+  const loadExercises = useCallback(async () => {
+    if (!currentUid) {
+      setExercises([]);
+      setLoading(false);
+      return;
+    }
 
-      try {
-        if (isRefresh) {
-          setRefreshing(true);
-        } else {
-          setLoading(true);
-        }
-
-        await dedupeExercisesInDatabase();
-
-        const docs = await fetchExercisesDocs();
-        setExercises(sortExercises(docs));
-      } catch (error) {
-        console.error("שגיאה בטעינת מאגר התרגילים:", error);
-        showAlert("שגיאה", "לא ניתן לטעון את מאגר התרגילים");
-      } finally {
-        setLoading(false);
-        setRefreshing(false);
-      }
-    },
-    [currentUid, dedupeExercisesInDatabase, fetchExercisesDocs, sortExercises]
-  );
+    try {
+      setLoading(true);
+      await dedupeExercisesInDatabase();
+      const docs = await fetchExercisesDocs();
+      setExercises(sortExercises(docs));
+    } catch (error) {
+      console.error("שגיאה בטעינת מאגר התרגילים:", error);
+      showAlert("שגיאה", "לא ניתן לטעון את מאגר התרגילים");
+    } finally {
+      setLoading(false);
+    }
+  }, [currentUid, dedupeExercisesInDatabase, fetchExercisesDocs, sortExercises]);
 
   useEffect(() => {
     loadExercises();
   }, [loadExercises]);
+
+  const filteredExercises = useMemo(() => {
+    const normalizedSearch = normalizeExerciseName(searchText);
+
+    if (!normalizedSearch) {
+      return exercises;
+    }
+
+    return exercises.filter((exercise) =>
+      normalizeExerciseName(getExerciseDisplayName(exercise)).includes(
+        normalizedSearch
+      )
+    );
+  }, [exercises, searchText]);
 
   const exerciseCountLabel = useMemo(() => {
     const count = exercises.length;
@@ -195,14 +200,23 @@ export default function ClientExerciseLibrary() {
     return `${count} תרגילים`;
   }, [exercises]);
 
+  const filteredCountLabel = useMemo(() => {
+    const count = filteredExercises.length;
+    if (!searchText.trim()) return "";
+    if (count === 1) return "נמצא תרגיל אחד";
+    return `נמצאו ${count} תרגילים`;
+  }, [filteredExercises.length, searchText]);
+
   const handleStartEdit = (exercise: ExerciseItem) => {
     setEditingExerciseId(exercise.id);
     setEditingName(getExerciseDisplayName(exercise));
+    setIsEditFocused(false);
   };
 
   const handleCancelEdit = () => {
     setEditingExerciseId("");
     setEditingName("");
+    setIsEditFocused(false);
   };
 
   const renameExerciseEverywhere = useCallback(
@@ -223,9 +237,11 @@ export default function ClientExerciseLibrary() {
       );
 
       const workoutMap = new Map<string, any>();
-      [...workoutsByUidSnap.docs, ...workoutsByAuthUidSnap.docs].forEach((docSnap) => {
-        workoutMap.set(docSnap.id, docSnap);
-      });
+      [...workoutsByUidSnap.docs, ...workoutsByAuthUidSnap.docs].forEach(
+        (docSnap) => {
+          workoutMap.set(docSnap.id, docSnap);
+        }
+      );
 
       for (const docSnap of workoutMap.values()) {
         const data = docSnap.data() || {};
@@ -234,7 +250,10 @@ export default function ClientExerciseLibrary() {
         ).trim();
         const normalizedCurrent = normalizeExerciseName(currentName);
 
-        if (normalizedCurrent === normalizedOld || normalizedCurrent === normalizedNew) {
+        if (
+          normalizedCurrent === normalizedOld ||
+          normalizedCurrent === normalizedNew
+        ) {
           await updateDoc(doc(db, "workouts", docSnap.id), {
             exerciseName: newName.trim(),
             name: newName.trim(),
@@ -249,7 +268,10 @@ export default function ClientExerciseLibrary() {
       const matches = exercisesDocs.filter((item) => {
         const currentName = getExerciseDisplayName(item);
         const normalizedCurrent = normalizeExerciseName(currentName);
-        return normalizedCurrent === normalizedOld || normalizedCurrent === normalizedNew;
+        return (
+          normalizedCurrent === normalizedOld ||
+          normalizedCurrent === normalizedNew
+        );
       });
 
       const sortedMatches = [...matches].sort((a, b) => {
@@ -290,14 +312,11 @@ export default function ClientExerciseLibrary() {
 
     try {
       setSavingExerciseId(exercise.id);
-
       await renameExerciseEverywhere(oldName, trimmedName, exercise.id);
-
       setEditingExerciseId("");
       setEditingName("");
-
-      await loadExercises(true);
-
+      setIsEditFocused(false);
+      await loadExercises();
       showAlert("הצלחה", "שם התרגיל עודכן בכל המערכת");
     } catch (error) {
       console.error("שגיאה בעדכון התרגיל:", error);
@@ -335,16 +354,19 @@ export default function ClientExerciseLibrary() {
       setExercises((prev) =>
         prev.filter(
           (item) =>
-            normalizeExerciseName(getExerciseDisplayName(item)) !== normalizedTarget
+            normalizeExerciseName(getExerciseDisplayName(item)) !==
+            normalizedTarget
         )
       );
 
       if (
         editingExerciseId &&
-        normalizeExerciseName(getExerciseDisplayName(exercise)) === normalizedTarget
+        normalizeExerciseName(getExerciseDisplayName(exercise)) ===
+          normalizedTarget
       ) {
         setEditingExerciseId("");
         setEditingName("");
+        setIsEditFocused(false);
       }
 
       showAlert("בוצע", "התרגיל נמחק");
@@ -368,33 +390,57 @@ export default function ClientExerciseLibrary() {
   return (
     <View style={styles.wrapper}>
       <View style={styles.headerCard}>
-        <View style={styles.headerTopRow}>
-          <Pressable
-            onPress={() => loadExercises(true)}
-            disabled={refreshing}
-            style={({ pressed }) => [
-              styles.refreshButton,
-              pressed && styles.pressed,
-              refreshing && styles.disabled,
-            ]}
-          >
-            {refreshing ? (
-              <ActivityIndicator size="small" color="#1D4ED8" />
-            ) : (
-              <Text style={styles.refreshButtonText}>רענון</Text>
-            )}
-          </Pressable>
-
-          <View style={styles.headerTextWrap}>
-            <Text style={styles.title}>מאגר תרגילים</Text>
-            <Text style={styles.subtitle}>
-              כאן אפשר לראות את כל התרגילים שהזנת, לערוך שם בלי כפילויות ולמחוק לצמיתות
-            </Text>
-          </View>
+        <View style={styles.headerTextWrapOnly}>
+          <Text style={styles.title}>מאגר תרגילים</Text>
+          <Text style={styles.subtitle}>
+            כאן אפשר לראות את כל התרגילים שהזנת, לחפש תרגיל ספציפי, לערוך שם
+            בלי כפילויות ולמחוק לצמיתות
+          </Text>
         </View>
 
         <View style={styles.countBadge}>
           <Text style={styles.countBadgeText}>{exerciseCountLabel}</Text>
+        </View>
+
+        <View style={styles.searchBox}>
+          <Text style={styles.searchLabel}>חיפוש תרגיל</Text>
+
+          <View
+            style={[
+              styles.inputWithClearWrap,
+              isSearchFocused && styles.inputWithClearWrapFocused,
+            ]}
+          >
+            {!!searchText.trim() && (
+              <Pressable
+                onPress={() => setSearchText("")}
+                style={({ pressed }) => [
+                  styles.clearInsideButton,
+                  pressed && styles.pressed,
+                ]}
+                hitSlop={8}
+              >
+                <Text style={styles.clearInsideButtonText}>✕</Text>
+              </Pressable>
+            )}
+
+            <TextInput
+              value={searchText}
+              onChangeText={setSearchText}
+              placeholder="הקלידי שם תרגיל לחיפוש"
+              placeholderTextColor="#94A3B8"
+              style={styles.inputWithClearField}
+              textAlign="right"
+              autoCapitalize="none"
+              autoCorrect={false}
+              onFocus={() => setIsSearchFocused(true)}
+              onBlur={() => setIsSearchFocused(false)}
+            />
+          </View>
+
+          {!!searchText.trim() && (
+            <Text style={styles.searchResultText}>{filteredCountLabel}</Text>
+          )}
         </View>
       </View>
 
@@ -402,17 +448,22 @@ export default function ClientExerciseLibrary() {
         <View style={styles.emptyBox}>
           <Text style={styles.emptyText}>עדיין לא הזנת תרגילים למאגר</Text>
         </View>
+      ) : filteredExercises.length === 0 ? (
+        <View style={styles.emptyBox}>
+          <Text style={styles.emptyText}>לא נמצא תרגיל שמתאים לחיפוש</Text>
+        </View>
       ) : (
         <ScrollView
           nestedScrollEnabled
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.listContent}
         >
-          {exercises.map((exercise) => {
+          {filteredExercises.map((exercise) => {
             const isEditing = editingExerciseId === exercise.id;
             const isSaving = savingExerciseId === exercise.id;
             const isDeleting = deletingExerciseId === exercise.id;
-            const exerciseName = getExerciseDisplayName(exercise) || "תרגיל ללא שם";
+            const exerciseName =
+              getExerciseDisplayName(exercise) || "תרגיל ללא שם";
 
             return (
               <View key={exercise.id} style={styles.exerciseCard}>
@@ -420,15 +471,37 @@ export default function ClientExerciseLibrary() {
                   <>
                     <Text style={styles.inputLabel}>שם התרגיל</Text>
 
-                    <TextInput
-                      value={editingName}
-                      onChangeText={setEditingName}
-                      placeholder="הקלידי שם תרגיל"
-                      placeholderTextColor="#94A3B8"
-                      style={styles.input}
-                      textAlign="right"
-                      autoCapitalize="none"
-                    />
+                    <View
+                      style={[
+                        styles.inputWithClearWrap,
+                        isEditFocused && styles.inputWithClearWrapFocused,
+                      ]}
+                    >
+                      {!!editingName.trim() && (
+                        <Pressable
+                          onPress={() => setEditingName("")}
+                          style={({ pressed }) => [
+                            styles.clearInsideButton,
+                            pressed && styles.pressed,
+                          ]}
+                          hitSlop={8}
+                        >
+                          <Text style={styles.clearInsideButtonText}>✕</Text>
+                        </Pressable>
+                      )}
+
+                      <TextInput
+                        value={editingName}
+                        onChangeText={setEditingName}
+                        placeholder="הקלידי שם תרגיל"
+                        placeholderTextColor="#94A3B8"
+                        style={styles.inputWithClearField}
+                        textAlign="right"
+                        autoCapitalize="none"
+                        onFocus={() => setIsEditFocused(true)}
+                        onBlur={() => setIsEditFocused(false)}
+                      />
+                    </View>
 
                     <View style={styles.editActionsRow}>
                       <Pressable
@@ -517,14 +590,8 @@ const styles = StyleSheet.create({
     padding: 14,
     gap: 12,
   },
-  headerTopRow: {
-    flexDirection: "row-reverse",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: 12,
-  },
-  headerTextWrap: {
-    flex: 1,
+  headerTextWrapOnly: {
+    width: "100%",
     alignItems: "flex-end",
     gap: 4,
   },
@@ -540,23 +607,6 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     textAlign: "right",
   },
-  refreshButton: {
-    minWidth: 78,
-    minHeight: 40,
-    backgroundColor: "#EFF6FF",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#BFDBFE",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 12,
-  },
-  refreshButtonText: {
-    color: "#1D4ED8",
-    fontSize: 13,
-    fontWeight: "800",
-    textAlign: "center",
-  },
   countBadge: {
     alignSelf: "flex-end",
     backgroundColor: "#F8FAFC",
@@ -571,6 +621,89 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "800",
     textAlign: "center",
+  },
+  searchBox: {
+    width: "100%",
+    gap: 8,
+  },
+  searchLabel: {
+    color: "#334155",
+    fontSize: 13,
+    fontWeight: "700",
+    textAlign: "right",
+  },
+  inputWithClearWrap: {
+    width: "100%",
+    minHeight: 48,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    overflow: "hidden",
+  },
+  inputWithClearWrapFocused: {
+    borderColor: "#2563EB",
+    shadowColor: "#2563EB",
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 1,
+  },
+  inputWithClearField: {
+    flex: 1,
+    minHeight: 46,
+    fontSize: 14,
+    color: "#0F172A",
+    textAlign: "right",
+    writingDirection: "rtl",
+    paddingHorizontal: 8,
+    paddingVertical: 0,
+    backgroundColor: "transparent",
+    borderWidth: 0,
+    includeFontPadding: false,
+    ...(Platform.OS === "web"
+      ? ({
+          outlineWidth: 0,
+          outlineStyle: "none",
+        } as any)
+      : null),
+  },
+  clearInsideButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F1F5F9",
+    marginLeft: 4,
+    ...(Platform.OS === "web"
+      ? ({
+          outlineWidth: 0,
+          outlineStyle: "none",
+          cursor: "pointer",
+        } as any)
+      : null),
+  },
+  clearInsideButtonText: {
+    color: "#475569",
+    fontSize: 14,
+    fontWeight: "800",
+    lineHeight: 16,
+    textAlign: "center",
+    ...(Platform.OS === "web"
+      ? ({
+          userSelect: "none",
+        } as any)
+      : null),
+  },
+  searchResultText: {
+    color: "#64748B",
+    fontSize: 12,
+    fontWeight: "700",
+    textAlign: "right",
   },
   loadingBox: {
     width: "100%",
@@ -679,19 +812,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "700",
     textAlign: "right",
-  },
-  input: {
-    width: "100%",
-    minHeight: 48,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#CBD5E1",
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 14,
-    color: "#0F172A",
-    writingDirection: "rtl",
   },
   editActionsRow: {
     flexDirection: "row-reverse",

@@ -594,6 +594,7 @@ export default function Menu() {
   const [cardHistoryOpen, setCardHistoryOpen] = useState(false);
   const [clientTrainingProgramOpen, setClientTrainingProgramOpen] = useState(false);
   const [clientExerciseLibraryOpen, setClientExerciseLibraryOpen] = useState(false);
+  const [managerExerciseLibraryOpen, setManagerExerciseLibraryOpen] = useState(false);
 
   const isOwner = currentUserData?.role === "owner";
   const isAdmin = currentUserData?.role === "admin";
@@ -1439,6 +1440,37 @@ export default function Menu() {
 
                     {adminActionsOpen && (
                       <View style={styles.adminDropdown}>
+                        <Pressable
+                          style={({ pressed }) => [
+                            styles.categoryButton,
+                            { minHeight: dynamic.buttonHeight - 2 },
+                            pressed && styles.pressedLight,
+                          ]}
+                          onPress={() => setManagerExerciseLibraryOpen((prev) => !prev)}
+                        >
+                          <View style={styles.buttonRow}>
+                            <View style={styles.categoryButtonContent}>
+                              <View style={styles.iconWrap}>
+                                <WorkoutTrackingIcon size={20} color="#0F172A" />
+                              </View>
+
+                              <Text style={styles.categoryButtonText} numberOfLines={1}>
+                                מאגר אימונים שלי
+                              </Text>
+                            </View>
+
+                            <Text style={styles.categoryExpandText}>
+                              {managerExerciseLibraryOpen ? "סגירה" : "פתיחה"}
+                            </Text>
+                          </View>
+                        </Pressable>
+
+                        {managerExerciseLibraryOpen && (
+                          <View style={styles.categoryContent}>
+                            <ClientExerciseLibrary />
+                          </View>
+                        )}
+
                         {isOwner && (
                           <>
                             <Pressable

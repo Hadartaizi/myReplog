@@ -33,6 +33,8 @@ import { auth, db } from '../database/firebase';
 import AppLayout from './components/AppLayout';
 
 const APP_BG = '#F4F7FB';
+const DECIMAL_KEYBOARD = Platform.OS === 'ios' ? 'decimal-pad' : 'numeric';
+const INTEGER_KEYBOARD = Platform.OS === 'ios' ? 'number-pad' : 'numeric';
 
 const normalizeText = (text: string) =>
   String(text || '')
@@ -285,6 +287,7 @@ export default function Home() {
   const [isLoadingLastExercise, setIsLoadingLastExercise] = useState(false);
   const [lastExerciseData, setLastExerciseData] = useState<Record<string, LastExerciseRow[]>>({});
   const [selectedExerciseForModal, setSelectedExerciseForModal] = useState<string | null>(null);
+  const [isExerciseNameFocused, setIsExerciseNameFocused] = useState(false);
 
   const [trainingProgram, setTrainingProgram] = useState<TrainingProgramDoc | null>(null);
   const [isLoadingTrainingProgram, setIsLoadingTrainingProgram] = useState(true);
@@ -750,6 +753,19 @@ export default function Home() {
     }));
   };
 
+  const clearExerciseName = () => {
+    setExercise((prev) => ({
+      ...prev,
+      name: '',
+      suggestions: [],
+      showSuggestions: false,
+    }));
+
+    if (addError) {
+      setAddError('');
+    }
+  };
+
   const handleRepsChange = (setIndex: string, value: string) => {
     const cleaned = value.replace(/[^0-9]/g, '');
 
@@ -1052,21 +1068,46 @@ export default function Home() {
                       isVerySmall && styles.exerciseRowStack,
                     ]}
                   >
-                    <TextInput
+                    <View
                       style={[
                         styles.inputBox,
-                        styles.textInput,
+                        styles.exerciseNameInputWrap,
                         styles.flexInput,
                         isVerySmall && styles.fullWidthOnSmall,
-                        { minHeight: dynamic.inputHeight, fontSize: dynamic.textSize },
+                        { minHeight: dynamic.inputHeight },
+                        isExerciseNameFocused && styles.exerciseNameInputWrapFocused,
                       ]}
-                      placeholder="שם תרגיל"
-                      placeholderTextColor="#8A94A6"
-                      value={exercise.name}
-                      onChangeText={(text) => handleExerciseChange('name', text)}
-                      textAlign="right"
-                      editable={!isSaving}
-                    />
+                    >
+                      {!!exercise.name.trim() && (
+                        <Pressable
+                          onPress={clearExerciseName}
+                          hitSlop={8}
+                          style={({ pressed }) => [
+                            styles.clearInsideButton,
+                            pressed && styles.pressedButton,
+                          ]}
+                        >
+                          <Text style={styles.clearInsideButtonText}>✕</Text>
+                        </Pressable>
+                      )}
+
+                      <TextInput
+                        style={[
+                          styles.exerciseNameTextInput,
+                          { fontSize: dynamic.textSize },
+                        ]}
+                        placeholder="שם תרגיל"
+                        placeholderTextColor="#8A94A6"
+                        value={exercise.name}
+                        onChangeText={(text) => handleExerciseChange('name', text)}
+                        textAlign="right"
+                        editable={!isSaving}
+                        onFocus={() => setIsExerciseNameFocused(true)}
+                        onBlur={() => setIsExerciseNameFocused(false)}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                      />
+                    </View>
 
                     {exercise.name.trim() !== '' && (
                       <Pressable
@@ -1128,7 +1169,8 @@ export default function Home() {
                     ]}
                     placeholder="הזיני מספר סטים"
                     placeholderTextColor="#8A94A6"
-                    keyboardType="numeric"
+                    keyboardType={INTEGER_KEYBOARD}
+                    inputMode="numeric"
                     value={exercise.numSets}
                     onChangeText={(text) => handleExerciseChange('numSets', text)}
                     textAlign="right"
@@ -1166,7 +1208,8 @@ export default function Home() {
                             ]}
                             placeholder="לדוגמה 12"
                             placeholderTextColor="#8A94A6"
-                            keyboardType="numeric"
+                            keyboardType={DECIMAL_KEYBOARD}
+                            inputMode="decimal"
                             value={exercise.repsPerSet[setKey]?.reps || ''}
                             onChangeText={(val) => handleRepsChange(setKey, val)}
                             textAlign="right"
@@ -1185,7 +1228,8 @@ export default function Home() {
                             ]}
                             placeholder="לדוגמה 20"
                             placeholderTextColor="#8A94A6"
-                            keyboardType="numeric"
+                            keyboardType={DECIMAL_KEYBOARD}
+                            inputMode="decimal"
                             value={exercise.repsPerSet[setKey]?.weight || ''}
                             onChangeText={(val) => handleWeightChange(setKey, val)}
                             textAlign="right"
@@ -1612,6 +1656,75 @@ const styles = StyleSheet.create({
     color: '#0F172A',
     textAlign: 'right',
     writingDirection: 'rtl',
+  },
+
+  exerciseNameInputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    overflow: 'hidden',
+  },
+
+  exerciseNameInputWrapFocused: {
+    borderColor: '#2563EB',
+    shadowColor: '#2563EB',
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 1,
+  },
+
+  exerciseNameTextInput: {
+    flex: 1,
+    minHeight: '100%',
+    paddingHorizontal: 8,
+    paddingVertical: 0,
+    color: '#111827',
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    textAlign: 'right',
+    writingDirection: 'rtl',
+    includeFontPadding: false,
+    ...(Platform.OS === 'web'
+      ? ({
+          outlineWidth: 0,
+          outlineStyle: 'none',
+        } as any)
+      : null),
+  },
+
+  clearInsideButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F1F5F9',
+    marginLeft: 4,
+    ...(Platform.OS === 'web'
+      ? ({
+          outlineWidth: 0,
+          outlineStyle: 'none',
+          cursor: 'pointer',
+        } as any)
+      : null),
+  },
+
+  clearInsideButtonText: {
+    color: '#475569',
+    fontSize: 14,
+    fontWeight: '800',
+    lineHeight: 16,
+    textAlign: 'center',
+    ...(Platform.OS === 'web'
+      ? ({
+          userSelect: 'none',
+        } as any)
+      : null),
+  },
+
+  pressedButton: {
+    opacity: 0.8,
   },
 
   dateField: {
