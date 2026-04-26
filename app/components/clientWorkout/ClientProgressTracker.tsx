@@ -218,6 +218,27 @@ function getDateFromAny(value: any): Date | null {
   return null;
 }
 
+function calculateAverageWorkoutsPerWeek(dayGroups: DayGroup[]) {
+  if (dayGroups.length === 0) return 0;
+
+  const validTimes = dayGroups
+    .map((group) => Number(group.sortTime))
+    .filter((time) => Number.isFinite(time) && time > 0);
+
+  if (validTimes.length === 0) return dayGroups.length;
+
+  const newestWorkoutTime = Math.max(...validTimes);
+  const oldestWorkoutTime = Math.min(...validTimes);
+  const millisecondsInDay = 1000 * 60 * 60 * 24;
+  const daysRange = Math.max(
+    1,
+    Math.ceil((newestWorkoutTime - oldestWorkoutTime) / millisecondsInDay) + 1
+  );
+  const weeksRange = Math.max(1, Math.ceil(daysRange / 7));
+
+  return Math.round(dayGroups.length / weeksRange);
+}
+
 function formatDateIL(value: any): string {
   const date = getDateFromAny(value);
   if (!date) return "אין תאריך";
@@ -309,6 +330,63 @@ function getLatestTimeFromItems(values: any[]): number {
   }, 0);
 }
 
+function getNumberFromAny(value: any): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function getSavedTime(exercise: Partial<ExerciseItem | WorkoutItem>): number {
+  return (
+    getDateFromAny(exercise.createdAt)?.getTime() ||
+    getNumberFromAny((exercise as any).clientEntryOrder) ||
+    getDateFromAny(exercise.updatedAt)?.getTime() ||
+    getDateFromAny(exercise.date)?.getTime() ||
+    0
+  );
+}
+
+function getExerciseOrderValue(exercise: Partial<ExerciseItem | WorkoutItem>): number {
+  return (
+    getNumberFromAny((exercise as any).clientEntryOrder) ??
+    getNumberFromAny((exercise as any).exerciseOrder) ??
+    getNumberFromAny((exercise as any).order) ??
+    getNumberFromAny((exercise as any).setOrder) ??
+    0
+  );
+}
+
+function compareExercisesBySaveOrder(a: Partial<ExerciseItem>, b: Partial<ExerciseItem>) {
+  const aSavedTime = getSavedTime(a);
+  const bSavedTime = getSavedTime(b);
+
+  if (aSavedTime !== bSavedTime) return aSavedTime - bSavedTime;
+
+  const aOrder = getExerciseOrderValue(a);
+  const bOrder = getExerciseOrderValue(b);
+
+  if (aOrder !== bOrder) return aOrder - bOrder;
+
+  return String(a.id || "").localeCompare(String(b.id || ""));
+}
+
+function getGroupFirstSavedRow(rows: ExerciseItem[]): ExerciseItem | null {
+  if (rows.length === 0) return null;
+  return [...rows].sort(compareExercisesBySaveOrder)[0] || null;
+}
+
+function compareGroupedExercisesBySaveOrder(a: GroupedExercise, b: GroupedExercise) {
+  const aFirst = getGroupFirstSavedRow(a.rows);
+  const bFirst = getGroupFirstSavedRow(b.rows);
+
+  if (aFirst && bFirst) {
+    const result = compareExercisesBySaveOrder(aFirst, bFirst);
+    if (result !== 0) return result;
+  }
+
+  return a.name.localeCompare(b.name, "he");
+}
+
 function normalizeText(value: string): string {
   return String(value || "").trim().toLowerCase();
 }
@@ -326,6 +404,9 @@ function normalizeRepsPerSetToRows(params: {
     { reps?: string | number; weight?: string | number }
   >;
   numSets?: number | string;
+  order?: number | string;
+  exerciseOrder?: number | string;
+  clientEntryOrder?: number | string;
   sourceType: "embedded_exercise" | "legacy_workout";
 }): ExerciseItem[] {
   const {
@@ -338,6 +419,9 @@ function normalizeRepsPerSetToRows(params: {
     updatedAt,
     repsPerSet,
     numSets,
+    order,
+    exerciseOrder,
+    clientEntryOrder,
     sourceType,
   } = params;
 
@@ -362,6 +446,10 @@ function normalizeRepsPerSetToRows(params: {
         date,
         createdAt,
         updatedAt,
+        order,
+        exerciseOrder,
+        clientEntryOrder,
+        setOrder: Number(setKey) + 1,
         sourceType,
       };
     });
@@ -382,6 +470,10 @@ function normalizeRepsPerSetToRows(params: {
       date,
       createdAt,
       updatedAt,
+      order,
+      exerciseOrder,
+      clientEntryOrder,
+      setOrder: idx + 1,
       sourceType,
     }));
   }
@@ -403,6 +495,9 @@ function normalizeEmbeddedExercises(workout: WorkoutItem): ExerciseItem[] {
       updatedAt: exercise?.updatedAt || workout.updatedAt,
       repsPerSet: exercise?.repsPerSet,
       numSets: exercise?.numSets,
+      order: exercise?.order || workout.order,
+      exerciseOrder: exercise?.exerciseOrder || workout.exerciseOrder,
+      clientEntryOrder: exercise?.clientEntryOrder || workout.clientEntryOrder,
       sourceType: "embedded_exercise",
     });
 
@@ -448,6 +543,9 @@ function normalizeLegacyWorkoutToExercises(workout: WorkoutItem): ExerciseItem[]
     updatedAt: workout.updatedAt,
     repsPerSet: workout.repsPerSet,
     numSets: workout.numSets,
+    order: workout.order,
+    exerciseOrder: workout.exerciseOrder,
+    clientEntryOrder: workout.clientEntryOrder,
     sourceType: "legacy_workout",
   });
 
@@ -467,6 +565,9 @@ function normalizeLegacyWorkoutToExercises(workout: WorkoutItem): ExerciseItem[]
     date: workout.date,
     createdAt: workout.createdAt,
     updatedAt: workout.updatedAt,
+    order: workout.order,
+    exerciseOrder: workout.exerciseOrder,
+    clientEntryOrder: workout.clientEntryOrder,
     sourceType: "legacy_workout",
   };
 
@@ -537,21 +638,7 @@ function groupExercisesByWorkout(
   workouts.forEach((workout) => {
     grouped[workout.id] = exercises
       .filter((exercise) => exercise.workoutId === workout.id)
-      .sort((a, b) => {
-        const aTime =
-          getDateFromAny(a.createdAt)?.getTime() ||
-          getDateFromAny(a.updatedAt)?.getTime() ||
-          getDateFromAny(a.date)?.getTime() ||
-          0;
-
-        const bTime =
-          getDateFromAny(b.createdAt)?.getTime() ||
-          getDateFromAny(b.updatedAt)?.getTime() ||
-          getDateFromAny(b.date)?.getTime() ||
-          0;
-
-        return aTime - bTime;
-      });
+      .sort(compareExercisesBySaveOrder);
   });
 
   return grouped;
@@ -657,21 +744,7 @@ function buildDayGroups(workouts: WorkoutItem[], exercises: ExerciseItem[]): Day
       return {
         ...group,
         notes: Array.from(new Set(group.notes)),
-        exercises: dedupedExercises.sort((a, b) => {
-          const aTime =
-            getDateFromAny(a.createdAt)?.getTime() ||
-            getDateFromAny(a.updatedAt)?.getTime() ||
-            getDateFromAny(a.date)?.getTime() ||
-            0;
-
-          const bTime =
-            getDateFromAny(b.createdAt)?.getTime() ||
-            getDateFromAny(b.updatedAt)?.getTime() ||
-            getDateFromAny(b.date)?.getTime() ||
-            0;
-
-          return aTime - bTime;
-        }),
+        exercises: dedupedExercises.sort(compareExercisesBySaveOrder),
       };
     })
     .sort((a, b) => b.sortTime - a.sortTime);
@@ -744,7 +817,7 @@ function groupExercisesInsideDay(
     };
   });
 
-  return grouped.sort((a, b) => a.name.localeCompare(b.name, "he"));
+  return grouped.sort(compareGroupedExercisesBySaveOrder);
 }
 
 export default function ClientProgressTracker({ clients: initialClients = [] }: Props) {
@@ -950,7 +1023,7 @@ export default function ClientProgressTracker({ clients: initialClients = [] }: 
 
     return {
       totalWorkouts: dayGroups.length,
-      totalExercises: exercises.length,
+      averageWorkoutsPerWeek: calculateAverageWorkoutsPerWeek(dayGroups),
       uniqueExercises: uniqueExerciseNames.size,
       workoutsThisMonth,
       latestWorkoutLabel: latestWorkout ? latestWorkout.displayDate : "אין נתונים",
@@ -1199,8 +1272,8 @@ export default function ClientProgressTracker({ clients: initialClients = [] }: 
                   </View>
 
                   <View style={[styles.summaryCard, { padding: dynamic.cardPadding }]}>
-                    <Text style={styles.summaryValue}>{summary.totalExercises}</Text>
-                    <Text style={styles.summaryLabel}>סה״כ תרגילים</Text>
+                    <Text style={styles.summaryValue}>{summary.averageWorkoutsPerWeek}</Text>
+                    <Text style={styles.summaryLabel}>ממוצע אימונים בשבוע</Text>
                   </View>
 
                   <View style={[styles.summaryCard, { padding: dynamic.cardPadding }]}>

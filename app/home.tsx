@@ -1,5 +1,4 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
-import * as Clipboard from 'expo-clipboard';
 import { useFonts } from 'expo-font';
 import {
   addDoc,
@@ -11,7 +10,7 @@ import {
   query,
   where,
 } from 'firebase/firestore';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -54,6 +53,7 @@ const getGreeting = () => {
   if (hour >= 12 && hour < 18) return 'צהריים טובים';
   return 'ערב טוב';
 };
+
 
 const showToast = (message: string) => {
   if (Platform.OS === 'android') {
@@ -115,6 +115,10 @@ type WorkoutDocType = {
   dateKey: string;
   createdAt: string;
   updatedAt: string;
+  order: number;
+  exerciseOrder: number;
+  clientEntryOrder: number;
+  enteredByClient: boolean;
   numSets: number;
   repsPerSet: RepsPerSetType;
 };
@@ -131,6 +135,11 @@ type ExerciseDocType = {
   date?: string;
   createdAt?: string;
   updatedAt?: string;
+  order?: number;
+  exerciseOrder?: number;
+  setOrder?: number;
+  clientEntryOrder?: number;
+  enteredByClient?: boolean;
 };
 
 type LastExerciseRow = {
@@ -159,6 +168,7 @@ type TrainingProgramDoc = {
   clientEmail?: string;
   sections?: TrainingProgramSection[];
   notes?: string;
+  exerciseHistory?: string[];
   updatedAt?: string;
 };
 
@@ -206,37 +216,6 @@ function CloseIcon({ size = 24, color = '#222222' }) {
     <Svg width={size} height={size} viewBox="0 0 24 24">
       <Line x1="6" y1="6" x2="18" y2="18" stroke={color} strokeWidth={2.4} strokeLinecap="round" />
       <Line x1="18" y1="6" x2="6" y2="18" stroke={color} strokeWidth={2.4} strokeLinecap="round" />
-    </Svg>
-  );
-}
-
-function CopyIcon({ size = 16, color = '#334155' }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Rect x="9" y="9" width="11" height="11" rx="2" stroke={color} strokeWidth={2} fill="none" />
-      <Path
-        d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3"
-        stroke={color}
-        strokeWidth={2}
-        fill="none"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </Svg>
-  );
-}
-
-function CheckIcon({ size = 16, color = '#15803D' }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Path
-        d="M20 6L9 17l-5-5"
-        stroke={color}
-        strokeWidth={2.4}
-        fill="none"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
     </Svg>
   );
 }
@@ -292,10 +271,6 @@ export default function Home() {
   const [trainingProgram, setTrainingProgram] = useState<TrainingProgramDoc | null>(null);
   const [isLoadingTrainingProgram, setIsLoadingTrainingProgram] = useState(true);
   const [showTrainingProgramModal, setShowTrainingProgramModal] = useState(false);
-  const [copiedExerciseName, setCopiedExerciseName] = useState('');
-  const [copiedExerciseKey, setCopiedExerciseKey] = useState('');
-  const copyResetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   const [exercise, setExercise] = useState<ExerciseType>({
     name: '',
     numSets: '',
@@ -304,14 +279,6 @@ export default function Home() {
     showSuggestions: false,
     error: '',
   });
-
-  useEffect(() => {
-    return () => {
-      if (copyResetTimeoutRef.current) {
-        clearTimeout(copyResetTimeoutRef.current);
-      }
-    };
-  }, []);
 
   const getExerciseNameFromDoc = (item: any) => {
     if (!item) return '';
@@ -347,6 +314,36 @@ export default function Home() {
 
     return hasSections || hasNotes;
   }, [trainingProgram]);
+
+  const trainingProgramExerciseNames = useMemo(() => {
+    const sections = Array.isArray(trainingProgram?.sections) ? trainingProgram.sections : [];
+    const history = Array.isArray(trainingProgram?.exerciseHistory)
+      ? trainingProgram.exerciseHistory
+      : [];
+
+    const names: string[] = [];
+    const seen = new Set<string>();
+
+    const addName = (value?: string | null) => {
+      const rawName = String(value || "").trim();
+      const normalized = normalizeText(rawName);
+
+      if (!rawName || !normalized || seen.has(normalized)) return;
+
+      seen.add(normalized);
+      names.push(rawName);
+    };
+
+    history.forEach(addName);
+
+    sections.forEach((section) => {
+      const exercises = Array.isArray(section?.exercises) ? section.exercises : [];
+      exercises.forEach((item) => addName(item?.name));
+    });
+
+    return names.sort((a, b) => a.localeCompare(b, "he"));
+  }, [trainingProgram]);
+
 
   const loadDeletedExercises = useCallback(async (uid: string) => {
     try {
@@ -412,6 +409,7 @@ export default function Home() {
       }
 
       const mergedNames = [
+        ...trainingProgramExerciseNames,
         ...workoutsSnapshot.docs.map((item) => getExerciseNameFromDoc(item.data())),
         ...exercisesSnapshot.docs.map((item) => getExerciseNameFromDoc(item.data())),
       ].filter(Boolean);
@@ -430,7 +428,7 @@ export default function Home() {
     } catch (error) {
       console.error('שגיאה בשליפת נתוני משתמש:', error);
     }
-  }, [loadDeletedExercises]);
+  }, [loadDeletedExercises, trainingProgramExerciseNames]);
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -462,27 +460,32 @@ export default function Home() {
     return result;
   };
 
-  const buildExerciseRows = () => {
+  const buildExerciseRows = (clientEntryOrder: number, nowIso: string) => {
     const rows: ExerciseDocType[] = [];
     const trimmedName = exercise.name.trim();
     const setsCount = parseInt(exercise.numSets, 10);
-    const nowIso = new Date().toISOString();
     const workoutDateIso = date.toISOString();
 
     for (let i = 0; i < setsCount; i++) {
       const currentSet = exercise.repsPerSet[i];
+      const setOrder = i + 1;
 
       rows.push({
         uid: '',
         exerciseName: trimmedName,
         name: trimmedName,
         title: trimmedName,
-        sets: i + 1,
+        sets: setOrder,
         reps: Number(currentSet?.reps || 0),
         weight: Number(currentSet?.weight || 0),
         date: workoutDateIso,
         createdAt: nowIso,
         updatedAt: nowIso,
+        order: setOrder,
+        exerciseOrder: clientEntryOrder,
+        setOrder,
+        clientEntryOrder,
+        enteredByClient: true,
       });
     }
 
@@ -597,56 +600,6 @@ export default function Home() {
       return [];
     } finally {
       setIsLoadingLastExercise(false);
-    }
-  };
-
-  const copyExerciseName = async (name: string, exerciseKey: string) => {
-    const textToCopy = String(name || '')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    if (!textToCopy) {
-      showToast('אין שם תרגיל להעתקה');
-      return;
-    }
-
-    try {
-      if (Platform.OS === 'web') {
-        const activeElement = document.activeElement as HTMLElement | null;
-
-        if (activeElement && typeof activeElement.blur === 'function') {
-          activeElement.blur();
-        }
-
-        const selection = window.getSelection?.();
-        if (selection && selection.rangeCount > 0) {
-          selection.removeAllRanges();
-        }
-
-        if (navigator?.clipboard?.writeText) {
-          await navigator.clipboard.writeText(textToCopy);
-        } else {
-          await Clipboard.setStringAsync(textToCopy);
-        }
-      } else {
-        await Clipboard.setStringAsync(textToCopy);
-      }
-
-      if (copyResetTimeoutRef.current) {
-        clearTimeout(copyResetTimeoutRef.current);
-      }
-
-      setCopiedExerciseName(textToCopy);
-      setCopiedExerciseKey(exerciseKey);
-      showToast('שם התרגיל הועתק');
-
-      copyResetTimeoutRef.current = setTimeout(() => {
-        setCopiedExerciseKey('');
-        setCopiedExerciseName('');
-      }, 1600);
-    } catch (error) {
-      console.error('שגיאה בהעתקה:', error);
-      showToast('לא ניתן להעתיק כרגע');
     }
   };
 
@@ -826,13 +779,15 @@ export default function Home() {
       const trimmedExerciseName = exercise.name.trim();
       const normalizedName = normalizeText(trimmedExerciseName);
       const dateKey = formatDateForInput(date);
-      const nowIso = new Date().toISOString();
+      const now = new Date();
+      const nowIso = now.toISOString();
+      const clientEntryOrder = now.getTime();
       const workoutDateIso = date.toISOString();
 
       await removeOldDeletedCopiesIfExist(user.uid, trimmedExerciseName);
 
       const repsPerSetForWorkout = buildRepsPerSetForWorkout();
-      const exerciseRows = buildExerciseRows();
+      const exerciseRows = buildExerciseRows(clientEntryOrder, nowIso);
 
       const workoutPayload: WorkoutDocType = {
         uid: user.uid,
@@ -843,6 +798,10 @@ export default function Home() {
         dateKey,
         createdAt: nowIso,
         updatedAt: nowIso,
+        order: clientEntryOrder,
+        exerciseOrder: clientEntryOrder,
+        clientEntryOrder,
+        enteredByClient: true,
         numSets: parseInt(exercise.numSets, 10),
         repsPerSet: repsPerSetForWorkout,
       };
@@ -863,6 +822,11 @@ export default function Home() {
             date: row.date,
             createdAt: row.createdAt,
             updatedAt: row.updatedAt,
+            order: row.order,
+            exerciseOrder: row.exerciseOrder,
+            setOrder: row.setOrder,
+            clientEntryOrder: row.clientEntryOrder,
+            enteredByClient: true,
           })
         )
       );
@@ -1392,14 +1356,7 @@ export default function Home() {
               <View style={styles.programHeaderRow}>
                 <Pressable
                   style={styles.modalClose}
-                  onPress={() => {
-                    setShowTrainingProgramModal(false);
-                    setCopiedExerciseName('');
-                    setCopiedExerciseKey('');
-                    if (copyResetTimeoutRef.current) {
-                      clearTimeout(copyResetTimeoutRef.current);
-                    }
-                  }}
+                  onPress={() => setShowTrainingProgramModal(false)}
                 >
                   <CloseIcon size={24} color="#222222" />
                 </Pressable>
@@ -1438,7 +1395,6 @@ export default function Home() {
                           if (!exerciseName && !sets && !reps && !notes) return null;
 
                           const exerciseKey = item?.id || `exercise-${sectionIndex}-${exerciseIndex}`;
-                          const isCopied = copiedExerciseKey === exerciseKey;
 
                           return (
                             <View
@@ -1446,46 +1402,6 @@ export default function Home() {
                               style={styles.programExerciseCard}
                             >
                               <View style={styles.programExerciseHeader}>
-                                <Pressable
-                                  style={[
-                                    styles.copyButton,
-                                    isCopied && styles.copyButtonActive,
-                                  ]}
-                                  onPress={(event) => {
-                                    event.stopPropagation();
-                                    copyExerciseName(exerciseName, exerciseKey);
-                                  }}
-                                  onPressIn={() => {
-                                    if (Platform.OS === 'web') {
-                                      const activeElement = document.activeElement as HTMLElement | null;
-
-                                      if (activeElement && typeof activeElement.blur === 'function') {
-                                        activeElement.blur();
-                                      }
-
-                                      const selection = window.getSelection?.();
-                                      if (selection && selection.rangeCount > 0) {
-                                        selection.removeAllRanges();
-                                      }
-                                    }
-                                  }}
-                                >
-                                  {isCopied ? (
-                                    <CheckIcon size={16} color="#15803D" />
-                                  ) : (
-                                    <CopyIcon size={16} color="#334155" />
-                                  )}
-
-                                  <Text
-                                    style={[
-                                      styles.copyButtonText,
-                                      isCopied && styles.copyButtonTextActive,
-                                    ]}
-                                  >
-                                    {isCopied ? 'הועתק' : 'העתקה'}
-                                  </Text>
-                                </Pressable>
-
                                 <Text style={styles.programExerciseName}>
                                   {exerciseName || 'ללא שם תרגיל'}
                                 </Text>
@@ -1495,13 +1411,13 @@ export default function Home() {
                                 <View style={styles.programMetaRow}>
                                   {!!sets && (
                                     <View style={styles.programMetaChip}>
-                                      <Text style={styles.programMetaChipText}>סטים: {sets}</Text>
+                                      <Text selectable={false} style={styles.programMetaChipText}>סטים: {sets}</Text>
                                     </View>
                                   )}
 
                                   {!!reps && (
                                     <View style={styles.programMetaChip}>
-                                      <Text style={styles.programMetaChipText}>חזרות: {reps}</Text>
+                                      <Text selectable={false} style={styles.programMetaChipText}>חזרות: {reps}</Text>
                                     </View>
                                   )}
                                 </View>
@@ -1525,10 +1441,6 @@ export default function Home() {
                     <Text style={styles.generalNotesTitle}>הערות כלליות</Text>
                     <Text style={styles.generalNotesText}>{trainingProgram?.notes}</Text>
                   </View>
-                )}
-
-                {!!copiedExerciseName && (
-                  <Text style={styles.copiedHint}>הועתק: {copiedExerciseName}</Text>
                 )}
               </ScrollView>
             </View>
@@ -2079,36 +1991,9 @@ const styles = StyleSheet.create({
     writingDirection: 'rtl',
   },
 
-  copyButton: {
-    flexDirection: 'row-reverse',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    minWidth: 90,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 999,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-  },
 
-  copyButtonActive: {
-    backgroundColor: '#ECFDF5',
-    borderColor: '#86EFAC',
-  },
 
-  copyButtonText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#334155',
-    textAlign: 'center',
-    writingDirection: 'rtl',
-  },
 
-  copyButtonTextActive: {
-    color: '#15803D',
-  },
 
   programMetaRow: {
     width: '100%',
@@ -2177,12 +2062,4 @@ const styles = StyleSheet.create({
     writingDirection: 'rtl',
   },
 
-  copiedHint: {
-    marginTop: 10,
-    color: '#166534',
-    fontSize: 13,
-    fontWeight: '700',
-    textAlign: 'center',
-    writingDirection: 'rtl',
-  },
 });

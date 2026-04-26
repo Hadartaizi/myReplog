@@ -788,7 +788,7 @@ export default function GraphScreen() {
       ? 'מספר סטים'
       : dataType === 'משקל'
       ? 'משקל (ק"ג)'
-      : 'עוצמת נפח (1–10)';
+      : 'עוצמת נפח (1–5)';
 
   const regularLabels = chartData.labels;
   const regularChartData = {

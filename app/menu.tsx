@@ -146,6 +146,7 @@ type ManualExerciseRow = {
   sets: string;
   reps: string;
   weight: string;
+  order: number;
 };
 
 type ManualWorkoutEntryManagerProps = {
@@ -395,14 +396,37 @@ function normalizeDateInputToIso(value?: string) {
   };
 }
 
-function createEmptyManualExerciseRow(): ManualExerciseRow {
+function createEmptyManualExerciseSetRow(order = 1): ManualExerciseSetRow {
+  return {
+    id: `${Date.now()}-set-${Math.random().toString(36).slice(2, 9)}`,
+    reps: "",
+    weight: "",
+    order,
+  };
+}
+
+function createEmptyManualExerciseRow(order = 1): ManualExerciseRow {
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
     exerciseName: "",
-    sets: "",
-    reps: "",
-    weight: "",
+    sets: [createEmptyManualExerciseSetRow(1)],
+    order,
   };
+}
+
+function normalizeManualSetOrder(sets: ManualExerciseSetRow[]) {
+  return sets.map((set, index) => ({
+    ...set,
+    order: index + 1,
+  }));
+}
+
+function normalizeManualExerciseOrder(rows: ManualExerciseRow[]) {
+  return rows.map((row, index) => ({
+    ...row,
+    order: index + 1,
+    sets: normalizeManualSetOrder(row.sets || [createEmptyManualExerciseSetRow(1)]),
+  }));
 }
 
 async function resolveCurrentUserDoc(): Promise<ResolvedUserDoc | null> {
@@ -635,15 +659,12 @@ function ManualWorkoutEntryManager({
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [tempWorkoutDate, setTempWorkoutDate] = useState<Date>(new Date());
   const [exerciseRows, setExerciseRows] = useState<ManualExerciseRow[]>([
-    createEmptyManualExerciseRow(),
+    createEmptyManualExerciseRow(1),
   ]);
   const [savingWorkout, setSavingWorkout] = useState(false);
 
   const sortedClients = useMemo(
-    () =>
-      [...clients].sort((a, b) =>
-        String(a.name || "").localeCompare(String(b.name || ""), "he")
-      ),
+    () => [...clients].sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "he")),
     [clients]
   );
 
@@ -660,10 +681,7 @@ function ManualWorkoutEntryManager({
 
   const workoutDateDisplay = useMemo(() => {
     const [year, month, day] = workoutDate.split("-");
-    if (year && month && day) {
-      return `${day}.${month}.${year}`;
-    }
-
+    if (year && month && day) return `${day}.${month}.${year}`;
     const normalized = normalizeDateInputToIso(workoutDate).dateKey;
     const [fallbackYear, fallbackMonth, fallbackDay] = normalized.split("-");
     return `${fallbackDay}.${fallbackMonth}.${fallbackYear}`;
@@ -683,54 +701,68 @@ function ManualWorkoutEntryManager({
     setShowDatePicker(true);
   }, [workoutDate]);
 
-  const handleDateChange = useCallback(
-    (event: DateTimePickerEvent, selectedDate?: Date) => {
-      if (Platform.OS === "android") {
-        setShowDatePicker(false);
-
-        if (event.type === "dismissed" || !selectedDate) {
-          return;
-        }
-
-        setWorkoutDate(formatPickerDateToKey(selectedDate));
-        return;
-      }
-
-      if (selectedDate) {
-        setTempWorkoutDate(selectedDate);
-      }
-    },
-    [formatPickerDateToKey]
-  );
+  const handleDateChange = useCallback((event: DateTimePickerEvent, selectedDate?: Date) => {
+    if (Platform.OS === "android") {
+      setShowDatePicker(false);
+      if (event.type === "dismissed" || !selectedDate) return;
+      setWorkoutDate(formatPickerDateToKey(selectedDate));
+      return;
+    }
+    if (selectedDate) setTempWorkoutDate(selectedDate);
+  }, [formatPickerDateToKey]);
 
   const confirmIosDateSelection = useCallback(() => {
     setWorkoutDate(formatPickerDateToKey(tempWorkoutDate));
     setShowDatePicker(false);
   }, [formatPickerDateToKey, tempWorkoutDate]);
 
-  const cancelIosDateSelection = useCallback(() => {
-    setShowDatePicker(false);
+  const cancelIosDateSelection = useCallback(() => setShowDatePicker(false), []);
+
+  const updateExerciseName = useCallback((rowId: string, value: string) => {
+    setExerciseRows((prev) => prev.map((row) => row.id === rowId ? { ...row, exerciseName: value } : row));
   }, []);
 
-  const updateExerciseRow = useCallback(
-    (rowId: string, field: keyof Omit<ManualExerciseRow, "id">, value: string) => {
-      setExerciseRows((prev) =>
-        prev.map((row) => (row.id === rowId ? { ...row, [field]: value } : row))
-      );
-    },
-    []
-  );
+  const updateExerciseSet = useCallback((rowId: string, setId: string, field: "reps" | "weight", value: string) => {
+    const cleanedValue = field === "reps" ? value.replace(/[^0-9]/g, "") : value.replace(/[^0-9.]/g, "");
+    setExerciseRows((prev) => prev.map((row) => {
+      if (row.id !== rowId) return row;
+      return {
+        ...row,
+        sets: row.sets.map((set) => set.id === setId ? { ...set, [field]: cleanedValue } : set),
+      };
+    }));
+  }, []);
+
+  const addSetToExercise = useCallback((rowId: string) => {
+    setExerciseRows((prev) => prev.map((row) => {
+      if (row.id !== rowId) return row;
+      if ((row.sets || []).length >= 10) {
+        Alert.alert("שגיאה", "לא ניתן להוסיף יותר מ-10 סטים לתרגיל");
+        return row;
+      }
+      return {
+        ...row,
+        sets: [...(row.sets || []), createEmptyManualExerciseSetRow((row.sets || []).length + 1)],
+      };
+    }));
+  }, []);
+
+  const removeSetFromExercise = useCallback((rowId: string, setId: string) => {
+    setExerciseRows((prev) => prev.map((row) => {
+      if (row.id !== rowId) return row;
+      if ((row.sets || []).length <= 1) return { ...row, sets: [createEmptyManualExerciseSetRow(1)] };
+      return { ...row, sets: normalizeManualSetOrder(row.sets.filter((set) => set.id !== setId)) };
+    }));
+  }, []);
 
   const addExerciseRow = useCallback(() => {
-    setExerciseRows((prev) => [...prev, createEmptyManualExerciseRow()]);
+    setExerciseRows((prev) => [...prev, createEmptyManualExerciseRow(prev.length + 1)]);
   }, []);
 
   const removeExerciseRow = useCallback((rowId: string) => {
     setExerciseRows((prev) => {
-      if (prev.length <= 1) {
-        return [createEmptyManualExerciseRow()];
-      }
-      return prev.filter((row) => row.id !== rowId);
+      if (prev.length <= 1) return [createEmptyManualExerciseRow(1)];
+      return normalizeManualExerciseOrder(prev.filter((row) => row.id !== rowId));
     });
   }, []);
 
@@ -739,125 +771,80 @@ function ManualWorkoutEntryManager({
     setWorkoutDate(getTodayDateInputValue());
     setShowDatePicker(false);
     setTempWorkoutDate(new Date());
-    setExerciseRows([createEmptyManualExerciseRow()]);
+    setExerciseRows([createEmptyManualExerciseRow(1)]);
   }, []);
 
   const handleSaveManualWorkout = useCallback(async () => {
-    if (!selectedClient) {
-      Alert.alert("שגיאה", "יש לבחור לקוח לפני שמירה");
-      return;
-    }
-
+    if (!selectedClient) return Alert.alert("שגיאה", "יש לבחור לקוח לפני שמירה");
     const targetUid = getClientResolvedUid(selectedClient);
-    if (!targetUid) {
-      Alert.alert("שגיאה", "לא נמצא מזהה תקין ללקוח");
-      return;
-    }
+    if (!targetUid) return Alert.alert("שגיאה", "לא נמצא מזהה תקין ללקוח");
 
-    const filteredRows = exerciseRows
+    const filteredRows = normalizeManualExerciseOrder(exerciseRows)
       .map((row) => ({
         ...row,
         exerciseName: row.exerciseName.trim(),
-        sets: row.sets.trim(),
-        reps: row.reps.trim(),
-        weight: row.weight.trim(),
+        sets: normalizeManualSetOrder(row.sets || [])
+          .map((set) => ({ ...set, reps: String(set.reps || "").trim(), weight: String(set.weight || "").trim() }))
+          .filter((set) => set.reps || set.weight),
       }))
-      .filter(
-        (row) =>
-          row.exerciseName ||
-          row.sets ||
-          row.reps ||
-          row.weight
-      );
+      .filter((row) => row.exerciseName || row.sets.length > 0);
 
-    if (filteredRows.length === 0) {
-      Alert.alert("שגיאה", "יש להזין לפחות תרגיל אחד");
-      return;
-    }
-
-    const rowsWithName = filteredRows.filter((row) => row.exerciseName);
-    if (rowsWithName.length !== filteredRows.length) {
-      Alert.alert("שגיאה", "יש להזין שם תרגיל בכל שורה שממלאים");
-      return;
-    }
+    if (filteredRows.length === 0) return Alert.alert("שגיאה", "יש להזין לפחות תרגיל אחד");
+    if (filteredRows.some((row) => !row.exerciseName)) return Alert.alert("שגיאה", "יש להזין שם תרגיל בכל תרגיל שממלאים");
+    if (filteredRows.some((row) => row.sets.length === 0)) return Alert.alert("שגיאה", "יש להזין לפחות סט אחד בכל תרגיל");
 
     try {
       setSavingWorkout(true);
-
       const nowIso = new Date().toISOString();
       const normalizedDate = normalizeDateInputToIso(workoutDate);
-      const workoutTitle = `אימון ${selectedClient.name || "לקוח"}`;
+      const enteredByUid = String(auth.currentUser?.uid || currentUserData?.authUid || currentUserData?.uid || "").trim();
+      const enteredByName = String(currentUserData?.name || "").trim();
 
-      const embeddedExercises = filteredRows.map((row, index) => ({
-        id: `${Date.now()}-${index}`,
-        exerciseName: row.exerciseName,
-        name: row.exerciseName,
-        sets: row.sets,
-        reps: row.reps,
-        weight: row.weight,
-        date: normalizedDate.iso,
-        createdAt: nowIso,
-        updatedAt: nowIso,
-        enteredManuallyByCoach: true,
-      }));
+      await Promise.all(filteredRows.map(async (row) => {
+        const repsPerSet = row.sets.reduce<Record<string, { reps: string; weight: string }>>((acc, set, index) => {
+          acc[String(index)] = { reps: set.reps, weight: set.weight };
+          return acc;
+        }, {});
+        const repsText = row.sets.map((set) => set.reps).filter(Boolean).join(", ");
+        const weightText = row.sets.map((set) => set.weight).filter(Boolean).join(", ");
 
-      const workoutDocPayload = {
-        uid: targetUid,
-        title: workoutTitle,
-        name: workoutTitle,
-        date: normalizedDate.iso,
-        dateKey: normalizedDate.dateKey,
-        note: "",
-        notes: "",
-        exercises: embeddedExercises,
-        createdAt: nowIso,
-        updatedAt: nowIso,
-        enteredByCoach: true,
-        enteredByManager: true,
-        enteredByUid: String(
-          auth.currentUser?.uid ||
-            currentUserData?.authUid ||
-            currentUserData?.uid ||
-            ""
-        ).trim(),
-        enteredByName: String(currentUserData?.name || "").trim(),
-        clientId: selectedClient.id,
-        clientUid: targetUid,
-        clientName: selectedClient.name || "",
-      };
-
-      const workoutRef = await addDoc(collection(db, "workouts"), workoutDocPayload);
-
-      const exerciseWrites = filteredRows.map((row) =>
-        addDoc(collection(db, "exercises"), {
+        const workoutPayload = {
           uid: targetUid,
-          workoutId: workoutRef.id,
-          exerciseName: row.exerciseName,
+          title: row.exerciseName,
           name: row.exerciseName,
-          sets: row.sets,
-          reps: row.reps,
-          weight: row.weight,
+          exerciseName: row.exerciseName,
           date: normalizedDate.iso,
+          dateKey: normalizedDate.dateKey,
+          note: "",
+          notes: "",
+          numSets: String(row.sets.length),
+          repsPerSet,
+          sets: String(row.sets.length),
+          reps: repsText,
+          weight: weightText,
+          exerciseOrder: row.order,
+          order: row.order,
+          exerciseCount: 1,
           createdAt: nowIso,
           updatedAt: nowIso,
           enteredByCoach: true,
           enteredByManager: true,
-          enteredByUid: String(
-            auth.currentUser?.uid ||
-              currentUserData?.authUid ||
-              currentUserData?.uid ||
-              ""
-          ).trim(),
-          enteredByName: String(currentUserData?.name || "").trim(),
+          enteredManuallyByCoach: true,
+          enteredByUid,
+          enteredByName,
           clientId: selectedClient.id,
           clientUid: targetUid,
           clientName: selectedClient.name || "",
-        })
-      );
+        };
 
-      await Promise.all(exerciseWrites);
+        const workoutRef = await addDoc(collection(db, "workouts"), workoutPayload);
+        await addDoc(collection(db, "exercises"), {
+          ...workoutPayload,
+          workoutId: workoutRef.id,
+        });
+      }));
 
-      Alert.alert("נשמר בהצלחה", "האימון הידני נשמר ללקוח ויופיע כחלק מהאימונים שלו");
+      Alert.alert("נשמר בהצלחה", "האימון הידני נשמר ללקוח לפי תרגילים וסטים נפרדים");
       resetForm();
       await onAfterSave?.();
     } catch (error) {
@@ -872,46 +859,20 @@ function ManualWorkoutEntryManager({
     <View style={styles.manualWorkoutCard}>
       <View style={styles.manualWorkoutHeader}>
         <Text style={styles.manualWorkoutTitle}>הזנת אימון ידני ללקוח</Text>
-        <Text style={styles.manualWorkoutSubtitle}>
-          כאן המאמן יכול להזין אימון עבור לקוח, והוא יישמר כמו אימון רגיל של הלקוח
-        </Text>
+        <Text style={styles.manualWorkoutSubtitle}>כאן המאמן יכול להזין תרגילים עם סטים נפרדים, וכל סט עם חזרות ומשקל משלו</Text>
       </View>
 
       {sortedClients.length === 0 ? (
-        <View style={styles.emptyClientsBox}>
-          <Text style={styles.emptyClientsText}>אין לקוחות להצגה</Text>
-        </View>
+        <View style={styles.emptyClientsBox}><Text style={styles.emptyClientsText}>אין לקוחות להצגה</Text></View>
       ) : (
         <>
           <Text style={styles.manualWorkoutSectionLabel}>בחירת לקוח</Text>
-
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.manualWorkoutClientsScroll}
-          >
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.manualWorkoutClientsScroll}>
             {sortedClients.map((client) => {
               const isSelected = client.id === selectedClientId;
-
               return (
-                <Pressable
-                  key={`manual-client-${client.id}`}
-                  onPress={() => setSelectedClientId(client.id)}
-                  style={({ pressed }) => [
-                    styles.manualWorkoutClientPill,
-                    isSelected && styles.manualWorkoutClientPillActive,
-                    pressed && styles.pressed,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.manualWorkoutClientPillText,
-                      isSelected && styles.manualWorkoutClientPillTextActive,
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {client.name || "ללא שם"}
-                  </Text>
+                <Pressable key={`manual-client-${client.id}`} onPress={() => setSelectedClientId(client.id)} style={({ pressed }) => [styles.manualWorkoutClientPill, isSelected && styles.manualWorkoutClientPillActive, pressed && styles.pressed]}>
+                  <Text style={[styles.manualWorkoutClientPillText, isSelected && styles.manualWorkoutClientPillTextActive]} numberOfLines={1}>{client.name || "ללא שם"}</Text>
                 </Pressable>
               );
             })}
@@ -920,212 +881,68 @@ function ManualWorkoutEntryManager({
           <View style={styles.manualWorkoutFormBox}>
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>תאריך האימון</Text>
-
-              <Pressable
-                onPress={openDatePicker}
-                style={({ pressed }) => [
-                  styles.datePickerButton,
-                  pressed && styles.pressedLight,
-                ]}
-              >
-                <Text style={styles.datePickerButtonText}>{workoutDateDisplay}</Text>
-                {/* <Text style={styles.datePickerButtonHint}>לחצי לפתיחת יומן</Text> */}
-              </Pressable>
-
-              {showDatePicker && Platform.OS === "android" && (
-                <DateTimePicker
-                  value={parsedWorkoutDate}
-                  mode="date"
-                  display="calendar"
-                  onChange={handleDateChange}
-                />
-              )}
-
-              <Modal
-                visible={showDatePicker && Platform.OS === "ios"}
-                transparent
-                animationType="fade"
-                onRequestClose={cancelIosDateSelection}
-              >
-                <View style={styles.dateModalOverlay}>
-                  <View style={styles.dateModalCard}>
-                    <Text style={styles.dateModalTitle}>בחירת תאריך אימון</Text>
-
-                    <DateTimePicker
-                      value={tempWorkoutDate}
-                      mode="date"
-                      display="spinner"
-                      onChange={handleDateChange}
-                      style={styles.iosDatePicker}
-                    />
-
-                    <View style={styles.dateModalButtonsRow}>
-                      <Pressable
-                        onPress={cancelIosDateSelection}
-                        style={({ pressed }) => [
-                          styles.dateModalSecondaryButton,
-                          pressed && styles.pressedLight,
-                        ]}
-                      >
-                        <Text style={styles.dateModalSecondaryButtonText}>ביטול</Text>
-                      </Pressable>
-
-                      <Pressable
-                        onPress={confirmIosDateSelection}
-                        style={({ pressed }) => [
-                          styles.dateModalPrimaryButton,
-                          pressed && styles.pressed,
-                        ]}
-                      >
-                        <Text style={styles.dateModalPrimaryButtonText}>אישור</Text>
-                      </Pressable>
-                    </View>
+              <Pressable onPress={openDatePicker} style={({ pressed }) => [styles.datePickerButton, pressed && styles.pressedLight]}><Text style={styles.datePickerButtonText}>{workoutDateDisplay}</Text></Pressable>
+              {showDatePicker && Platform.OS === "android" && <DateTimePicker value={parsedWorkoutDate} mode="date" display="calendar" onChange={handleDateChange} />}
+              <Modal visible={showDatePicker && Platform.OS === "ios"} transparent animationType="fade" onRequestClose={cancelIosDateSelection}>
+                <View style={styles.dateModalOverlay}><View style={styles.dateModalCard}>
+                  <Text style={styles.dateModalTitle}>בחירת תאריך אימון</Text>
+                  <DateTimePicker value={tempWorkoutDate} mode="date" display="spinner" onChange={handleDateChange} style={styles.iosDatePicker} />
+                  <View style={styles.dateModalButtonsRow}>
+                    <Pressable onPress={cancelIosDateSelection} style={({ pressed }) => [styles.dateModalSecondaryButton, pressed && styles.pressedLight]}><Text style={styles.dateModalSecondaryButtonText}>ביטול</Text></Pressable>
+                    <Pressable onPress={confirmIosDateSelection} style={({ pressed }) => [styles.dateModalPrimaryButton, pressed && styles.pressed]}><Text style={styles.dateModalPrimaryButtonText}>אישור</Text></Pressable>
                   </View>
-                </View>
+                </View></View>
               </Modal>
             </View>
 
-            <View style={styles.manualWorkoutExercisesHeader}>
-              <Text style={styles.manualWorkoutSectionLabel}>תרגילים</Text>
-            </View>
-
+            <View style={styles.manualWorkoutExercisesHeader}><Text style={styles.manualWorkoutSectionLabel}>תרגילים</Text></View>
             <View style={styles.manualExerciseList}>
               {exerciseRows.map((row, index) => (
                 <View key={row.id} style={styles.manualExerciseCard}>
                   <View style={styles.manualExerciseCardTopRow}>
-                    <Text style={styles.manualExerciseCardTitle}>
-                      תרגיל {index + 1}
-                    </Text>
-
-                    <Pressable
-                      onPress={() => removeExerciseRow(row.id)}
-                      style={({ pressed }) => [
-                        styles.removeExerciseRowButton,
-                        pressed && styles.deletePressed,
-                      ]}
-                    >
-                      <Text style={styles.removeExerciseRowButtonText}>הסרה</Text>
-                    </Pressable>
+                    <Text style={styles.manualExerciseCardTitle}>תרגיל {row.order || index + 1}</Text>
+                    <Pressable onPress={() => removeExerciseRow(row.id)} style={({ pressed }) => [styles.removeExerciseRowButton, pressed && styles.deletePressed]}><Text style={styles.removeExerciseRowButtonText}>הסרה</Text></Pressable>
                   </View>
-
                   <View style={styles.inputGroup}>
                     <Text style={styles.inputLabel}>שם התרגיל</Text>
-                    <TextInput
-                      value={row.exerciseName}
-                      onChangeText={(value) =>
-                        updateExerciseRow(row.id, "exerciseName", value)
-                      }
-                      placeholder="לדוגמה: סקוואט"
-                      placeholderTextColor="#94A3B8"
-                      style={styles.input}
-                      textAlign="right"
-                    />
+                    <TextInput value={row.exerciseName} onChangeText={(value) => updateExerciseName(row.id, value)} placeholder="לדוגמה: סקוואט" placeholderTextColor="#94A3B8" style={styles.input} textAlign="right" />
                   </View>
-
-                  <View style={styles.manualExerciseStatsRow}>
-                    <View style={styles.manualExerciseStatCol}>
-                      <Text style={styles.inputLabel}>משקל</Text>
-                      <TextInput
-                        value={row.weight}
-                        onChangeText={(value) =>
-                          updateExerciseRow(row.id, "weight", value)
-                        }
-                        placeholder="ק״ג"
-                        placeholderTextColor="#94A3B8"
-                        style={styles.input}
-                        textAlign="right"
-                        keyboardType={Platform.OS === "ios" ? "numbers-and-punctuation" : "decimal-pad"}
-                      />
-                    </View>
-
-                    <View style={styles.manualExerciseStatCol}>
-                      <Text style={styles.inputLabel}>חזרות</Text>
-                      <TextInput
-                        value={row.reps}
-                        onChangeText={(value) =>
-                          updateExerciseRow(row.id, "reps", value)
-                        }
-                        placeholder="12"
-                        placeholderTextColor="#94A3B8"
-                        style={styles.input}
-                        textAlign="right"
-                        keyboardType={Platform.OS === "ios" ? "numbers-and-punctuation" : "numeric"}
-                      />
-                    </View>
-
-                    <View style={styles.manualExerciseStatCol}>
-                      <Text style={styles.inputLabel}>סטים</Text>
-                      <TextInput
-                        value={row.sets}
-                        onChangeText={(value) =>
-                          updateExerciseRow(row.id, "sets", value)
-                        }
-                        placeholder="3"
-                        placeholderTextColor="#94A3B8"
-                        style={styles.input}
-                        textAlign="right"
-                        keyboardType={Platform.OS === "ios" ? "numbers-and-punctuation" : "numeric"}
-                      />
-                    </View>
+                  <View style={styles.manualSetsHeaderRow}>
+                    <Text style={styles.manualWorkoutSectionLabel}>סטים</Text>
+                    <Pressable onPress={() => addSetToExercise(row.id)} disabled={savingWorkout} style={({ pressed }) => [styles.addSetButton, pressed && styles.pressedLight, savingWorkout && styles.disabledButton]}><Text style={styles.addSetButtonText}>הוספת סט</Text></Pressable>
+                  </View>
+                  <View style={styles.manualSetsList}>
+                    {(row.sets || []).map((set) => (
+                      <View key={set.id} style={styles.manualSetCard}>
+                        <View style={styles.manualSetCardHeader}>
+                          <Text style={styles.manualSetTitle}>סט {set.order}</Text>
+                          <Pressable onPress={() => removeSetFromExercise(row.id, set.id)} style={({ pressed }) => [styles.removeSetButton, pressed && styles.deletePressed]}><Text style={styles.removeSetButtonText}>הסרת סט</Text></Pressable>
+                        </View>
+                        <View style={styles.manualExerciseStatsRow}>
+                          <View style={styles.manualExerciseStatCol}>
+                            <Text style={styles.inputLabel}>משקל</Text>
+                            <TextInput value={set.weight} onChangeText={(value) => updateExerciseSet(row.id, set.id, "weight", value)} placeholder="ק״ג" placeholderTextColor="#94A3B8" style={styles.input} textAlign="right" keyboardType={Platform.OS === "ios" ? "numbers-and-punctuation" : "decimal-pad"} />
+                          </View>
+                          <View style={styles.manualExerciseStatCol}>
+                            <Text style={styles.inputLabel}>חזרות</Text>
+                            <TextInput value={set.reps} onChangeText={(value) => updateExerciseSet(row.id, set.id, "reps", value)} placeholder="12" placeholderTextColor="#94A3B8" style={styles.input} textAlign="right" keyboardType={Platform.OS === "ios" ? "numbers-and-punctuation" : "numeric"} />
+                          </View>
+                        </View>
+                      </View>
+                    ))}
                   </View>
                 </View>
               ))}
             </View>
-
-            <Pressable
-              onPress={addExerciseRow}
-              disabled={savingWorkout}
-              style={({ pressed }) => [
-                styles.addExerciseRowButtonBelowSave,
-                pressed && styles.pressedLight,
-                savingWorkout && styles.disabledButton,
-              ]}
-            >
-              <Text style={styles.addExerciseRowButtonText}>הוספת תרגיל</Text>
-            </Pressable>
-
-            <Pressable
-              onPress={handleSaveManualWorkout}
-              disabled={savingWorkout}
-              style={({ pressed }) => [
-                styles.saveManualWorkoutButton,
-                pressed && styles.pressed,
-                savingWorkout && styles.disabledButton,
-              ]}
-            >
-              {savingWorkout ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <Text style={styles.saveManualWorkoutButtonText}>שמור אימון ידני</Text>
-              )}
-            </Pressable>
-
-
-            <Pressable
-              onPress={resetForm}
-              disabled={savingWorkout}
-              style={({ pressed }) => [
-                styles.clearManualWorkoutButton,
-                pressed && styles.pressedLight,
-                savingWorkout && styles.disabledButton,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.clearManualWorkoutButtonText,
-                  { fontSize: isSmallScreen ? 13 : 14 },
-                ]}
-              >
-                ניקוי הטופס
-              </Text>
-            </Pressable>
+            <Pressable onPress={addExerciseRow} disabled={savingWorkout} style={({ pressed }) => [styles.addExerciseRowButtonBelowSave, pressed && styles.pressedLight, savingWorkout && styles.disabledButton]}><Text style={styles.addExerciseRowButtonText}>הוספת תרגיל</Text></Pressable>
+            <Pressable onPress={handleSaveManualWorkout} disabled={savingWorkout} style={({ pressed }) => [styles.saveManualWorkoutButton, pressed && styles.pressed, savingWorkout && styles.disabledButton]}>{savingWorkout ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.saveManualWorkoutButtonText}>שמור אימון ידני</Text>}</Pressable>
+            <Pressable onPress={resetForm} disabled={savingWorkout} style={({ pressed }) => [styles.clearManualWorkoutButton, pressed && styles.pressedLight, savingWorkout && styles.disabledButton]}><Text style={[styles.clearManualWorkoutButtonText, { fontSize: isSmallScreen ? 13 : 14 }]}>ניקוי הטופס</Text></Pressable>
           </View>
         </>
       )}
     </View>
   );
 }
-
 export default function Menu() {
   const { width, height } = useWindowDimensions();
 
@@ -3670,6 +3487,65 @@ const styles = StyleSheet.create({
   dateModalSecondaryButtonText: {
     color: "#334155",
     fontSize: 14,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+
+  manualSetsHeaderRow: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    marginTop: 4,
+  },
+  manualSetsList: {
+    gap: 10,
+  },
+  manualSetCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#DCE7F5",
+    padding: 10,
+    gap: 10,
+  },
+  manualSetCardHeader: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  manualSetTitle: {
+    color: "#0F172A",
+    fontSize: 13,
+    fontWeight: "800",
+    textAlign: "right",
+  },
+  addSetButton: {
+    backgroundColor: "#EEF2FF",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#C7D2FE",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  addSetButtonText: {
+    color: "#4338CA",
+    fontSize: 12,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  removeSetButton: {
+    backgroundColor: "#FEF2F2",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#FECACA",
+    paddingVertical: 6,
+    paddingHorizontal: 9,
+  },
+  removeSetButtonText: {
+    color: "#DC2626",
+    fontSize: 11,
     fontWeight: "800",
     textAlign: "center",
   },

@@ -52,7 +52,13 @@ const getExerciseNameValue = (item: any) => {
 };
 
 const getExerciseDisplayName = (workout: any) => {
-  return getExerciseNameValue(workout).trim() || 'תרגיל ללא שם';
+  const directName = getExerciseNameValue(workout).trim();
+  const embeddedFirstName = Array.isArray(workout?.exercises)
+    ? getExerciseNameValue(workout.exercises[0]).trim()
+    : '';
+
+  if (directName && !directName.startsWith('אימון ')) return directName;
+  return embeddedFirstName || directName || 'תרגיל ללא שם';
 };
 
 export default function Steps() {
@@ -160,6 +166,8 @@ export default function Steps() {
             ...data,
             exerciseName: hasOwn(data, 'exerciseName')
               ? String(data.exerciseName ?? '')
+              : Array.isArray(data.exercises) && data.exercises[0]
+              ? getExerciseNameValue(data.exercises[0])
               : String(data.name || data.title || ''),
           };
         })

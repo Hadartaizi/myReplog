@@ -1,23 +1,23 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Platform,
   Pressable,
   StyleSheet,
   Text,
   TextInput,
   View,
-  Alert,
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import {
   collection,
-  onSnapshot,
-  updateDoc,
-  doc,
   deleteDoc,
+  doc,
   getDoc,
+  onSnapshot,
   query,
+  updateDoc,
   where,
 } from 'firebase/firestore';
 import { auth, db } from '../../../database/firebase';
@@ -54,6 +54,8 @@ type Props = {
 
 type SelectedAction = 'extend' | 'reduce' | 'unlimited' | 'toggleBlock';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 const normalizeStatus = (status?: string | null): ApprovalStatus => {
   const clean = String(status ?? '').trim().toLowerCase();
 
@@ -64,6 +66,14 @@ const normalizeStatus = (status?: string | null): ApprovalStatus => {
 };
 
 const isClientUser = (user: ClientItem) => user.role === 'client';
+
+const getSafeDateMs = (value?: string | null) => {
+  if (!value) return null;
+
+  const time = new Date(value).getTime();
+
+  return Number.isFinite(time) ? time : null;
+};
 
 export default function ClientAccessManager({ onAfterUpdate }: Props) {
   const [clients, setClients] = useState<ClientItem[]>([]);
@@ -95,11 +105,7 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
 
     return new Promise<boolean>((resolve) => {
       Alert.alert(title, message, [
-        {
-          text: 'ביטול',
-          style: 'cancel',
-          onPress: () => resolve(false),
-        },
+        { text: 'ביטול', style: 'cancel', onPress: () => resolve(false) },
         {
           text: 'אישור',
           style: 'destructive',
@@ -132,6 +138,7 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
 
         const me = meSnap.data() as CurrentUserData;
         const myRole = me.role ?? null;
+
         setCurrentUserRole(myRole);
 
         let usersQuery;
@@ -184,7 +191,9 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
 
             setSelectedClientId((prev) => {
               if (!prev) return prev;
-              const stillExists = nextClients.some((client) => client.id === prev);
+              const stillExists = nextClients.some(
+                (client) => client.id === prev
+              );
               return stillExists ? prev : null;
             });
 
@@ -211,7 +220,7 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
   }, []);
 
   const selectedClient = useMemo(
-    () => clients.find((c) => c.id === selectedClientId) || null,
+    () => clients.find((client) => client.id === selectedClientId) || null,
     [clients, selectedClientId]
   );
 
@@ -242,8 +251,8 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
     const days = getValidDays();
     if (!days) return;
 
-    const startAt = new Date();
-    const endAt = new Date(startAt.getTime() + days * 24 * 60 * 60 * 1000);
+    const now = new Date();
+    const endAt = new Date(now.getTime() + days * DAY_MS);
 
     try {
       setSavingId(clientId);
@@ -251,17 +260,19 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
       await updateDoc(doc(db, 'users', clientId), {
         approvalStatus: 'approved',
         role: 'client',
-        accessStartAt: startAt.toISOString(),
+        accessStartAt: now.toISOString(),
         accessEndAt: endAt.toISOString(),
-        approvedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        approvedAt: now.toISOString(),
+        updatedAt: now.toISOString(),
       });
 
       await onAfterUpdate?.();
 
       showMessage(
         'הצלחה',
-        `הלקוח אושר בהצלחה.\nתוקף הגישה עד ${formatDateTimeIL(endAt.toISOString())}`
+        `הלקוח אושר בהצלחה.\nתוקף הגישה עד ${formatDateTimeIL(
+          endAt.toISOString()
+        )}`
       );
     } catch (error) {
       console.error('שגיאה באישור לקוח:', error);
@@ -321,9 +332,15 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
     const days = getValidDays();
     if (!days) return;
 
-    const currentEnd = new Date(selectedClient.accessEndAt).getTime();
-    const base = Math.max(currentEnd, Date.now());
-    const newEnd = new Date(base + days * 24 * 60 * 60 * 1000);
+    const now = new Date();
+    const currentEndMs = getSafeDateMs(selectedClient.accessEndAt);
+
+    const baseMs =
+      currentEndMs && currentEndMs > now.getTime()
+        ? currentEndMs
+        : now.getTime();
+
+    const newEnd = new Date(baseMs + days * DAY_MS);
 
     try {
       setSavingId(selectedClient.id);
@@ -331,15 +348,19 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
       await updateDoc(doc(db, 'users', selectedClient.id), {
         approvalStatus: 'approved',
         role: 'client',
+        accessStartAt:
+          currentEndMs && currentEndMs > now.getTime()
+            ? selectedClient.accessStartAt || now.toISOString()
+            : now.toISOString(),
         accessEndAt: newEnd.toISOString(),
-        updatedAt: new Date().toISOString(),
+        updatedAt: now.toISOString(),
       });
 
       await onAfterUpdate?.();
 
       showMessage(
         'הצלחה',
-        `תקופת הגישה הוארכה עד ${formatDateTimeIL(newEnd.toISOString())}`
+        `תקופת הגישה עודכנה עד ${formatDateTimeIL(newEnd.toISOString())}`
       );
     } catch (error) {
       console.error('שגיאה בהארכת גישה:', error);
@@ -371,19 +392,24 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
     const days = getValidDays();
     if (!days) return;
 
+    const currentEndMs = getSafeDateMs(selectedClient.accessEndAt);
+
+    if (!currentEndMs) {
+      showMessage('שגיאה', 'תאריך הסיום של הלקוח לא תקין');
+      return;
+    }
+
     try {
       setSavingId(selectedClient.id);
 
-      const currentEndMs = new Date(selectedClient.accessEndAt).getTime();
-      const reducedEnd = new Date(
-        currentEndMs - days * 24 * 60 * 60 * 1000
-      );
+      const now = new Date();
+      const reducedEnd = new Date(currentEndMs - days * DAY_MS);
 
       await updateDoc(doc(db, 'users', selectedClient.id), {
         approvalStatus: 'approved',
         role: 'client',
         accessEndAt: reducedEnd.toISOString(),
-        updatedAt: new Date().toISOString(),
+        updatedAt: now.toISOString(),
       });
 
       await onAfterUpdate?.();
@@ -701,9 +727,7 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
         <View style={styles.pickerWrapper}>
           <Picker
             selectedValue={selectedAction}
-            onValueChange={(value) =>
-              setSelectedAction(value as SelectedAction)
-            }
+            onValueChange={(value) => setSelectedAction(value as SelectedAction)}
             enabled={!savingId && selectedClient?.approvalStatus !== 'pending'}
             style={styles.picker}
             itemStyle={styles.pickerItem}
@@ -728,7 +752,7 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
             <TextInput
               value={daysInput}
               onChangeText={setDaysInput}
-              keyboardType="number-pad"
+              keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'number-pad'}
               placeholder="למשל 30"
               placeholderTextColor="#94A3B8"
               style={styles.input}
@@ -769,14 +793,12 @@ const styles = StyleSheet.create({
     marginTop: 12,
     gap: 12,
   },
-
   sectionTitle: {
     fontSize: 16,
     fontWeight: '800',
     color: '#0F172A',
     textAlign: 'right',
   },
-
   pendingBox: {
     backgroundColor: '#FFFFFF',
     borderRadius: 18,
@@ -785,14 +807,12 @@ const styles = StyleSheet.create({
     padding: 14,
     gap: 10,
   },
-
   pendingTitle: {
     fontSize: 15,
     fontWeight: '800',
     color: '#0F172A',
     textAlign: 'right',
   },
-
   pendingClientCard: {
     backgroundColor: '#F8FAFC',
     borderRadius: 16,
@@ -801,11 +821,9 @@ const styles = StyleSheet.create({
     padding: 14,
     gap: 12,
   },
-
   pendingClientInfo: {
     alignItems: 'flex-end',
   },
-
   pendingStatusText: {
     marginTop: 6,
     fontSize: 13,
@@ -813,12 +831,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'right',
   },
-
   pendingButtonsRow: {
     flexDirection: 'row-reverse',
     gap: 10,
   },
-
   approvePendingButton: {
     flex: 1,
     minHeight: 46,
@@ -828,13 +844,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 14,
   },
-
   approvePendingButtonText: {
     color: '#FFFFFF',
     fontWeight: '800',
     fontSize: 15,
   },
-
   pendingDeleteButton: {
     flex: 1,
     minHeight: 46,
@@ -846,17 +860,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 14,
   },
-
   pendingDeleteButtonText: {
     color: '#B91C1C',
     fontWeight: '800',
     fontSize: 15,
   },
-
   clientsList: {
     gap: 10,
   },
-
   emptyBox: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
@@ -866,14 +877,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
-
   emptyText: {
     color: '#64748B',
     fontSize: 14,
     fontWeight: '600',
     textAlign: 'center',
   },
-
   clientItem: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
@@ -881,33 +890,28 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
     padding: 14,
   },
-
   clientItemSelected: {
     borderColor: '#2563EB',
     backgroundColor: '#EFF6FF',
   },
-
   clientName: {
     fontSize: 15,
     fontWeight: '800',
     color: '#0F172A',
     textAlign: 'right',
   },
-
   clientEmail: {
     marginTop: 4,
     fontSize: 13,
     color: '#64748B',
     textAlign: 'right',
   },
-
   clientMeta: {
     marginTop: 6,
     fontSize: 13,
     color: '#334155',
     textAlign: 'right',
   },
-
   actionsBox: {
     backgroundColor: '#FFFFFF',
     borderRadius: 18,
@@ -916,14 +920,12 @@ const styles = StyleSheet.create({
     padding: 14,
     gap: 12,
   },
-
   actionsTitle: {
     fontSize: 15,
     fontWeight: '800',
     color: '#0F172A',
     textAlign: 'right',
   },
-
   selectedClientBox: {
     backgroundColor: '#F8FAFC',
     borderRadius: 16,
@@ -932,21 +934,18 @@ const styles = StyleSheet.create({
     padding: 14,
     alignItems: 'flex-end',
   },
-
   selectedClientName: {
     fontSize: 16,
     color: '#0F172A',
     fontWeight: '800',
     textAlign: 'right',
   },
-
   selectedClientMeta: {
     marginTop: 4,
     fontSize: 13,
     color: '#64748B',
     textAlign: 'right',
   },
-
   pendingHintText: {
     marginTop: 8,
     fontSize: 13,
@@ -954,7 +953,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'right',
   },
-
   selectedClientPlaceholder: {
     fontSize: 14,
     color: '#64748B',
@@ -962,18 +960,15 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     width: '100%',
   },
-
   pickerLabelRow: {
     alignItems: 'flex-end',
   },
-
   pickerLabel: {
     fontSize: 14,
     fontWeight: '700',
     color: '#334155',
     textAlign: 'right',
   },
-
   pickerWrapper: {
     borderWidth: 1,
     borderColor: '#CBD5E1',
@@ -981,7 +976,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC',
     overflow: 'hidden',
   },
-
   picker: {
     width: '100%',
     color: '#0F172A',
@@ -990,12 +984,10 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     writingDirection: 'rtl',
   },
-
   pickerItem: {
     fontSize: 18,
     textAlign: 'right',
   },
-
   controlBox: {
     backgroundColor: '#FFFFFF',
     borderRadius: 18,
@@ -1003,7 +995,6 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
     padding: 14,
   },
-
   label: {
     fontSize: 14,
     fontWeight: '700',
@@ -1011,7 +1002,6 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     marginBottom: 8,
   },
-
   input: {
     minHeight: 50,
     borderRadius: 14,
@@ -1023,7 +1013,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC',
     textAlign: 'right',
   },
-
   mainActionButton: {
     minHeight: 52,
     borderRadius: 14,
@@ -1032,17 +1021,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 14,
   },
-
   mainActionButtonText: {
     color: '#FFFFFF',
     fontWeight: '800',
     fontSize: 15,
   },
-
   pressed: {
     opacity: 0.8,
   },
-
   disabled: {
     opacity: 0.6,
   },

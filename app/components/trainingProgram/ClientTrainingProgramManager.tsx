@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
@@ -63,6 +64,7 @@ type TrainingProgramDoc = {
   splitType?: TrainingSplitType;
   sections: ProgramSection[];
   notes?: string;
+  exerciseHistory?: string[];
   updatedAt: string;
   updatedByUid: string;
   updatedByName?: string;
@@ -114,6 +116,40 @@ function getSectionsBySplit(splitType: TrainingSplitType): ProgramSection[] {
     createSection("אימון C"),
     createSection("אימון D"),
   ];
+}
+
+function normalizeExerciseName(value?: string | null) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\u0591-\u05C7]/g, "")
+    .replace(/\s+/g, " ");
+}
+
+function getExerciseNamesFromSections(sections: ProgramSection[]) {
+  return sections
+    .flatMap((section) => section.exercises || [])
+    .map((exercise) => String(exercise.name || "").trim())
+    .filter(Boolean);
+}
+
+function mergeExerciseHistory(...groups: Array<Array<string | undefined | null> | undefined>) {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  groups.forEach((group) => {
+    (group || []).forEach((name) => {
+      const cleanName = String(name || "").trim();
+      const normalized = normalizeExerciseName(cleanName);
+
+      if (!cleanName || !normalized || seen.has(normalized)) return;
+
+      seen.add(normalized);
+      result.push(cleanName);
+    });
+  });
+
+  return result.sort((a, b) => a.localeCompare(b, "he"));
 }
 
 function hasMeaningfulContent(sections: ProgramSection[], notes: string) {
@@ -277,6 +313,10 @@ export default function ClientTrainingProgramManager({
   const [sections, setSections] = useState<ProgramSection[]>([]);
   const [notes, setNotes] = useState("");
   const [splitType, setSplitType] = useState<TrainingSplitType>("fullbody");
+  const [exerciseHistory, setExerciseHistory] = useState<string[]>([]);
+  const [historyModalVisible, setHistoryModalVisible] = useState(false);
+  const [historyTarget, setHistoryTarget] = useState<{ sectionId: string; exerciseId: string } | null>(null);
+  const [historySearch, setHistorySearch] = useState("");
   const [loadingProgram, setLoadingProgram] = useState(false);
   const [savingProgram, setSavingProgram] = useState(false);
 
@@ -291,6 +331,7 @@ export default function ClientTrainingProgramManager({
       setSections([]);
       setNotes("");
       setSplitType("fullbody");
+      setExerciseHistory([]);
       return;
     }
 
@@ -325,10 +366,17 @@ export default function ClientTrainingProgramManager({
             nextSections.length > 0 ? nextSections : getSectionsBySplit(savedSplitType)
           );
           setNotes(String(data.notes || data.programText || ""));
+          setExerciseHistory(
+            mergeExerciseHistory(
+              Array.isArray(data.exerciseHistory) ? data.exerciseHistory : [],
+              getExerciseNamesFromSections(nextSections)
+            )
+          );
         } else {
           setSplitType("fullbody");
           setSections(getSectionsBySplit("fullbody"));
           setNotes("");
+          setExerciseHistory([]);
         }
       } catch (error) {
         console.error("שגיאה בטעינת תוכנית אימון:", error);
@@ -393,6 +441,41 @@ export default function ClientTrainingProgramManager({
             }
       )
     );
+  };
+
+
+  const filteredExerciseHistory = useMemo(() => {
+    const search = normalizeExerciseName(historySearch);
+    if (!search) return exerciseHistory;
+
+    return exerciseHistory.filter((name) =>
+      normalizeExerciseName(name).includes(search)
+    );
+  }, [exerciseHistory, historySearch]);
+
+  const openExerciseHistory = (sectionId: string, exerciseId: string) => {
+    setHistoryTarget({ sectionId, exerciseId });
+    setHistorySearch("");
+    setHistoryModalVisible(true);
+  };
+
+  const closeExerciseHistory = () => {
+    setHistoryModalVisible(false);
+    setHistoryTarget(null);
+    setHistorySearch("");
+  };
+
+  const selectExerciseFromHistory = (exerciseName: string) => {
+    if (!historyTarget) return;
+
+    updateExerciseField(
+      historyTarget.sectionId,
+      historyTarget.exerciseId,
+      "name",
+      exerciseName
+    );
+
+    closeExerciseHistory();
   };
 
   const addSection = () => {
@@ -475,6 +558,11 @@ export default function ClientTrainingProgramManager({
     try {
       setSavingProgram(true);
 
+      const nextExerciseHistory = mergeExerciseHistory(
+        exerciseHistory,
+        getExerciseNamesFromSections(cleanedSections)
+      );
+
       const payload: TrainingProgramDoc = {
         clientUid: resolvedClientUid,
         clientDocId: selectedClient.id,
@@ -487,6 +575,7 @@ export default function ClientTrainingProgramManager({
         splitType,
         sections: cleanedSections,
         notes: notes.trim(),
+        exerciseHistory: nextExerciseHistory,
         updatedAt: new Date().toISOString(),
         updatedByUid: signedInUser.uid,
         updatedByName: currentUserData?.name || "",
@@ -496,6 +585,8 @@ export default function ClientTrainingProgramManager({
       await setDoc(doc(db, "clientTrainingPrograms", resolvedClientUid), payload, {
         merge: true,
       });
+
+      setExerciseHistory(nextExerciseHistory);
 
       if (Platform.OS === "web") {
         window.alert("תוכנית האימון נשמרה בהצלחה");
@@ -640,6 +731,16 @@ export default function ClientTrainingProgramManager({
                             textAlign="right"
                           />
 
+                          <TouchableOpacity
+                            activeOpacity={0.85}
+                            onPress={() => openExerciseHistory(section.id, exercise.id)}
+                            style={styles.historyButton}
+                          >
+                            <Text style={styles.historyButtonText}>
+                              היסטוריית תרגילים
+                            </Text>
+                          </TouchableOpacity>
+
                           <View style={styles.rowInputs}>
                             <TextInput
                               value={exercise.sets}
@@ -737,6 +838,70 @@ export default function ClientTrainingProgramManager({
           )}
         </>
       )}
+
+      <Modal
+        visible={historyModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={closeExerciseHistory}
+      >
+        <View style={styles.historyModalOverlay}>
+          <View style={styles.historyModalCard}>
+            <View style={styles.historyModalHeader}>
+              <Text style={styles.historyModalTitle}>היסטוריית תרגילים</Text>
+              <Text style={styles.historyModalSubtitle}>
+                בחרי שם תרגיל שכבר הוזן בעבר כדי לשמור על שם זהה במעקב
+              </Text>
+            </View>
+
+            <TextInput
+              value={historySearch}
+              onChangeText={setHistorySearch}
+              placeholder="חיפוש תרגיל"
+              placeholderTextColor="#94A3B8"
+              style={styles.historySearchInput}
+              textAlign="right"
+            />
+
+            {exerciseHistory.length === 0 ? (
+              <View style={styles.historyEmptyBox}>
+                <Text style={styles.historyEmptyText}>
+                  עדיין אין תרגילים בהיסטוריה ללקוח הזה
+                </Text>
+              </View>
+            ) : filteredExerciseHistory.length === 0 ? (
+              <View style={styles.historyEmptyBox}>
+                <Text style={styles.historyEmptyText}>לא נמצאו תרגילים בחיפוש</Text>
+              </View>
+            ) : (
+              <ScrollView
+                style={styles.historyList}
+                contentContainerStyle={styles.historyListContent}
+                keyboardShouldPersistTaps="handled"
+              >
+                {filteredExerciseHistory.map((name) => (
+                  <TouchableOpacity
+                    key={normalizeExerciseName(name)}
+                    activeOpacity={0.85}
+                    onPress={() => selectExerciseFromHistory(name)}
+                    style={styles.historyItem}
+                  >
+                    <Text style={styles.historyItemText}>{name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
+
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={closeExerciseHistory}
+              style={styles.historyCloseButton}
+            >
+              <Text style={styles.historyCloseButtonText}>סגור</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1042,6 +1207,128 @@ const styles = StyleSheet.create({
   removeSmallButtonText: {
     color: "#E11D48",
     fontSize: 11,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+
+  historyButton: {
+    width: "100%",
+    minHeight: 42,
+    backgroundColor: "#EFF6FF",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+  },
+  historyButtonText: {
+    color: "#1D4ED8",
+    fontSize: 13,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  historyModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.45)",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 18,
+    paddingVertical: 24,
+  },
+  historyModalCard: {
+    width: "100%",
+    maxWidth: 420,
+    maxHeight: "82%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 22,
+    padding: 16,
+    gap: 12,
+  },
+  historyModalHeader: {
+    alignItems: "flex-end",
+    gap: 4,
+  },
+  historyModalTitle: {
+    color: "#0F172A",
+    fontSize: 18,
+    fontWeight: "800",
+    textAlign: "right",
+  },
+  historyModalSubtitle: {
+    color: "#64748B",
+    fontSize: 13,
+    lineHeight: 20,
+    textAlign: "right",
+  },
+  historySearchInput: {
+    width: "100%",
+    minHeight: 46,
+    backgroundColor: "#F8FAFC",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: "#0F172A",
+    textAlign: "right",
+    writingDirection: "rtl",
+  },
+  historyList: {
+    maxHeight: 310,
+    width: "100%",
+  },
+  historyListContent: {
+    gap: 8,
+    paddingVertical: 2,
+  },
+  historyItem: {
+    width: "100%",
+    minHeight: 46,
+    backgroundColor: "#F8FAFC",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    justifyContent: "center",
+    alignItems: "flex-end",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  historyItemText: {
+    color: "#0F172A",
+    fontSize: 14,
+    fontWeight: "700",
+    textAlign: "right",
+  },
+  historyEmptyBox: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    paddingVertical: 18,
+    paddingHorizontal: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  historyEmptyText: {
+    color: "#64748B",
+    fontSize: 14,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  historyCloseButton: {
+    width: "100%",
+    minHeight: 48,
+    backgroundColor: "#E2E8F0",
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 14,
+  },
+  historyCloseButtonText: {
+    color: "#0F172A",
+    fontSize: 14,
     fontWeight: "800",
     textAlign: "center",
   },
