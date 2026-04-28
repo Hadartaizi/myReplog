@@ -36,7 +36,6 @@ import {
 import { auth, db } from "../database/firebase";
 import AppLayout from "./components/AppLayout";
 import ClientAccessManager from "./components/admin/ClientAccessManager";
-import ClientCardManager from "./components/admin/ClientCardManager";
 import CoachClientCreator from "./components/admin/CoachClientCreator";
 import SecondaryAdminsManager from "./components/admin/SecondaryAdminsManager";
 import {
@@ -72,6 +71,7 @@ type ClientItem = {
   cardsPurchased?: number;
   cardsUsed?: number;
   cardUsageDates?: string[];
+  cardPurchases?: CardPurchase[];
   instagramUrl?: string;
   whatsappPhone?: string;
   contactPhone?: string;
@@ -110,6 +110,7 @@ type CurrentUserData = {
   cardsPurchased?: number;
   cardsUsed?: number;
   cardUsageDates?: string[];
+  cardPurchases?: CardPurchase[];
   instagramUrl?: string;
   whatsappPhone?: string;
   contactPhone?: string;
@@ -140,12 +141,27 @@ type SecondaryAdminCountItem = {
   clientCount: number;
 };
 
+type CardPurchase = {
+  id: string;
+  purchasedCount: number;
+  purchasedAt: string;
+  updatedAt?: string;
+  createdByUid?: string;
+  createdByName?: string;
+  usageDates: string[];
+};
+
+type ManualExerciseSetRow = {
+  id: string;
+  reps: string;
+  weight: string;
+  order: number;
+};
+
 type ManualExerciseRow = {
   id: string;
   exerciseName: string;
-  sets: string;
-  reps: string;
-  weight: string;
+  sets: ManualExerciseSetRow[];
   order: number;
 };
 
@@ -335,6 +351,253 @@ function getTodayDateInputValue() {
   const month = `${now.getMonth() + 1}`.padStart(2, "0");
   const day = `${now.getDate()}`.padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function createCardPurchaseId() {
+  return `${Date.now()}-purchase-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function sortIsoDatesDesc(values: string[]) {
+  return [...values].sort(
+    (a, b) => (new Date(b).getTime() || 0) - (new Date(a).getTime() || 0)
+  );
+}
+
+function removeUndefinedDeep(value: any): any {
+  if (Array.isArray(value)) {
+    return value
+      .filter((item) => item !== undefined)
+      .map((item) => removeUndefinedDeep(item));
+  }
+
+  if (value && typeof value === "object" && !(value instanceof Date)) {
+    return Object.entries(value).reduce<Record<string, any>>((acc, [key, item]) => {
+      if (item !== undefined) {
+        acc[key] = removeUndefinedDeep(item);
+      }
+      return acc;
+    }, {});
+  }
+
+  return value;
+}
+
+function cleanCardPurchaseForFirestore(purchase: CardPurchase): CardPurchase {
+  return removeUndefinedDeep({
+    id: String(purchase.id || createCardPurchaseId()),
+    purchasedCount: Math.max(Number(purchase.purchasedCount || 0), 0),
+    purchasedAt: String(purchase.purchasedAt || new Date().toISOString()),
+    updatedAt: purchase.updatedAt ? String(purchase.updatedAt) : undefined,
+    createdByUid: purchase.createdByUid ? String(purchase.createdByUid) : undefined,
+    createdByName: purchase.createdByName ? String(purchase.createdByName) : undefined,
+    usageDates: Array.isArray(purchase.usageDates)
+      ? sortIsoDatesDesc(
+          purchase.usageDates
+            .map((date) => String(date || "").trim())
+            .filter(Boolean)
+        )
+      : [],
+  }) as CardPurchase;
+}
+
+function buildCardFirestorePayload(purchases: CardPurchase[], updatedAt: string) {
+  const cleanPurchases = purchases
+    .map((purchase) => cleanCardPurchaseForFirestore(purchase))
+    .filter((purchase) => purchase.purchasedCount > 0);
+
+  const allUsageDates = sortIsoDatesDesc(
+    cleanPurchases.flatMap((purchase) => purchase.usageDates || [])
+  );
+
+  return removeUndefinedDeep({
+    cardsPurchased: cleanPurchases.reduce((sum, purchase) => sum + purchase.purchasedCount, 0),
+    cardsUsed: allUsageDates.length,
+    cardUsageDates: allUsageDates,
+    cardPurchases: cleanPurchases,
+    updatedAt,
+  });
+}
+
+function dateToDateInputValue(date: Date) {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function dateToTimeInputValue(date: Date) {
+  const hours = `${date.getHours()}`.padStart(2, "0");
+  const minutes = `${date.getMinutes()}`.padStart(2, "0");
+  return `${hours}:${minutes}`;
+}
+
+function createLocalDateTimeIso(dateKey: string, timeValue: string) {
+  const normalizedDate = /^\d{4}-\d{2}-\d{2}$/.test(String(dateKey || ""))
+    ? String(dateKey)
+    : getTodayDateInputValue();
+  const safeTime = /^\d{2}:\d{2}$/.test(String(timeValue || ""))
+    ? String(timeValue)
+    : "12:00";
+  const [year, month, day] = normalizedDate.split("-").map(Number);
+  const [hours, minutes] = safeTime.split(":").map(Number);
+  return new Date(year, month - 1, day, hours, minutes, 0, 0).toISOString();
+}
+
+function getWebDateTimeDisplay(type: "date" | "time", value: string) {
+  if (type === "time") {
+    const cleanTime = String(value || "").trim();
+    return /^\d{2}:\d{2}$/.test(cleanTime) ? cleanTime : "12:00";
+  }
+
+  const cleanDate = String(value || "").trim();
+  const match = cleanDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+
+  if (!match) return cleanDate || getTodayDateInputValue();
+
+  const [, year, month, day] = match;
+  return `${day}.${month}.${year}`;
+}
+
+function WebDateTimeInput({
+  type,
+  value,
+  onChange,
+}: {
+  type: "date" | "time";
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  if (Platform.OS !== "web") return null;
+
+  return React.createElement(
+    "label",
+    {
+      style: {
+        width: "100%",
+        maxWidth: "100%",
+        minWidth: 0,
+        minHeight: 48,
+        borderRadius: 14,
+        borderWidth: 1,
+        borderStyle: "solid",
+        borderColor: "#CBD5E1",
+        backgroundColor: "#FFFFFF",
+        boxSizing: "border-box",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "10px 8px",
+        position: "relative",
+        overflow: "hidden",
+        cursor: "pointer",
+      },
+    },
+    React.createElement(
+      "span",
+      {
+        style: {
+          width: "100%",
+          maxWidth: "100%",
+          minWidth: 0,
+          color: "#0F172A",
+          fontSize: 14,
+          lineHeight: "20px",
+          fontWeight: 800,
+          textAlign: "center",
+          direction: "ltr",
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          pointerEvents: "none",
+        },
+      },
+      getWebDateTimeDisplay(type, value)
+    ),
+    React.createElement("input", {
+      type,
+      value,
+      onChange: (event: any) => onChange(String(event?.target?.value || "")),
+      style: {
+        position: "absolute",
+        inset: 0,
+        width: "100%",
+        height: "100%",
+        opacity: 0,
+        border: 0,
+        padding: 0,
+        margin: 0,
+        cursor: "pointer",
+      },
+    })
+  );
+}
+
+function normalizeCardPurchases(data?: Partial<ClientItem | CurrentUserData> | null) {
+  const rawPurchases = Array.isArray(data?.cardPurchases) ? data?.cardPurchases || [] : [];
+
+  const normalized = rawPurchases
+    .map((purchase, index) => {
+      const purchasedCount = Math.max(Number(purchase?.purchasedCount || 0), 0);
+      if (purchasedCount <= 0) return null;
+
+      const usageDates = Array.isArray(purchase?.usageDates)
+        ? sortIsoDatesDesc(
+            purchase.usageDates
+              .map((date) => String(date || "").trim())
+              .filter(Boolean)
+          )
+        : [];
+
+      return cleanCardPurchaseForFirestore({
+        id: String(purchase?.id || `purchase-${index + 1}`),
+        purchasedCount,
+        purchasedAt: String(purchase?.purchasedAt || data?.createdAt || new Date().toISOString()),
+        updatedAt: purchase?.updatedAt,
+        createdByUid: purchase?.createdByUid,
+        createdByName: purchase?.createdByName,
+        usageDates,
+      } as CardPurchase);
+    })
+    .filter(Boolean) as CardPurchase[];
+
+  if (normalized.length > 0) {
+    return normalized.sort(
+      (a, b) => (new Date(a.purchasedAt).getTime() || 0) - (new Date(b.purchasedAt).getTime() || 0)
+    );
+  }
+
+  const legacyPurchased = Math.max(Number(data?.cardsPurchased || 0), 0);
+  if (legacyPurchased <= 0) return [] as CardPurchase[];
+
+  return [
+    cleanCardPurchaseForFirestore({
+      id: "legacy-purchase-1",
+      purchasedCount: legacyPurchased,
+      purchasedAt: String(data?.createdAt || new Date().toISOString()),
+      updatedAt: data?.updatedAt,
+      usageDates: Array.isArray(data?.cardUsageDates)
+        ? sortIsoDatesDesc(
+            data.cardUsageDates
+              .map((date) => String(date || "").trim())
+              .filter(Boolean)
+          )
+        : [],
+    } as CardPurchase),
+  ];
+}
+
+function getCardPurchaseStats(data?: Partial<ClientItem | CurrentUserData> | null) {
+  const purchases = normalizeCardPurchases(data);
+  const totalPurchased = purchases.reduce((sum, purchase) => sum + purchase.purchasedCount, 0);
+  const totalUsed = purchases.reduce((sum, purchase) => sum + purchase.usageDates.length, 0);
+
+  return {
+    purchases,
+    totalPurchased,
+    totalUsed,
+    totalRemaining: Math.max(totalPurchased - totalUsed, 0),
+    allUsageDates: sortIsoDatesDesc(purchases.flatMap((purchase) => purchase.usageDates || [])),
+  };
 }
 
 function normalizeDateInputToIso(value?: string) {
@@ -943,6 +1206,876 @@ function ManualWorkoutEntryManager({
     </View>
   );
 }
+
+function CardPurchaseHistoryView({
+  purchases,
+  onDeleteUsage,
+  onUpdateUsage,
+  updating = false,
+}: {
+  purchases: CardPurchase[];
+  onDeleteUsage?: (purchaseId: string, usageDate: string) => Promise<void> | void;
+  onUpdateUsage?: (
+    purchaseId: string,
+    oldUsageDate: string,
+    nextUsageDate: string
+  ) => Promise<void> | void;
+  updating?: boolean;
+}) {
+  const { width } = useWindowDimensions();
+  const [openPurchaseIds, setOpenPurchaseIds] = useState<Record<string, boolean>>({});
+  const [editingUsage, setEditingUsage] = useState<{
+    purchaseId: string;
+    usageDate: string;
+    purchaseNumber: number;
+  } | null>(null);
+  const [editDate, setEditDate] = useState<Date>(new Date());
+  const [showEditDatePicker, setShowEditDatePicker] = useState(false);
+  const [showEditTimePicker, setShowEditTimePicker] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const purchasesNewestFirst = useMemo(() => {
+    const chronologicalPurchases = [...purchases].sort(
+      (a, b) =>
+        (new Date(a.purchasedAt).getTime() || 0) -
+        (new Date(b.purchasedAt).getTime() || 0)
+    );
+
+    const purchaseNumberById = chronologicalPurchases.reduce<Record<string, number>>(
+      (acc, purchase, index) => {
+        acc[purchase.id] = index + 1;
+        return acc;
+      },
+      {}
+    );
+
+    return [...purchases]
+      .sort(
+        (a, b) =>
+          (new Date(b.purchasedAt).getTime() || 0) -
+          (new Date(a.purchasedAt).getTime() || 0)
+      )
+      .map((purchase) => ({
+        purchase,
+        purchaseNumber: purchaseNumberById[purchase.id] || 1,
+      }));
+  }, [purchases]);
+
+  const togglePurchase = useCallback((purchaseId: string) => {
+    setOpenPurchaseIds((prev) => ({
+      ...prev,
+      [purchaseId]: !prev[purchaseId],
+    }));
+  }, []);
+
+  const formatDateOnly = useCallback((value: Date) => {
+    const day = `${value.getDate()}`.padStart(2, "0");
+    const month = `${value.getMonth() + 1}`.padStart(2, "0");
+    const year = value.getFullYear();
+    return `${day}.${month}.${year}`;
+  }, []);
+
+  const formatTimeOnly = useCallback((value: Date) => {
+    const hours = `${value.getHours()}`.padStart(2, "0");
+    const minutes = `${value.getMinutes()}`.padStart(2, "0");
+    return `${hours}:${minutes}`;
+  }, []);
+
+  const openEditUsage = useCallback(
+    (purchaseId: string, usageDate: string, purchaseNumber: number) => {
+      const parsed = new Date(usageDate);
+      setEditingUsage({
+        purchaseId,
+        usageDate,
+        purchaseNumber,
+      });
+      setEditDate(Number.isNaN(parsed.getTime()) ? new Date() : parsed);
+      setShowEditDatePicker(false);
+      setShowEditTimePicker(false);
+    },
+    []
+  );
+
+  const closeEditUsage = useCallback(() => {
+    if (savingEdit) return;
+    setEditingUsage(null);
+    setShowEditDatePicker(false);
+    setShowEditTimePicker(false);
+  }, [savingEdit]);
+
+  const handleEditDateChange = useCallback(
+    (event: DateTimePickerEvent, selectedDate?: Date) => {
+      if (Platform.OS === "android") {
+        setShowEditDatePicker(false);
+        if (event.type === "dismissed" || !selectedDate) return;
+      }
+
+      if (!selectedDate) return;
+
+      setEditDate((prev) => {
+        const next = new Date(prev);
+        next.setFullYear(selectedDate.getFullYear());
+        next.setMonth(selectedDate.getMonth());
+        next.setDate(selectedDate.getDate());
+        return next;
+      });
+    },
+    []
+  );
+
+  const handleEditTimeChange = useCallback(
+    (event: DateTimePickerEvent, selectedTime?: Date) => {
+      if (Platform.OS === "android") {
+        setShowEditTimePicker(false);
+        if (event.type === "dismissed" || !selectedTime) return;
+      }
+
+      if (!selectedTime) return;
+
+      setEditDate((prev) => {
+        const next = new Date(prev);
+        next.setHours(selectedTime.getHours());
+        next.setMinutes(selectedTime.getMinutes());
+        next.setSeconds(0);
+        next.setMilliseconds(0);
+        return next;
+      });
+    },
+    []
+  );
+
+  const handleSaveUsageEdit = useCallback(async () => {
+    if (!editingUsage || !onUpdateUsage) return;
+
+    try {
+      setSavingEdit(true);
+      await onUpdateUsage(
+        editingUsage.purchaseId,
+        editingUsage.usageDate,
+        editDate.toISOString()
+      );
+      setEditingUsage(null);
+      setShowEditDatePicker(false);
+      setShowEditTimePicker(false);
+    } finally {
+      setSavingEdit(false);
+    }
+  }, [editDate, editingUsage, onUpdateUsage]);
+
+  const handleDeleteUsagePress = useCallback(
+    async (purchaseId: string, usageDate: string) => {
+      if (!onDeleteUsage || updating) return;
+
+      const runDelete = async () => {
+        try {
+          await onDeleteUsage(purchaseId, usageDate);
+        } catch (error) {
+          console.error("שגיאה במחיקת מימוש כרטיסייה:", error);
+          Alert.alert("שגיאה", "לא ניתן למחוק את המימוש");
+        }
+      };
+
+      if (Platform.OS === "web") {
+        const confirmed = window.confirm("האם למחוק את המימוש הזה?");
+        if (confirmed) await runDelete();
+        return;
+      }
+
+      Alert.alert("מחיקת מימוש", "האם למחוק את המימוש הזה?", [
+        { text: "ביטול", style: "cancel" },
+        {
+          text: "מחיקה",
+          style: "destructive",
+          onPress: runDelete,
+        },
+      ]);
+    },
+    [onDeleteUsage, updating]
+  );
+
+  if (purchases.length === 0) {
+    return (
+      <View style={styles.emptyCardHistoryBox}>
+        <Text style={styles.emptyCardHistoryText}>עדיין לא נרכשו כרטיסיות</Text>
+      </View>
+    );
+  }
+
+  return (
+    <>
+      <View style={styles.cardPurchaseGroupsList}>
+        {purchasesNewestFirst.map(({ purchase, purchaseNumber }) => {
+          const isOpen = !!openPurchaseIds[purchase.id];
+          const usedCount = purchase.usageDates.length;
+          const remainingCount = Math.max(purchase.purchasedCount - usedCount, 0);
+          const sortedUsageDates = sortIsoDatesDesc(purchase.usageDates || []);
+
+          return (
+            <View key={purchase.id} style={styles.cardPurchaseGroupCard}>
+              <Pressable
+                onPress={() => togglePurchase(purchase.id)}
+                style={({ pressed }) => [
+                  styles.cardPurchaseGroupHeaderPressable,
+                  pressed && styles.pressedLight,
+                ]}
+              >
+                <View style={styles.cardPurchaseGroupHeader}>
+                  <View style={styles.cardPurchaseGroupTitleWrap}>
+                    <Text style={styles.cardPurchaseGroupTitle}>רכישה {purchaseNumber}</Text>
+                    <Text style={styles.cardPurchaseGroupDate}>{formatDateTimeIL(purchase.purchasedAt)}</Text>
+                  </View>
+                  <View style={styles.cardPurchaseGroupBadge}>
+                    <Text style={styles.cardPurchaseGroupBadgeText}>{purchase.purchasedCount}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.cardPurchaseClosedSummaryRow}>
+                  <Text style={styles.cardPurchaseClosedSummaryText}>
+                    {purchase.purchasedCount} נרכשו · {usedCount} מומשו · {remainingCount} נותרו
+                  </Text>
+                  <Text style={styles.cardPurchaseToggleText}>{isOpen ? "סגירה" : "פתיחה"}</Text>
+                </View>
+              </Pressable>
+
+              {isOpen && (
+                <>
+                  <View style={styles.cardPurchaseMiniStatsRow}>
+                    <View style={styles.cardPurchaseMiniStatBox}>
+                      <Text style={styles.cardPurchaseMiniStatValue}>{purchase.purchasedCount}</Text>
+                      <Text style={styles.cardPurchaseMiniStatLabel}>נרכשו</Text>
+                    </View>
+                    <View style={styles.cardPurchaseMiniStatBox}>
+                      <Text style={styles.cardPurchaseMiniStatValue}>{usedCount}</Text>
+                      <Text style={styles.cardPurchaseMiniStatLabel}>מומשו</Text>
+                    </View>
+                    <View style={styles.cardPurchaseMiniStatBox}>
+                      <Text style={styles.cardPurchaseMiniStatValue}>{remainingCount}</Text>
+                      <Text style={styles.cardPurchaseMiniStatLabel}>נותרו</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.cardPurchaseUsageSection}>
+                    <View style={styles.cardUsageHistoryHeader}>
+                      <Text style={styles.cardUsageHistoryTitle}>מימושים של רכישה {purchaseNumber}</Text>
+                      <Text style={styles.cardUsageHistoryCount}>{usedCount} מימושים</Text>
+                    </View>
+
+                    {sortedUsageDates.length === 0 ? (
+                      <View style={styles.emptyCardHistoryBox}>
+                        <Text style={styles.emptyCardHistoryText}>עדיין לא בוצע מימוש ברכישה הזו</Text>
+                      </View>
+                    ) : (
+                      <View style={styles.cardUsageList}>
+                        {sortedUsageDates.map((usageDate, usageIndex) => (
+                          <View key={`${purchase.id}-${usageDate}-${usageIndex}`} style={styles.cardUsageRow}>
+                            <View style={styles.cardUsageOrderBadge}>
+                              <Text style={styles.cardUsageOrderBadgeText}>{usedCount - usageIndex}</Text>
+                            </View>
+
+                            <View style={styles.cardUsageContent}>
+                              <Text style={styles.cardUsageMainText}>מימוש מתוך רכישה {purchaseNumber}</Text>
+                              <Text style={styles.cardUsageSubText}>{formatDateTimeIL(usageDate)}</Text>
+
+                              {(onDeleteUsage || onUpdateUsage) && (
+                                <View style={styles.cardUsageActionsRow}>
+                                  {onUpdateUsage && (
+                                    <Pressable
+                                      onPress={() => openEditUsage(purchase.id, usageDate, purchaseNumber)}
+                                      disabled={updating}
+                                      style={({ pressed }) => [
+                                        styles.editUsageButton,
+                                        pressed && styles.pressedLight,
+                                        updating && styles.disabledButton,
+                                      ]}
+                                    >
+                                      <Text style={styles.editUsageButtonText}>שינוי תאריך/שעה</Text>
+                                    </Pressable>
+                                  )}
+
+                                  {onDeleteUsage && (
+                                    <Pressable
+                                      onPress={() => handleDeleteUsagePress(purchase.id, usageDate)}
+                                      disabled={updating}
+                                      style={({ pressed }) => [
+                                        styles.deleteUsageButton,
+                                        pressed && styles.deletePressed,
+                                        updating && styles.disabledButton,
+                                      ]}
+                                    >
+                                      <Text style={styles.deleteUsageButtonText}>מחיקת מימוש</Text>
+                                    </Pressable>
+                                  )}
+                                </View>
+                              )}
+                            </View>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+                </>
+              )}
+            </View>
+          );
+        })}
+      </View>
+
+      <Modal
+        visible={!!editingUsage}
+        transparent
+        animationType="fade"
+        onRequestClose={closeEditUsage}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.editUsageModalCard, { maxWidth: Math.min(width - 32, 390) }]}>
+            <Text style={styles.editUsageModalTitle}>
+              שינוי מימוש רכישה {editingUsage?.purchaseNumber || ""}
+            </Text>
+            <Text style={styles.editUsageModalSubtitle}>
+              לחצי על התאריך כדי לפתוח יומן, ועל השעה כדי לפתוח גלגלת שעה
+            </Text>
+
+            <View style={styles.editUsagePickerRow}>
+              <View style={styles.editUsagePickerCol}>
+                <Text style={styles.inputLabel}>תאריך</Text>
+                {Platform.OS === "web" ? (
+                  <WebDateTimeInput
+                    type="date"
+                    value={dateToDateInputValue(editDate)}
+                    onChange={(value) => {
+                      if (!value) return;
+                      const nextDate = new Date(createLocalDateTimeIso(value, dateToTimeInputValue(editDate)));
+                      if (!Number.isNaN(nextDate.getTime())) setEditDate(nextDate);
+                    }}
+                  />
+                ) : (
+                  <>
+                    <Pressable
+                      onPress={() => {
+                        setShowEditTimePicker(false);
+                        setShowEditDatePicker((prev) => !prev);
+                      }}
+                      style={({ pressed }) => [styles.editUsagePickerButton, pressed && styles.pressedLight]}
+                    >
+                      <Text style={styles.editUsagePickerButtonText} numberOfLines={1}>{formatDateOnly(editDate)}</Text>
+                    </Pressable>
+                    {showEditDatePicker && (
+                      <DateTimePicker
+                        value={editDate}
+                        mode="date"
+                        display={Platform.OS === "ios" ? "spinner" : "calendar"}
+                        onChange={handleEditDateChange}
+                        style={styles.inlineDateTimePicker}
+                      />
+                    )}
+                  </>
+                )}
+              </View>
+
+              <View style={styles.editUsagePickerCol}>
+                <Text style={styles.inputLabel}>שעה</Text>
+                {Platform.OS === "web" ? (
+                  <WebDateTimeInput
+                    type="time"
+                    value={dateToTimeInputValue(editDate)}
+                    onChange={(value) => {
+                      if (!value) return;
+                      const nextDate = new Date(createLocalDateTimeIso(dateToDateInputValue(editDate), value));
+                      if (!Number.isNaN(nextDate.getTime())) setEditDate(nextDate);
+                    }}
+                  />
+                ) : (
+                  <>
+                    <Pressable
+                      onPress={() => {
+                        setShowEditDatePicker(false);
+                        setShowEditTimePicker((prev) => !prev);
+                      }}
+                      style={({ pressed }) => [styles.editUsagePickerButton, pressed && styles.pressedLight]}
+                    >
+                      <Text style={styles.editUsagePickerButtonText} numberOfLines={1}>{formatTimeOnly(editDate)}</Text>
+                    </Pressable>
+                    {showEditTimePicker && (
+                      <DateTimePicker
+                        value={editDate}
+                        mode="time"
+                        display="spinner"
+                        is24Hour
+                        onChange={handleEditTimeChange}
+                        style={styles.inlineDateTimePicker}
+                      />
+                    )}
+                  </>
+                )}
+              </View>
+            </View>
+
+            <View style={styles.editUsageModalButtonsRow}>
+              <Pressable
+                onPress={closeEditUsage}
+                disabled={savingEdit}
+                style={({ pressed }) => [
+                  styles.dateModalSecondaryButton,
+                  pressed && styles.pressedLight,
+                  savingEdit && styles.disabledButton,
+                ]}
+              >
+                <Text style={styles.dateModalSecondaryButtonText}>ביטול</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={handleSaveUsageEdit}
+                disabled={savingEdit || updating}
+                style={({ pressed }) => [
+                  styles.dateModalPrimaryButton,
+                  pressed && styles.pressed,
+                  (savingEdit || updating) && styles.disabledButton,
+                ]}
+              >
+                {savingEdit || updating ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.dateModalPrimaryButtonText}>שמירה</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </>
+  );
+}
+function ClientCardRenewalManager({
+  clients,
+  currentUserData,
+  onAfterUpdate,
+}: {
+  clients: ClientItem[];
+  currentUserData: CurrentUserData | null;
+  onAfterUpdate?: () => Promise<void> | void;
+}) {
+  const { width } = useWindowDimensions();
+  const [localClients, setLocalClients] = useState<ClientItem[]>(clients);
+  const [selectedClientId, setSelectedClientId] = useState("");
+  const [clientSearchQuery, setClientSearchQuery] = useState("");
+  const [purchaseAmount, setPurchaseAmount] = useState("");
+  const [redeemDate, setRedeemDate] = useState(getTodayDateInputValue());
+  const [redeemTime, setRedeemTime] = useState("12:00");
+  const [updatingClient, setUpdatingClient] = useState(false);
+
+  void onAfterUpdate;
+
+  useEffect(() => {
+    setLocalClients(clients);
+  }, [clients]);
+
+  const sortedClients = useMemo(
+    () => [...localClients].sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "he")),
+    [localClients]
+  );
+
+  const selectedClient = useMemo(
+    () => sortedClients.find((client) => client.id === selectedClientId) || null,
+    [sortedClients, selectedClientId]
+  );
+
+  const filteredClients = useMemo(() => {
+    const queryValue = clientSearchQuery.trim().toLowerCase();
+    if (!queryValue) return [] as ClientItem[];
+
+    return sortedClients
+      .filter((client) => {
+        const name = String(client.name || "").toLowerCase();
+        const email = String(client.email || "").toLowerCase();
+        const phone = String(client.phone || "").toLowerCase();
+        return name.includes(queryValue) || email.includes(queryValue) || phone.includes(queryValue);
+      })
+      .slice(0, 8);
+  }, [clientSearchQuery, sortedClients]);
+
+  const selectedStats = useMemo(() => getCardPurchaseStats(selectedClient), [selectedClient]);
+  const canAddNewPurchase = !!selectedClient && selectedStats.totalRemaining === 0;
+  const canRedeemCard = !!selectedClient && selectedStats.totalRemaining > 0;
+
+  const syncLegacyTotals = useCallback((purchases: CardPurchase[], updatedAt: string) => {
+    return buildCardFirestorePayload(purchases, updatedAt);
+  }, []);
+
+  const applyCardPurchaseUpdate = useCallback(
+    async (nextPurchases: CardPurchase[], updatedAt: string) => {
+      if (!selectedClient) throw new Error("missing selected client");
+
+      const payload = syncLegacyTotals(nextPurchases, updatedAt);
+      await updateDoc(doc(db, "users", selectedClient.id), payload);
+
+      setLocalClients((prev) =>
+        prev.map((client) =>
+          client.id === selectedClient.id
+            ? {
+                ...client,
+                ...payload,
+              }
+            : client
+        )
+      );
+
+      return payload;
+    },
+    [selectedClient, syncLegacyTotals]
+  );
+
+  const handleSelectClient = useCallback((client: ClientItem) => {
+    setSelectedClientId(client.id);
+    setClientSearchQuery(String(client.name || client.email || client.phone || ""));
+    setPurchaseAmount("");
+  }, []);
+
+  const handleAddPurchase = useCallback(async () => {
+    if (!selectedClient) return Alert.alert("שגיאה", "יש לבחור לקוח לפני הוספת רכישה");
+
+    if (selectedStats.totalRemaining > 0) {
+      return Alert.alert("לא ניתן לחדש עדיין", "כפתור חידוש כרטיסייה מופיע רק אחרי שכל הכרטיסיות הקיימות מומשו");
+    }
+
+    const amount = Number(String(purchaseAmount || "").replace(/[^0-9]/g, ""));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return Alert.alert("שגיאה", "יש להזין כמות כרטיסיות תקינה");
+    }
+
+    try {
+      setUpdatingClient(true);
+      const nowIso = new Date().toISOString();
+      const purchases = normalizeCardPurchases(selectedClient);
+      const nextPurchases = [
+        ...purchases,
+        {
+          id: createCardPurchaseId(),
+          purchasedCount: amount,
+          purchasedAt: nowIso,
+          updatedAt: nowIso,
+          createdByUid: String(auth.currentUser?.uid || currentUserData?.authUid || currentUserData?.uid || "").trim(),
+          createdByName: String(currentUserData?.name || "").trim(),
+          usageDates: [],
+        },
+      ];
+
+      await applyCardPurchaseUpdate(nextPurchases, nowIso);
+      setPurchaseAmount("");
+      Alert.alert("נשמר בהצלחה", `נוספה רכישה חדשה של ${amount} כרטיסיות`);
+    } catch (error) {
+      console.error("שגיאה בהוספת רכישת כרטיסיות:", error);
+      Alert.alert("שגיאה", "לא ניתן להוסיף רכישת כרטיסיות");
+    } finally {
+      setUpdatingClient(false);
+    }
+  }, [applyCardPurchaseUpdate, currentUserData, purchaseAmount, selectedClient, selectedStats.totalRemaining]);
+
+  const handleRedeemCard = useCallback(async () => {
+    if (!selectedClient) return Alert.alert("שגיאה", "יש לבחור לקוח לפני מימוש");
+
+    const purchases = normalizeCardPurchases(selectedClient);
+    const purchaseIndex = purchases.findIndex(
+      (purchase) => purchase.usageDates.length < purchase.purchasedCount
+    );
+
+    if (purchaseIndex < 0) {
+      return Alert.alert("אין כרטיסיות זמינות", "יש לחדש כרטיסייה לפני שניתן לבצע מימוש נוסף");
+    }
+
+    try {
+      setUpdatingClient(true);
+      const nowIso = new Date().toISOString();
+      const usageIso = createLocalDateTimeIso(redeemDate, redeemTime);
+      const nextPurchases = purchases.map((purchase, index) => {
+        if (index !== purchaseIndex) return purchase;
+        return {
+          ...purchase,
+          updatedAt: nowIso,
+          usageDates: sortIsoDatesDesc([usageIso, ...(purchase.usageDates || [])]),
+        };
+      });
+
+      await applyCardPurchaseUpdate(nextPurchases, nowIso);
+      Alert.alert("נשמר בהצלחה", `בוצע מימוש מתוך רכישה ${purchaseIndex + 1}`);
+    } catch (error) {
+      console.error("שגיאה במימוש כרטיסייה:", error);
+      Alert.alert("שגיאה", "לא ניתן לממש כרטיסייה");
+    } finally {
+      setUpdatingClient(false);
+    }
+  }, [applyCardPurchaseUpdate, redeemDate, redeemTime, selectedClient]);
+
+  const handleDeleteUsage = useCallback(async (purchaseId: string, usageDate: string) => {
+    if (!selectedClient) return Alert.alert("שגיאה", "יש לבחור לקוח לפני מחיקת מימוש");
+
+    try {
+      setUpdatingClient(true);
+      const nowIso = new Date().toISOString();
+      const purchases = normalizeCardPurchases(selectedClient);
+
+      const nextPurchases = purchases.map((purchase) => {
+        if (purchase.id !== purchaseId) return purchase;
+
+        let removed = false;
+        const nextUsageDates = (purchase.usageDates || []).filter((date) => {
+          if (!removed && date === usageDate) {
+            removed = true;
+            return false;
+          }
+          return true;
+        });
+
+        return {
+          ...purchase,
+          updatedAt: nowIso,
+          usageDates: sortIsoDatesDesc(nextUsageDates),
+        };
+      });
+
+      await applyCardPurchaseUpdate(nextPurchases, nowIso);
+      Alert.alert("נמחק בהצלחה", "המימוש נמחק והסיכומים עודכנו");
+    } catch (error) {
+      console.error("שגיאה במחיקת מימוש כרטיסייה:", error);
+      Alert.alert("שגיאה", "לא ניתן למחוק את המימוש");
+    } finally {
+      setUpdatingClient(false);
+    }
+  }, [applyCardPurchaseUpdate, selectedClient]);
+
+  const handleUpdateUsage = useCallback(async (
+    purchaseId: string,
+    oldUsageDate: string,
+    nextUsageDate: string
+  ) => {
+    if (!selectedClient) return Alert.alert("שגיאה", "יש לבחור לקוח לפני עדכון מימוש");
+
+    try {
+      setUpdatingClient(true);
+      const nowIso = new Date().toISOString();
+      const purchases = normalizeCardPurchases(selectedClient);
+
+      const nextPurchases = purchases.map((purchase) => {
+        if (purchase.id !== purchaseId) return purchase;
+
+        let updated = false;
+        const nextUsageDates = (purchase.usageDates || []).map((date) => {
+          if (!updated && date === oldUsageDate) {
+            updated = true;
+            return nextUsageDate;
+          }
+          return date;
+        });
+
+        return {
+          ...purchase,
+          updatedAt: nowIso,
+          usageDates: sortIsoDatesDesc(nextUsageDates),
+        };
+      });
+
+      await applyCardPurchaseUpdate(nextPurchases, nowIso);
+      Alert.alert("עודכן בהצלחה", "תאריך ושעת המימוש עודכנו");
+    } catch (error) {
+      console.error("שגיאה בעדכון מימוש כרטיסייה:", error);
+      Alert.alert("שגיאה", "לא ניתן לעדכן את המימוש");
+    } finally {
+      setUpdatingClient(false);
+    }
+  }, [applyCardPurchaseUpdate, selectedClient]);
+
+  return (
+    <View style={styles.cardRenewalManagerCard}>
+      <View style={styles.clientCardsHeader}>
+        <Text style={styles.clientCardsInfoTitle}>מימוש וחידוש כרטיסיות</Text>
+        <Text style={styles.clientCardsInfoSubtitle}>
+          כל חידוש נשמר כרכישה נפרדת, והמימושים מוצגים מתחת לרכישה שאליה הם שייכים
+        </Text>
+      </View>
+
+      {sortedClients.length === 0 ? (
+        <View style={styles.emptyClientsBox}>
+          <Text style={styles.emptyClientsText}>אין לקוחות להצגה</Text>
+        </View>
+      ) : (
+        <>
+          <View style={styles.clientSearchBox}>
+            <Text style={styles.manualWorkoutSectionLabel}>חיפוש לקוח</Text>
+            <TextInput
+              value={clientSearchQuery}
+              onChangeText={(value) => {
+                setClientSearchQuery(value);
+                if (!value.trim()) setSelectedClientId("");
+              }}
+              placeholder="הקלידי שם, אימייל או טלפון"
+              placeholderTextColor="#94A3B8"
+              style={styles.clientSearchInput}
+              textAlign="right"
+              autoCapitalize="none"
+            />
+
+            {clientSearchQuery.trim().length > 0 && filteredClients.length > 0 && (
+              <View style={styles.clientSearchResultsList}>
+                {filteredClients.map((client) => {
+                  const isSelected = client.id === selectedClientId;
+                  return (
+                    <Pressable
+                      key={`card-search-client-${client.id}`}
+                      onPress={() => handleSelectClient(client)}
+                      style={({ pressed }) => [
+                        styles.clientSearchResultItem,
+                        isSelected && styles.clientSearchResultItemActive,
+                        pressed && styles.pressedLight,
+                      ]}
+                    >
+                      <Text style={styles.clientSearchResultName} numberOfLines={1}>
+                        {client.name || "ללא שם"}
+                      </Text>
+                      {!!client.email && (
+                        <Text style={styles.clientSearchResultMeta} numberOfLines={1}>
+                          {client.email}
+                        </Text>
+                      )}
+                    </Pressable>
+                  );
+                })}
+              </View>
+            )}
+
+            {clientSearchQuery.trim().length > 0 && filteredClients.length === 0 && (
+              <View style={styles.emptyCardHistoryBox}>
+                <Text style={styles.emptyCardHistoryText}>לא נמצא לקוח מתאים לחיפוש</Text>
+              </View>
+            )}
+          </View>
+
+          {selectedClient && (
+            <View style={styles.cardRenewalSelectedBox}>
+              <View style={styles.selectedClientSummaryBox}>
+                <Text style={styles.selectedClientSummaryTitle}>{selectedClient.name || "ללא שם"}</Text>
+                <Text style={styles.selectedClientSummaryMeta}>{selectedClient.email || selectedClient.phone || "לקוח נבחר"}</Text>
+              </View>
+
+              <View style={styles.clientCardsTopStatsRow}>
+                <View style={styles.clientCardsMiniStatBox}>
+                  <Text style={styles.clientCardsMiniValue}>{selectedStats.totalPurchased}</Text>
+                  <Text style={styles.clientCardsMiniLabel}>סה״כ נרכשו</Text>
+                </View>
+                <View style={styles.clientCardsMiniStatBox}>
+                  <Text style={styles.clientCardsMiniValue}>{selectedStats.totalUsed}</Text>
+                  <Text style={styles.clientCardsMiniLabel}>סה״כ מומשו</Text>
+                </View>
+                <View style={styles.clientCardsMiniStatBox}>
+                  <Text style={styles.clientCardsMiniValue}>{selectedStats.totalRemaining}</Text>
+                  <Text style={styles.clientCardsMiniLabel}>סה״כ נותרו</Text>
+                </View>
+              </View>
+
+              <View style={styles.cardRenewalFormBox}>
+                {canRedeemCard && (
+                  <>
+                    <View style={styles.editUsagePickerRow}>
+                      <View style={styles.editUsagePickerCol}>
+                        <Text style={styles.inputLabel}>תאריך מימוש</Text>
+                        {Platform.OS === "web" ? (
+                          <View style={styles.responsiveWebInputWrap}>
+                            <WebDateTimeInput type="date" value={redeemDate} onChange={setRedeemDate} />
+                          </View>
+                        ) : (
+                          <TextInput
+                            value={redeemDate}
+                            onChangeText={setRedeemDate}
+                            placeholder="YYYY-MM-DD"
+                            placeholderTextColor="#94A3B8"
+                            style={styles.input}
+                            textAlign="right"
+                          />
+                        )}
+                      </View>
+
+                      <View style={styles.editUsagePickerCol}>
+                        <Text style={styles.inputLabel}>שעת מימוש</Text>
+                        {Platform.OS === "web" ? (
+                          <View style={styles.responsiveWebInputWrap}>
+                            <WebDateTimeInput type="time" value={redeemTime} onChange={setRedeemTime} />
+                          </View>
+                        ) : (
+                          <TextInput
+                            value={redeemTime}
+                            onChangeText={(value) => setRedeemTime(value.replace(/[^0-9:]/g, "").slice(0, 5))}
+                            onBlur={() => {
+                              const match = redeemTime.match(/^(\d{1,2}):(\d{1,2})$/);
+                              if (!match) {
+                                setRedeemTime("12:00");
+                                return;
+                              }
+                              const hours = Math.min(Math.max(Number(match[1]), 0), 23);
+                              const minutes = Math.min(Math.max(Number(match[2]), 0), 59);
+                              setRedeemTime(`${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`);
+                            }}
+                            placeholder="12:00"
+                            placeholderTextColor="#94A3B8"
+                            style={styles.input}
+                            keyboardType={Platform.OS === "ios" ? "numbers-and-punctuation" : "numeric"}
+                            textAlign="right"
+                          />
+                        )}
+                      </View>
+                    </View>
+
+                    <Pressable
+                      onPress={handleRedeemCard}
+                      disabled={updatingClient}
+                      style={({ pressed }) => [styles.redeemCardButton, pressed && styles.pressedLight, updatingClient && styles.disabledButton]}
+                    >
+                      {updatingClient ? <ActivityIndicator color="#1D4ED8" /> : <Text style={styles.redeemCardButtonText}>מימוש כרטיסייה</Text>}
+                    </Pressable>
+                  </>
+                )}
+
+                {canAddNewPurchase ? (
+                  <>
+                    <View style={styles.inputGroup}>
+                      <Text style={styles.inputLabel}>כמות כרטיסיות לרכישה חדשה</Text>
+                      <TextInput
+                        value={purchaseAmount}
+                        onChangeText={(value) => setPurchaseAmount(value.replace(/[^0-9]/g, ""))}
+                        placeholder="לדוגמה: 8"
+                        placeholderTextColor="#94A3B8"
+                        style={styles.input}
+                        keyboardType="numeric"
+                        textAlign="right"
+                      />
+                    </View>
+
+                    <Pressable
+                      onPress={handleAddPurchase}
+                      disabled={updatingClient}
+                      style={({ pressed }) => [styles.addCardPurchaseButton, pressed && styles.pressed, updatingClient && styles.disabledButton]}
+                    >
+                      {updatingClient ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.addCardPurchaseButtonText}>הוספת רכישה חדשה</Text>}
+                    </Pressable>
+                  </>
+                ) : (
+                  <View style={styles.emptyCardHistoryBox}>
+                    <Text style={styles.emptyCardHistoryText}>חידוש כרטיסייה יופיע רק אחרי שכל הכרטיסיות הקיימות מומשו</Text>
+                  </View>
+                )}
+              </View>
+
+              <CardPurchaseHistoryView
+                purchases={selectedStats.purchases}
+                onDeleteUsage={handleDeleteUsage}
+                onUpdateUsage={handleUpdateUsage}
+                updating={updatingClient}
+              />
+            </View>
+          )}
+        </>
+      )}
+    </View>
+  );
+}
+
 export default function Menu() {
   const { width, height } = useWindowDimensions();
 
@@ -1252,6 +2385,7 @@ export default function Menu() {
       cardsPurchased: currentUserData.cardsPurchased,
       cardsUsed: currentUserData.cardsUsed,
       cardUsageDates: currentUserData.cardUsageDates,
+      cardPurchases: currentUserData.cardPurchases,
       instagramUrl: currentUserData.instagramUrl,
       whatsappPhone: currentUserData.whatsappPhone,
       contactPhone: currentUserData.contactPhone,
@@ -1510,16 +2644,12 @@ export default function Menu() {
       ? "חסום"
       : "ממתין לאישור";
 
-  const cardsPurchased = Number(currentUserData?.cardsPurchased || 0);
-
-  const cardUsageDates = Array.isArray(currentUserData?.cardUsageDates)
-    ? [...currentUserData.cardUsageDates].sort(
-        (a, b) => (new Date(b).getTime() || 0) - (new Date(a).getTime() || 0)
-      )
-    : [];
-
-  const cardsUsed = cardUsageDates.length;
-  const cardsRemaining = Math.max(cardsPurchased - cardUsageDates.length, 0);
+  const currentClientCardStats = getCardPurchaseStats(currentUserData);
+  const cardsPurchased = currentClientCardStats.totalPurchased;
+  const cardsUsed = currentClientCardStats.totalUsed;
+  const cardsRemaining = currentClientCardStats.totalRemaining;
+  const cardUsageDates = currentClientCardStats.allUsageDates;
+  const cardPurchaseHistory = currentClientCardStats.purchases;
   const lastCardUsage = cardUsageDates[0] || null;
 
   if (loading) {
@@ -1708,38 +2838,13 @@ export default function Menu() {
 
                           <View style={styles.cardUsageHistoryBox}>
                             <View style={styles.cardUsageHistoryHeader}>
-                              <Text style={styles.cardUsageHistoryTitle}>רשימת מימושים</Text>
+                              <Text style={styles.cardUsageHistoryTitle}>רכישות ומימושים לפי חידוש</Text>
                               <Text style={styles.cardUsageHistoryCount}>
-                                {cardUsageDates.length} מימושים
+                                {cardPurchaseHistory.length} רכישות
                               </Text>
                             </View>
 
-                            {cardUsageDates.length === 0 ? (
-                              <View style={styles.emptyCardHistoryBox}>
-                                <Text style={styles.emptyCardHistoryText}>
-                                  עדיין לא בוצעו מימושים
-                                </Text>
-                              </View>
-                            ) : (
-                              <View style={styles.cardUsageList}>
-                                {cardUsageDates.map((usageDate, index) => (
-                                  <View key={`${usageDate}-${index}`} style={styles.cardUsageRow}>
-                                    <View style={styles.cardUsageOrderBadge}>
-                                      <Text style={styles.cardUsageOrderBadgeText}>
-                                        {cardUsageDates.length - index}
-                                      </Text>
-                                    </View>
-
-                                    <View style={styles.cardUsageContent}>
-                                      <Text style={styles.cardUsageMainText}>מימוש כרטיסייה</Text>
-                                      <Text style={styles.cardUsageSubText}>
-                                        {formatDateTimeIL(usageDate)}
-                                      </Text>
-                                    </View>
-                                  </View>
-                                ))}
-                              </View>
-                            )}
+                            <CardPurchaseHistoryView purchases={cardPurchaseHistory} />
                           </View>
                         </View>
                       </View>
@@ -2253,8 +3358,9 @@ export default function Menu() {
                                     <Text style={styles.emptyClientsText}>אין לקוחות להצגה</Text>
                                   </View>
                                 ) : (
-                                  <ClientCardManager
+                                  <ClientCardRenewalManager
                                     clients={clients}
+                                    currentUserData={currentUserData}
                                     onAfterUpdate={fetchMenuData}
                                   />
                                 )}
@@ -3548,6 +4654,337 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "800",
     textAlign: "center",
+  },
+
+
+  cardRenewalManagerCard: {
+    width: "100%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#DCE7F5",
+    padding: 14,
+    gap: 14,
+  },
+  cardRenewalSelectedBox: {
+    gap: 14,
+  },
+  cardRenewalFormBox: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    padding: 12,
+    gap: 10,
+  },
+  addCardPurchaseButton: {
+    borderRadius: 16,
+    backgroundColor: "#059669",
+    minHeight: 50,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 16,
+  },
+  addCardPurchaseButtonText: {
+    color: "#FFFFFF",
+    fontWeight: "800",
+    fontSize: 15,
+    textAlign: "center",
+  },
+  redeemCardButton: {
+    borderRadius: 16,
+    backgroundColor: "#EFF6FF",
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+    minHeight: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 16,
+  },
+  redeemCardButtonText: {
+    color: "#1D4ED8",
+    fontWeight: "800",
+    fontSize: 14,
+    textAlign: "center",
+  },
+  cardPurchaseGroupsList: {
+    gap: 12,
+  },
+  cardPurchaseGroupCard: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#DCE7F5",
+    padding: 12,
+    gap: 12,
+  },
+  cardPurchaseGroupHeaderPressable: {
+    width: "100%",
+    borderRadius: 16,
+    gap: 8,
+  },
+  cardPurchaseGroupHeader: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  cardPurchaseGroupTitleWrap: {
+    flex: 1,
+    alignItems: "flex-end",
+    gap: 3,
+  },
+  cardPurchaseGroupTitle: {
+    color: "#0F172A",
+    fontSize: 16,
+    fontWeight: "800",
+    textAlign: "right",
+  },
+  cardPurchaseGroupDate: {
+    color: "#64748B",
+    fontSize: 12,
+    fontWeight: "600",
+    textAlign: "right",
+  },
+  cardPurchaseGroupBadge: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: "#DCFCE7",
+    borderWidth: 1,
+    borderColor: "#BBF7D0",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cardPurchaseGroupBadgeText: {
+    color: "#166534",
+    fontSize: 16,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  cardPurchaseMiniStatsRow: {
+    flexDirection: "row-reverse",
+    gap: 8,
+  },
+  cardPurchaseMiniStatBox: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    paddingVertical: 10,
+    paddingHorizontal: 6,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cardPurchaseMiniStatValue: {
+    color: "#0F172A",
+    fontSize: 18,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  cardPurchaseMiniStatLabel: {
+    marginTop: 4,
+    color: "#64748B",
+    fontSize: 12,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  cardPurchaseUsageSection: {
+    gap: 10,
+  },
+
+  cardUsageActionsRow: {
+    marginTop: 8,
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    justifyContent: "flex-start",
+    gap: 8,
+    flexWrap: "wrap",
+  },
+  editUsageButton: {
+    backgroundColor: "#EFF6FF",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+  },
+  editUsageButtonText: {
+    color: "#1D4ED8",
+    fontSize: 12,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  deleteUsageButton: {
+    backgroundColor: "#FEF2F2",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#FECACA",
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+  },
+  deleteUsageButtonText: {
+    color: "#DC2626",
+    fontSize: 12,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  editUsageModalCard: {
+    width: "100%",
+    maxWidth: 390,
+    maxHeight: "88%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    paddingVertical: 18,
+    paddingHorizontal: 16,
+    gap: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  editUsageModalTitle: {
+    color: "#0F172A",
+    fontSize: 18,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  editUsageModalSubtitle: {
+    color: "#64748B",
+    fontSize: 13,
+    lineHeight: 20,
+    textAlign: "center",
+  },
+  editUsagePickerRow: {
+    width: "100%",
+    flexDirection: "row-reverse",
+    gap: 6,
+    flexWrap: "nowrap",
+    alignItems: "flex-start",
+    overflow: "hidden",
+  },
+  editUsagePickerCol: {
+    flex: 1,
+    flexBasis: 0,
+    minWidth: 0,
+    maxWidth: "50%",
+    gap: 6,
+    overflow: "hidden",
+  },
+  editUsagePickerButton: {
+    width: "100%",
+    minHeight: 46,
+    backgroundColor: "#F8FAFC",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 10,
+    overflow: "hidden",
+  },
+  editUsagePickerButtonText: {
+    color: "#0F172A",
+    fontSize: 14,
+    fontWeight: "800",
+    textAlign: "center",
+    writingDirection: "ltr",
+  },
+  editUsageModalButtonsRow: {
+    width: "100%",
+    flexDirection: "row-reverse",
+    gap: 10,
+    marginTop: 4,
+  },
+
+  inlineDateTimePicker: {
+    width: "100%",
+    minHeight: 120,
+    alignSelf: "stretch",
+  },
+  editUsagePickerRowStacked: {
+    flexDirection: "row-reverse",
+  },
+  responsiveWebInputWrap: {
+    width: "100%",
+    maxWidth: "100%",
+    minWidth: 0,
+    overflow: "hidden",
+    alignSelf: "stretch",
+  },
+  clientSearchBox: {
+    width: "100%",
+    gap: 10,
+  },
+  clientSearchInput: {
+    width: "100%",
+    minHeight: 50,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: "#0F172A",
+    writingDirection: "rtl",
+  },
+  clientSearchResultsList: {
+    width: "100%",
+    gap: 8,
+  },
+  clientSearchResultItem: {
+    width: "100%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    paddingVertical: 11,
+    paddingHorizontal: 12,
+    alignItems: "flex-end",
+    gap: 3,
+  },
+  clientSearchResultItemActive: {
+    backgroundColor: "#E0E7FF",
+    borderColor: "#A5B4FC",
+  },
+  clientSearchResultName: {
+    color: "#0F172A",
+    fontSize: 14,
+    fontWeight: "800",
+    textAlign: "right",
+  },
+  clientSearchResultMeta: {
+    color: "#64748B",
+    fontSize: 12,
+    fontWeight: "600",
+    textAlign: "right",
+  },
+  selectedClientSummaryBox: {
+    width: "100%",
+    backgroundColor: "#EFF6FF",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    alignItems: "flex-end",
+    gap: 4,
+  },
+  selectedClientSummaryTitle: {
+    color: "#0F172A",
+    fontSize: 16,
+    fontWeight: "800",
+    textAlign: "right",
+  },
+  selectedClientSummaryMeta: {
+    color: "#475569",
+    fontSize: 13,
+    fontWeight: "600",
+    textAlign: "right",
   },
 
   pressed: {
