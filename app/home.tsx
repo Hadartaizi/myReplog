@@ -220,6 +220,27 @@ function CloseIcon({ size = 24, color = '#222222' }) {
   );
 }
 
+function MenuIcon({ size = 26, color = '#0F172A' }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Line x1="4" y1="7" x2="20" y2="7" stroke={color} strokeWidth={2.4} strokeLinecap="round" />
+      <Line x1="4" y1="12" x2="20" y2="12" stroke={color} strokeWidth={2.4} strokeLinecap="round" />
+      <Line x1="4" y1="17" x2="20" y2="17" stroke={color} strokeWidth={2.4} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+function TimerIcon({ size = 22, color = '#FFFFFF' }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Rect x="8" y="2.8" width="8" height="3.2" rx="1.2" stroke={color} strokeWidth={2} fill="none" />
+      <Path d="M12 21a7 7 0 1 0 0-14a7 7 0 0 0 0 14z" stroke={color} strokeWidth={2} fill="none" />
+      <Line x1="12" y1="11" x2="12" y2="15" stroke={color} strokeWidth={2.2} strokeLinecap="round" />
+      <Line x1="12" y1="15" x2="15" y2="15" stroke={color} strokeWidth={2.2} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
 export default function Home() {
   const { width, height } = useWindowDimensions();
 
@@ -267,6 +288,12 @@ export default function Home() {
   const [lastExerciseData, setLastExerciseData] = useState<Record<string, LastExerciseRow[]>>({});
   const [selectedExerciseForModal, setSelectedExerciseForModal] = useState<string | null>(null);
   const [isExerciseNameFocused, setIsExerciseNameFocused] = useState(false);
+  const [showSideMenu, setShowSideMenu] = useState(false);
+  const [showTimerModal, setShowTimerModal] = useState(false);
+  const [timerMinutes, setTimerMinutes] = useState('1');
+  const [timerSeconds, setTimerSeconds] = useState('30');
+  const [timerRemaining, setTimerRemaining] = useState(0);
+  const [isTimerRunning, setIsTimerRunning] = useState(false);
 
   const [trainingProgram, setTrainingProgram] = useState<TrainingProgramDoc | null>(null);
   const [isLoadingTrainingProgram, setIsLoadingTrainingProgram] = useState(true);
@@ -874,6 +901,60 @@ export default function Home() {
     }
   };
 
+  useEffect(() => {
+    if (!isTimerRunning || timerRemaining <= 0) return;
+
+    const intervalId = setInterval(() => {
+      setTimerRemaining((prev) => {
+        if (prev <= 1) {
+          setIsTimerRunning(false);
+          showToast('זמן המנוחה הסתיים');
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(intervalId);
+  }, [isTimerRunning, timerRemaining]);
+
+  const formatTimer = (totalSeconds: number) => {
+    const safeSeconds = Math.max(0, totalSeconds);
+    const minutes = Math.floor(safeSeconds / 60);
+    const seconds = safeSeconds % 60;
+    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  };
+
+  const openTimerFromMenu = () => {
+    setShowSideMenu(false);
+    setShowTimerModal(true);
+  };
+
+  const startRestTimer = () => {
+    const minutes = parseInt(timerMinutes || '0', 10) || 0;
+    const seconds = parseInt(timerSeconds || '0', 10) || 0;
+    const totalSeconds = minutes * 60 + seconds;
+
+    if (totalSeconds <= 0) {
+      showToast('בחרי זמן מנוחה גדול מ־0');
+      return;
+    }
+
+    setTimerRemaining(totalSeconds);
+    setIsTimerRunning(true);
+    setShowTimerModal(false);
+  };
+
+  const pauseOrResumeTimer = () => {
+    if (timerRemaining <= 0) return;
+    setIsTimerRunning((prev) => !prev);
+  };
+
+  const resetTimer = () => {
+    setIsTimerRunning(false);
+    setTimerRemaining(0);
+  };
+
   if (!fontsLoaded) {
     return <View style={{ flex: 1, backgroundColor: APP_BG }} />;
   }
@@ -918,6 +999,20 @@ export default function Home() {
                   },
                 ]}
               >
+                <Pressable
+                  style={styles.menuButton}
+                  onPress={() => setShowSideMenu(true)}
+                  hitSlop={10}
+                >
+                  <MenuIcon size={26} color="#0F172A" />
+                </Pressable>
+
+                {timerRemaining > 0 && (
+                  <Pressable style={styles.activeTimerChip} onPress={() => setShowTimerModal(true)}>
+                    <Text style={styles.activeTimerText}>מנוחה: {formatTimer(timerRemaining)}</Text>
+                  </Pressable>
+                )}
+
                 <View style={styles.header}>
                   <View style={styles.titleWrapper}>
                     <Text
@@ -952,10 +1047,6 @@ export default function Home() {
                       הגיע הזמן להזין אימון
                     </Text>
                   </View>
-
-                  <Text style={[styles.subtitle, { fontSize: dynamic.textSize - 1 }]}>
-                    שמרי תרגיל חדש בצורה מסודרת, נקייה ונוחה
-                  </Text>
                 </View>
 
                 {isLoadingTrainingProgram ? (
@@ -1045,9 +1136,15 @@ export default function Home() {
                       {!!exercise.name.trim() && (
                         <Pressable
                           onPress={clearExerciseName}
-                          hitSlop={8}
+                          hitSlop={10}
                           style={({ pressed }) => [
                             styles.clearInsideButton,
+                            {
+                              width: Math.max(28, dynamic.inputHeight * 0.58),
+                              height: Math.max(28, dynamic.inputHeight * 0.58),
+                              borderRadius: Math.max(14, dynamic.inputHeight * 0.29),
+                              left: Math.max(6, dynamic.inputHeight * 0.14),
+                            },
                             pressed && styles.pressedButton,
                           ]}
                         >
@@ -1058,7 +1155,12 @@ export default function Home() {
                       <TextInput
                         style={[
                           styles.exerciseNameTextInput,
-                          { fontSize: dynamic.textSize },
+                          {
+                            fontSize: dynamic.textSize,
+                            paddingLeft: exercise.name.trim()
+                              ? Math.max(44, dynamic.inputHeight * 0.95)
+                              : 10,
+                          },
                         ]}
                         placeholder="שם תרגיל"
                         placeholderTextColor="#8A94A6"
@@ -1225,7 +1327,7 @@ export default function Home() {
                     <>
                       <SaveIcon size={20} color="#FFFFFF" />
                       <Text style={[styles.saveButtonText, { fontSize: dynamic.textSize }]}>
-                        שמור אימון
+                        שמור תרגיל
                       </Text>
                     </>
                   )}
@@ -1340,6 +1442,102 @@ export default function Home() {
                   <View style={styles.modalDivider} />
                   <Text style={styles.modalText}>אין מידע זמין</Text>
                 </>
+              )}
+            </View>
+          </View>
+        </Modal>
+
+
+
+        <Modal
+          visible={showSideMenu}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowSideMenu(false)}
+        >
+          <Pressable style={styles.sideMenuOverlay} onPress={() => setShowSideMenu(false)}>
+            <Pressable style={[styles.sideMenuCard, { width: Math.min(width * 0.78, 300) }]}>
+              <View style={styles.sideMenuHeader}>
+                <Pressable onPress={() => setShowSideMenu(false)} style={styles.sideMenuClose}>
+                  <CloseIcon size={22} color="#0F172A" />
+                </Pressable>
+                <Text style={styles.sideMenuTitle}>תפריט</Text>
+              </View>
+
+              <Pressable style={styles.timerMenuButton} onPress={openTimerFromMenu}>
+                <TimerIcon size={22} color="#FFFFFF" />
+                <Text style={styles.timerMenuButtonText}>טיימר מנוחה</Text>
+              </Pressable>
+            </Pressable>
+          </Pressable>
+        </Modal>
+
+        <Modal
+          visible={showTimerModal}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowTimerModal(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.timerModalCard, { width: Math.min(width * 0.9, 420) }]}>
+              <View style={styles.timerModalHeader}>
+                <Pressable style={styles.modalClose} onPress={() => setShowTimerModal(false)}>
+                  <CloseIcon size={24} color="#222222" />
+                </Pressable>
+                <Text style={styles.timerModalTitle}>טיימר מנוחה</Text>
+              </View>
+
+              <Text style={styles.timerDisplay}>{formatTimer(timerRemaining)}</Text>
+              <Text style={styles.timerHint}>הגדיר זמן מנוחה ידני בין תרגיל לתרגיל</Text>
+
+              <View style={styles.timerInputsRow}>
+                <View style={styles.timerInputBlock}>
+                  <Text style={styles.miniLabel}>דקות</Text>
+                  <TextInput
+                    style={[styles.inputBox, styles.textInput, styles.timerInput]}
+                    keyboardType={INTEGER_KEYBOARD}
+                    inputMode="numeric"
+                    value={timerMinutes}
+                    onChangeText={(text) => setTimerMinutes(text.replace(/[^0-9]/g, ''))}
+                    placeholder="0"
+                    placeholderTextColor="#8A94A6"
+                    textAlign="center"
+                  />
+                </View>
+
+                <View style={styles.timerInputBlock}>
+                  <Text style={styles.miniLabel}>שניות</Text>
+                  <TextInput
+                    style={[styles.inputBox, styles.textInput, styles.timerInput]}
+                    keyboardType={INTEGER_KEYBOARD}
+                    inputMode="numeric"
+                    value={timerSeconds}
+                    onChangeText={(text) => {
+                      const cleaned = text.replace(/[^0-9]/g, '');
+                      const limited = cleaned ? String(Math.min(59, parseInt(cleaned, 10))) : '';
+                      setTimerSeconds(limited);
+                    }}
+                    placeholder="0"
+                    placeholderTextColor="#8A94A6"
+                    textAlign="center"
+                  />
+                </View>
+              </View>
+
+              <Pressable style={styles.startTimerButton} onPress={startRestTimer}>
+                <Text style={styles.startTimerButtonText}>הפעל טיימר</Text>
+              </Pressable>
+
+              {timerRemaining > 0 && (
+                <View style={styles.timerActionsRow}>
+                  <Pressable style={styles.secondaryTimerButton} onPress={pauseOrResumeTimer}>
+                    <Text style={styles.secondaryTimerButtonText}>{isTimerRunning ? 'השהה' : 'המשך'}</Text>
+                  </Pressable>
+
+                  <Pressable style={styles.secondaryTimerButton} onPress={resetTimer}>
+                    <Text style={styles.secondaryTimerButtonText}>איפוס</Text>
+                  </Pressable>
+                </View>
               )}
             </View>
           </View>
@@ -1468,6 +1666,7 @@ const styles = StyleSheet.create({
   },
 
   card: {
+    position: 'relative',
     backgroundColor: '#FFFFFF',
     borderRadius: 24,
     shadowColor: '#000',
@@ -1575,6 +1774,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 10,
     overflow: 'hidden',
+    position: 'relative',
   },
 
   exerciseNameInputWrapFocused: {
@@ -1606,9 +1806,10 @@ const styles = StyleSheet.create({
   },
 
   clearInsideButton: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    position: 'absolute',
+    top: '50%',
+    transform: [{ translateY: -15 }],
+    zIndex: 2,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#F1F5F9',
@@ -2059,6 +2260,211 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 22,
     textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+
+
+  menuButton: {
+    position: 'absolute',
+    top: 14,
+    right: 14,
+    zIndex: 5,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  activeTimerChip: {
+    alignSelf: 'center',
+    marginTop: 4,
+    marginBottom: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    backgroundColor: '#EEF2FF',
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+  },
+
+  activeTimerText: {
+    color: '#3730A3',
+    fontSize: 13,
+    fontWeight: '800',
+    textAlign: 'center',
+    writingDirection: 'rtl',
+  },
+
+  sideMenuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.25)',
+    alignItems: 'flex-end',
+    justifyContent: 'flex-start',
+  },
+
+  sideMenuCard: {
+    height: '100%',
+    backgroundColor: '#FFFFFF',
+    paddingTop: 54,
+    paddingHorizontal: 18,
+    borderTopLeftRadius: 24,
+    borderBottomLeftRadius: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: -4, height: 0 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+
+  sideMenuHeader: {
+    width: '100%',
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+
+  sideMenuClose: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  sideMenuTitle: {
+    flex: 1,
+    color: '#0F172A',
+    fontSize: 20,
+    fontWeight: '900',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+
+  timerMenuButton: {
+    width: '100%',
+    minHeight: 52,
+    borderRadius: 16,
+    backgroundColor: '#0F172A',
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingHorizontal: 14,
+  },
+
+  timerMenuButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
+    textAlign: 'center',
+    writingDirection: 'rtl',
+  },
+
+  timerModalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 20,
+  },
+
+  timerModalHeader: {
+    width: '100%',
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+
+  timerModalTitle: {
+    flex: 1,
+    color: '#0F172A',
+    fontSize: 20,
+    fontWeight: '900',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+
+  timerDisplay: {
+    marginTop: 18,
+    color: '#0F172A',
+    fontSize: 42,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+
+  timerHint: {
+    marginTop: 6,
+    marginBottom: 18,
+    color: '#64748B',
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
+    writingDirection: 'rtl',
+  },
+
+  timerInputsRow: {
+    width: '100%',
+    flexDirection: 'row-reverse',
+    gap: 10,
+  },
+
+  timerInputBlock: {
+    flex: 1,
+  },
+
+  timerInput: {
+    minHeight: 52,
+    fontSize: 18,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+
+  startTimerButton: {
+    width: '100%',
+    minHeight: 52,
+    borderRadius: 16,
+    backgroundColor: '#0F172A',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 16,
+  },
+
+  startTimerButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '900',
+    textAlign: 'center',
+    writingDirection: 'rtl',
+  },
+
+  timerActionsRow: {
+    width: '100%',
+    flexDirection: 'row-reverse',
+    gap: 10,
+    marginTop: 10,
+  },
+
+  secondaryTimerButton: {
+    flex: 1,
+    minHeight: 46,
+    borderRadius: 14,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  secondaryTimerButtonText: {
+    color: '#0F172A',
+    fontSize: 14,
+    fontWeight: '800',
+    textAlign: 'center',
     writingDirection: 'rtl',
   },
 

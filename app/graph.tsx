@@ -788,7 +788,7 @@ export default function GraphScreen() {
       ? 'מספר סטים'
       : dataType === 'משקל'
       ? 'משקל (ק"ג)'
-      : 'עוצמת נפח (1–5)';
+      : 'עוצמת נפח (1-10)';
 
   const regularLabels = chartData.labels;
   const regularChartData = {
@@ -1136,7 +1136,7 @@ export default function GraphScreen() {
                         </ScrollView>
                       </View>
 
-                      <Text style={styles.scrollHint}>גללי הצידה כדי לראות תאריכים נוספים</Text>
+                      <Text style={styles.scrollHint}>גלול הצידה כדי לראות תאריכים נוספים</Text>
                     </View>
                   </View>
                 )}

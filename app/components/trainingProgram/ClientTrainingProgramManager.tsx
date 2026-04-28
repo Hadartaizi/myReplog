@@ -310,6 +310,8 @@ export default function ClientTrainingProgramManager({
   }, [clients, selfItem]);
 
   const [selectedClientUid, setSelectedClientUid] = useState("");
+  const [clientSearchQuery, setClientSearchQuery] = useState("");
+  const [isClientMenuOpen, setIsClientMenuOpen] = useState(false);
   const [sections, setSections] = useState<ProgramSection[]>([]);
   const [notes, setNotes] = useState("");
   const [splitType, setSplitType] = useState<TrainingSplitType>("fullbody");
@@ -325,6 +327,50 @@ export default function ClientTrainingProgramManager({
       (client) => getClientResolvedUid(client) === selectedClientUid
     );
   }, [selectablePeople, selectedClientUid]);
+
+  const filteredSelectablePeople = useMemo(() => {
+    const search = String(clientSearchQuery || "").trim().toLowerCase();
+
+    if (!search) {
+      return selectablePeople;
+    }
+
+    return selectablePeople.filter((client) => {
+      const name = String(client.name || "").toLowerCase();
+      const email = String(client.email || "").toLowerCase();
+      const uid = getClientResolvedUid(client).toLowerCase();
+
+      return name.includes(search) || email.includes(search) || uid.includes(search);
+    });
+  }, [clientSearchQuery, selectablePeople]);
+
+  const handleClientSearchChange = (value: string) => {
+    setClientSearchQuery(value);
+    setIsClientMenuOpen(true);
+
+    if (!value.trim()) {
+      setSelectedClientUid("");
+    }
+  };
+
+  const handleSelectClient = (client: ClientItem) => {
+    const clientUid = getClientResolvedUid(client);
+    setSelectedClientUid(clientUid);
+    setClientSearchQuery(String(client.name || client.email || ""));
+    setIsClientMenuOpen(false);
+  };
+
+  const clearSelectedClient = () => {
+    setSelectedClientUid("");
+    setClientSearchQuery("");
+    setIsClientMenuOpen(false);
+  };
+
+  useEffect(() => {
+    if (!selectedClientUid || !selectedClient) return;
+
+    setClientSearchQuery(String(selectedClient.name || selectedClient.email || ""));
+  }, [selectedClient, selectedClientUid]);
 
   useEffect(() => {
     if (!selectedClientUid) {
@@ -620,39 +666,92 @@ export default function ClientTrainingProgramManager({
         </View>
       ) : (
         <>
-          <Text style={styles.label}>בחירת מתאמן / עצמי</Text>
+          <View style={styles.clientPickerBox}>
+            <Text style={styles.label}>מציאת לקוח לבניית תוכנית אימון</Text>
 
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.clientsRow}
-          >
-            {selectablePeople.map((client) => {
-              const clientUid = getClientResolvedUid(client);
-              const isSelected = clientUid === selectedClientUid;
+            <View style={styles.clientSearchInputWrap}>
+              <TextInput
+                value={clientSearchQuery}
+                onChangeText={handleClientSearchChange}
+                onFocus={() => setIsClientMenuOpen(true)}
+                placeholder="הקלידי שם, אימייל או מזהה לקוח"
+                placeholderTextColor="#94A3B8"
+                style={styles.clientSearchInput}
+                textAlign="right"
+                autoCapitalize="none"
+              />
 
-              return (
+              {clientSearchQuery.length > 0 && (
                 <TouchableOpacity
-                  key={`${client.id}-${clientUid}`}
                   activeOpacity={0.85}
-                  onPress={() => setSelectedClientUid(clientUid)}
-                  style={[
-                    styles.clientChip,
-                    isSelected && styles.clientChipSelected,
-                  ]}
+                  onPress={clearSelectedClient}
+                  style={styles.clientSearchClearButton}
                 >
-                  <Text
-                    style={[
-                      styles.clientChipText,
-                      isSelected && styles.clientChipTextSelected,
-                    ]}
-                  >
-                    {client.name || client.email || "ללא שם"}
-                  </Text>
+                  <Text style={styles.clientSearchClearText}>×</Text>
                 </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
+              )}
+            </View>
+
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={() => setIsClientMenuOpen((prev) => !prev)}
+              style={styles.clientMenuToggleButton}
+            >
+              <Text style={styles.clientMenuToggleText}>
+                {isClientMenuOpen ? "סגירת תפריט לקוחות" : "פתיחת תפריט לקוחות"}
+              </Text>
+            </TouchableOpacity>
+
+            {isClientMenuOpen && (
+              <View style={styles.clientDropdown}>
+                {filteredSelectablePeople.length === 0 ? (
+                  <View style={styles.clientDropdownEmptyBox}>
+                    <Text style={styles.clientDropdownEmptyText}>לא נמצא לקוח מתאים</Text>
+                  </View>
+                ) : (
+                  <ScrollView
+                    style={styles.clientDropdownScroll}
+                    contentContainerStyle={styles.clientDropdownContent}
+                    keyboardShouldPersistTaps="handled"
+                    nestedScrollEnabled
+                  >
+                    {filteredSelectablePeople.map((client) => {
+                      const clientUid = getClientResolvedUid(client);
+                      const isSelected = clientUid === selectedClientUid;
+
+                      return (
+                        <TouchableOpacity
+                          key={`${client.id}-${clientUid}`}
+                          activeOpacity={0.85}
+                          onPress={() => handleSelectClient(client)}
+                          style={[
+                            styles.clientDropdownItem,
+                            isSelected && styles.clientDropdownItemSelected,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.clientDropdownName,
+                              isSelected && styles.clientDropdownNameSelected,
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {client.name || "ללא שם"}
+                          </Text>
+
+                          {!!client.email && (
+                            <Text style={styles.clientDropdownMeta} numberOfLines={1}>
+                              {client.email}
+                            </Text>
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                )}
+              </View>
+            )}
+          </View>
 
           {selectedClientUid ? (
             <View style={styles.editorCard}>
@@ -937,6 +1036,134 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "700",
     textAlign: "right",
+  },
+  clientPickerBox: {
+    width: "100%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    padding: 12,
+    gap: 10,
+    position: "relative",
+    zIndex: 50,
+    elevation: 50,
+  },
+  clientSearchInputWrap: {
+    width: "100%",
+    position: "relative",
+    justifyContent: "center",
+  },
+  clientSearchInput: {
+    width: "100%",
+    minHeight: 50,
+    backgroundColor: "#F8FAFC",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    paddingRight: 14,
+    paddingLeft: 44,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: "#0F172A",
+    textAlign: "right",
+    writingDirection: "rtl",
+  },
+  clientSearchClearButton: {
+    position: "absolute",
+    left: 10,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: "#E2E8F0",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  clientSearchClearText: {
+    color: "#334155",
+    fontSize: 20,
+    lineHeight: 22,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  clientMenuToggleButton: {
+    width: "100%",
+    minHeight: 44,
+    borderRadius: 14,
+    backgroundColor: "#EEF2FF",
+    borderWidth: 1,
+    borderColor: "#C7D2FE",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 14,
+  },
+  clientMenuToggleText: {
+    color: "#3730A3",
+    fontSize: 13,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  clientDropdown: {
+    width: "100%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#DCE7F5",
+    overflow: "hidden",
+  },
+  clientDropdownScroll: {
+    width: "100%",
+    maxHeight: 260,
+  },
+  clientDropdownContent: {
+    padding: 8,
+    gap: 8,
+  },
+  clientDropdownItem: {
+    width: "100%",
+    minHeight: 54,
+    backgroundColor: "#F8FAFC",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    alignItems: "flex-end",
+    justifyContent: "center",
+    gap: 3,
+  },
+  clientDropdownItemSelected: {
+    backgroundColor: "#E0E7FF",
+    borderColor: "#A5B4FC",
+  },
+  clientDropdownName: {
+    width: "100%",
+    color: "#0F172A",
+    fontSize: 14,
+    fontWeight: "800",
+    textAlign: "right",
+  },
+  clientDropdownNameSelected: {
+    color: "#312E81",
+  },
+  clientDropdownMeta: {
+    width: "100%",
+    color: "#64748B",
+    fontSize: 12,
+    fontWeight: "600",
+    textAlign: "right",
+  },
+  clientDropdownEmptyBox: {
+    paddingVertical: 18,
+    paddingHorizontal: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  clientDropdownEmptyText: {
+    color: "#64748B",
+    fontSize: 14,
+    fontWeight: "600",
+    textAlign: "center",
   },
   clientsRow: {
     flexDirection: "row-reverse",
