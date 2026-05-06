@@ -7,6 +7,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  setDoc,
   query,
   where,
 } from 'firebase/firestore';
@@ -119,6 +120,9 @@ type WorkoutDocType = {
   exerciseOrder: number;
   clientEntryOrder: number;
   enteredByClient: boolean;
+  clientSucceeded?: boolean | null;
+  clientNotes?: string;
+  clientUpdatedAt?: string;
   numSets: number;
   repsPerSet: RepsPerSetType;
 };
@@ -162,14 +166,107 @@ type TrainingProgramSection = {
   exercises?: TrainingProgramExercise[];
 };
 
+type RunningPaceType = 'steady' | 'intervals';
+type RunningManipulationType =
+  | 'volume'
+  | 'fartlek'
+  | 'tempo'
+  | 'threshold'
+  | 'intervals'
+  | 'recovery'
+  | 'hills';
+type ProgramViewType = 'strength' | 'running';
+
+type RunningWeek = {
+  id?: string;
+  weekNumber?: number;
+  distanceKm?: string;
+  pacePerKm?: string;
+  paceType?: RunningPaceType;
+  manipulationType?: RunningManipulationType;
+  notes?: string;
+  clientSucceeded?: boolean | null;
+  clientNotes?: string;
+  clientUpdatedAt?: string;
+  coachFeedback?: string;
+  coachFeedbackUpdatedAt?: string;
+};
+
+type RunningProgramSnapshot = {
+  id?: string;
+  title?: string;
+  createdAt?: string;
+  archivedAt?: string;
+  completedAt?: string;
+  runningWeeks?: RunningWeek[];
+  runningWeeksCount?: number;
+  notes?: string;
+};
+
 type TrainingProgramDoc = {
   clientUid?: string;
   clientName?: string;
   clientEmail?: string;
   sections?: TrainingProgramSection[];
   notes?: string;
+  strengthNotes?: string;
+  runningNotes?: string;
   exerciseHistory?: string[];
   updatedAt?: string;
+  programType?: ProgramViewType;
+  runningWeeks?: RunningWeek[];
+  runningWeeksCount?: number;
+  activeRunningProgramId?: string;
+  runningProgramStartedAt?: string;
+  runningProgramCompletedAt?: string;
+  runningProgramHistory?: RunningProgramSnapshot[];
+};
+
+const getPaceTypeLabel = (value?: RunningPaceType) => {
+  if (value === 'intervals') return 'קצב משתנה בין מהיר לקל';
+  return 'קצב קבוע';
+};
+
+const getManipulationLabel = (value?: RunningManipulationType | string) => {
+  if (value === 'volume') return 'ריצת נפח';
+  if (value === 'fartlek') return 'ריצת פארטלק';
+  if (value === 'tempo' || value === 'quality') return 'ריצת טמפו';
+  if (value === 'threshold') return 'ריצת טראשהולד';
+  if (value === 'intervals') return 'אינטרוולים';
+  if (value === 'recovery') return 'ריצת התאוששות';
+  if (value === 'hills') return 'עליות';
+  return '';
+};
+
+
+const isRunningWeekCompleted = (week?: RunningWeek | null) =>
+  week?.clientSucceeded === true || week?.clientSucceeded === false;
+
+const isRunningWeekSavedCompleted = (week?: RunningWeek | null) =>
+  isRunningWeekCompleted(week) && String(week?.clientUpdatedAt || '').trim().length > 0;
+
+const getRunningWeekId = (week: Partial<RunningWeek> | undefined, index: number) => {
+  const weekNumber = Number(week?.weekNumber || index + 1);
+  return String(week?.id || `running-week-${weekNumber}`);
+};
+
+const buildNormalizedRunningWeeks = (program?: TrainingProgramDoc | null) => {
+  const rawWeeks = Array.isArray(program?.runningWeeks) ? program?.runningWeeks || [] : [];
+  const plannedCount = Math.max(Number(program?.runningWeeksCount || 0), rawWeeks.length);
+
+  return Array.from({ length: plannedCount }, (_, index) => {
+    const weekNumber = index + 1;
+    const existing =
+      rawWeeks.find((week) => Number(week?.weekNumber || 0) === weekNumber) ||
+      rawWeeks[index] ||
+      {};
+
+    return {
+      ...existing,
+      id: getRunningWeekId(existing, index),
+      weekNumber,
+    } as RunningWeek;
+  });
 };
 
 function SaveIcon({ size = 20, color = '#FFFFFF' }) {
@@ -294,10 +391,14 @@ export default function Home() {
   const [timerSeconds, setTimerSeconds] = useState('30');
   const [timerRemaining, setTimerRemaining] = useState(0);
   const [isTimerRunning, setIsTimerRunning] = useState(false);
+  const [exerciseSucceeded, setExerciseSucceeded] = useState<boolean | null>(null);
+  const [exerciseClientNotes, setExerciseClientNotes] = useState('');
+  const [savingRunningWeekId, setSavingRunningWeekId] = useState<string | null>(null);
 
   const [trainingProgram, setTrainingProgram] = useState<TrainingProgramDoc | null>(null);
   const [isLoadingTrainingProgram, setIsLoadingTrainingProgram] = useState(true);
   const [showTrainingProgramModal, setShowTrainingProgramModal] = useState(false);
+  const [selectedProgramView, setSelectedProgramView] = useState<ProgramViewType | null>(null);
   const [exercise, setExercise] = useState<ExerciseType>({
     name: '',
     numSets: '',
@@ -317,30 +418,66 @@ export default function Home() {
     return '';
   };
 
-  const hasTrainingProgramContent = useMemo(() => {
+  const hasStrengthProgramContent = useMemo(() => {
     if (!trainingProgram) return false;
 
     const sections = Array.isArray(trainingProgram.sections) ? trainingProgram.sections : [];
-    const hasSections = sections.some((section) => {
+
+    return sections.some((section) => {
       const title = String(section?.title || '').trim();
       const exercises = Array.isArray(section?.exercises) ? section.exercises : [];
 
-      const hasExercises = exercises.some((item) => {
-        return (
-          String(item?.name || '').trim() ||
-          String(item?.sets || '').trim() ||
-          String(item?.reps || '').trim() ||
-          String(item?.notes || '').trim()
-        );
-      });
+      const hasExercises = exercises.some((item) => (
+        String(item?.name || '').trim() ||
+        String(item?.sets || '').trim() ||
+        String(item?.reps || '').trim() ||
+        String(item?.notes || '').trim()
+      ));
 
       return !!title || hasExercises;
     });
-
-    const hasNotes = String(trainingProgram.notes || '').trim().length > 0;
-
-    return hasSections || hasNotes;
   }, [trainingProgram]);
+
+  const hasRunningProgramContent = useMemo(() => {
+    if (!trainingProgram) return false;
+
+    const runningWeeks = Array.isArray(trainingProgram.runningWeeks) ? trainingProgram.runningWeeks : [];
+    if (Number(trainingProgram.runningWeeksCount || 0) > 0 || runningWeeks.length > 0) return true;
+
+    return runningWeeks.some((week) => (
+      String(week?.distanceKm || '').trim() ||
+      String(week?.pacePerKm || '').trim() ||
+      String(week?.notes || '').trim() ||
+      !!week?.paceType ||
+      !!week?.manipulationType
+    ));
+  }, [trainingProgram]);
+
+  const strengthGeneralNotes = useMemo(() =>
+    String(trainingProgram?.strengthNotes || trainingProgram?.notes || '').trim(),
+    [trainingProgram]
+  );
+
+  const runningGeneralNotes = useMemo(() =>
+    String(trainingProgram?.runningNotes || trainingProgram?.notes || '').trim(),
+    [trainingProgram]
+  );
+
+  const hasGeneralTrainingNotes = strengthGeneralNotes.length > 0 || runningGeneralNotes.length > 0;
+
+  const hasTrainingProgramContent = hasStrengthProgramContent || hasRunningProgramContent || hasGeneralTrainingNotes;
+
+  const openTrainingProgramModal = useCallback(() => {
+    if (hasStrengthProgramContent && !hasRunningProgramContent) {
+      setSelectedProgramView('strength');
+    } else if (hasRunningProgramContent && !hasStrengthProgramContent) {
+      setSelectedProgramView('running');
+    } else {
+      setSelectedProgramView(null);
+    }
+
+    setShowTrainingProgramModal(true);
+  }, [hasRunningProgramContent, hasStrengthProgramContent]);
 
   const trainingProgramExerciseNames = useMemo(() => {
     const sections = Array.isArray(trainingProgram?.sections) ? trainingProgram.sections : [];
@@ -829,6 +966,9 @@ export default function Home() {
         exerciseOrder: clientEntryOrder,
         clientEntryOrder,
         enteredByClient: true,
+        clientSucceeded: exerciseSucceeded,
+        clientNotes: exerciseClientNotes.trim(),
+        clientUpdatedAt: nowIso,
         numSets: parseInt(exercise.numSets, 10),
         repsPerSet: repsPerSetForWorkout,
       };
@@ -854,6 +994,9 @@ export default function Home() {
             setOrder: row.setOrder,
             clientEntryOrder: row.clientEntryOrder,
             enteredByClient: true,
+            clientSucceeded: exerciseSucceeded,
+            clientNotes: exerciseClientNotes.trim(),
+            clientUpdatedAt: nowIso,
           })
         )
       );
@@ -891,6 +1034,8 @@ export default function Home() {
       setDate(today);
       setTempDate(today);
       setAddError('');
+      setExerciseSucceeded(null);
+      setExerciseClientNotes('');
       await fetchUserData();
       showToast('האימון נשמר בהצלחה!');
     } catch (error) {
@@ -955,6 +1100,64 @@ export default function Home() {
     setTimerRemaining(0);
   };
 
+  const updateLocalRunningWeek = (weekId: string, patch: Partial<RunningWeek>) => {
+    setTrainingProgram((prev) => {
+      if (!prev) return prev;
+      const nextWeeks = buildNormalizedRunningWeeks(prev).map((week, index) => {
+        const id = getRunningWeekId(week, index);
+        return id === weekId ? { ...week, id, ...patch } : { ...week, id };
+      });
+      return { ...prev, runningWeeks: nextWeeks, runningWeeksCount: Math.max(Number(prev.runningWeeksCount || 0), nextWeeks.length) };
+    });
+  };
+
+  const saveRunningWeekFeedback = async (weekId?: string) => {
+    const user = auth.currentUser;
+    if (!user || !weekId || !trainingProgram) return;
+
+    try {
+      setSavingRunningWeekId(weekId);
+      const nowIso = new Date().toISOString();
+      const nextWeeks = buildNormalizedRunningWeeks(trainingProgram).map((week, index) => {
+        const id = getRunningWeekId(week, index);
+        return id === weekId ? { ...week, id, clientUpdatedAt: nowIso } : { ...week, id };
+      });
+      const completedAfterSave = nextWeeks.length > 0 && nextWeeks.every((week) => isRunningWeekSavedCompleted(week));
+
+      await setDoc(
+        doc(db, 'clientTrainingPrograms', user.uid),
+        {
+          runningWeeks: nextWeeks,
+          runningWeeksCount: nextWeeks.length,
+          ...(completedAfterSave ? { runningProgramCompletedAt: nowIso } : {}),
+        },
+        { merge: true }
+      );
+
+      setTrainingProgram((prev) =>
+        prev
+          ? {
+              ...prev,
+              runningWeeks: nextWeeks,
+              runningWeeksCount: nextWeeks.length,
+              ...(completedAfterSave ? { runningProgramCompletedAt: nowIso } : {}),
+            }
+          : prev
+      );
+
+      if (completedAfterSave) {
+        showToast('כל הכבוד! סיימת את כל תוכנית הריצה. אפשר לצפות בתוכנית המלאה דרך התפריט בכפתור “תוכנית אימון”.');
+      } else {
+        showToast('העדכון נשמר למאמן');
+      }
+    } catch (error) {
+      console.error('שגיאה בשמירת עדכון ריצה:', error);
+      showToast('לא ניתן לשמור את העדכון');
+    } finally {
+      setSavingRunningWeekId(null);
+    }
+  };
+
   if (!fontsLoaded) {
     return <View style={{ flex: 1, backgroundColor: APP_BG }} />;
   }
@@ -967,7 +1170,18 @@ export default function Home() {
       ? lastExerciseData[selectedExerciseForModal]
       : null;
 
-  const trainingSections = Array.isArray(trainingProgram?.sections) ? trainingProgram?.sections : [];
+  const trainingSections = Array.isArray(trainingProgram?.sections) ? trainingProgram.sections : [];
+  const runningWeeks = buildNormalizedRunningWeeks(trainingProgram);
+
+  const isActiveRunningProgramCompleted =
+    runningWeeks.length > 0 &&
+    runningWeeks.every((week) => isRunningWeekSavedCompleted(week));
+
+  const visibleRunningWeeksOnHome = (() => {
+    if (runningWeeks.length === 0 || isActiveRunningProgramCompleted) return [] as RunningWeek[];
+    const firstOpenWeek = runningWeeks.find((week) => !isRunningWeekSavedCompleted(week));
+    return firstOpenWeek ? [firstOpenWeek] : [];
+  })();
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -1048,24 +1262,6 @@ export default function Home() {
                     </Text>
                   </View>
                 </View>
-
-                {isLoadingTrainingProgram ? (
-                  <View style={styles.trainingProgramLoader}>
-                    <ActivityIndicator color="#0F172A" />
-                  </View>
-                ) : hasTrainingProgramContent ? (
-                  <Pressable
-                    style={[
-                      styles.trainingProgramButton,
-                      { minHeight: dynamic.buttonHeight - 4 },
-                    ]}
-                    onPress={() => setShowTrainingProgramModal(true)}
-                  >
-                    <Text style={[styles.trainingProgramButtonText, { fontSize: dynamic.textSize }]}>
-                      צפייה בתוכנית אימון
-                    </Text>
-                  </Pressable>
-                ) : null}
 
                 <View style={styles.section}>
                   <Text style={[styles.label, { fontSize: dynamic.labelSize }]}>
@@ -1464,6 +1660,23 @@ export default function Home() {
                 <Text style={styles.sideMenuTitle}>תפריט</Text>
               </View>
 
+              {isLoadingTrainingProgram ? (
+                <View style={styles.sideMenuLoaderBox}>
+                  <ActivityIndicator color="#0F172A" />
+                  <Text style={styles.sideMenuLoaderText}>טוען תוכנית אימון...</Text>
+                </View>
+              ) : hasTrainingProgramContent ? (
+                <Pressable
+                  style={styles.trainingProgramMenuButton}
+                  onPress={() => {
+                    setShowSideMenu(false);
+                    openTrainingProgramModal();
+                  }}
+                >
+                  <Text style={styles.trainingProgramMenuButtonText}>צפייה בתוכנית אימון</Text>
+                </Pressable>
+              ) : null}
+
               <Pressable style={styles.timerMenuButton} onPress={openTimerFromMenu}>
                 <TimerIcon size={22} color="#FFFFFF" />
                 <Text style={styles.timerMenuButtonText}>טיימר מנוחה</Text>
@@ -1559,88 +1772,183 @@ export default function Home() {
                   <CloseIcon size={24} color="#222222" />
                 </Pressable>
 
-                <Text style={styles.programModalTitle}>תוכנית האימון שלך</Text>
+                <Text style={styles.programModalTitle}>
+                  {selectedProgramView === 'running'
+                    ? 'תוכנית הריצה שלך'
+                    : selectedProgramView === 'strength'
+                      ? 'תוכנית הכוח שלך'
+                      : 'בחירת תוכנית אימון'}
+                </Text>
               </View>
 
               <View style={styles.modalDivider} />
 
-              <ScrollView
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={styles.programScrollContent}
-              >
-                {trainingSections.length > 0 ? (
-                  trainingSections.map((section, sectionIndex) => {
-                    const sectionTitle = String(section?.title || '').trim();
-                    const exercises = Array.isArray(section?.exercises) ? section.exercises : [];
+              {!selectedProgramView && hasStrengthProgramContent && hasRunningProgramContent ? (
+                <View style={styles.programChoiceBox}>
+                  <Text style={styles.programChoiceTitle}>איזו תוכנית להציג?</Text>
+                  <Pressable
+                    style={styles.programChoiceButton}
+                    onPress={() => setSelectedProgramView('strength')}
+                  >
+                    <Text style={styles.programChoiceButtonText}>אימון כוח</Text>
+                  </Pressable>
 
-                    if (!sectionTitle && exercises.length === 0) return null;
+                  <Pressable
+                    style={styles.programChoiceButton}
+                    onPress={() => setSelectedProgramView('running')}
+                  >
+                    <Text style={styles.programChoiceButtonText}>אימון ריצה</Text>
+                  </Pressable>
+                </View>
+              ) : (
+                <ScrollView
+                  showsVerticalScrollIndicator={false}
+                  contentContainerStyle={styles.programScrollContent}
+                >
+                  {selectedProgramView === 'running' ? (
+                    isActiveRunningProgramCompleted ? (
+                      <View style={styles.completedProgramBox}>
+                        <Text style={styles.completedProgramTitle}>סיימת את כל תוכנית הריצה</Text>
+                        <Text style={styles.completedProgramText}>כל הכבוד! לצפייה בכל השבועות והיסטוריית התוכניות המלאה יש להיכנס דרך התפריט לכפתור “תוכנית אימון”.</Text>
+                      </View>
+                    ) : visibleRunningWeeksOnHome.length > 0 ? (
+                      visibleRunningWeeksOnHome.map((week, weekIndex) => {
+                        const distanceKm = String(week?.distanceKm || '').trim();
+                        const pacePerKm = String(week?.pacePerKm || '').trim();
+                        const notes = String(week?.notes || '').trim();
 
-                    return (
-                      <View
-                        key={section?.id || `section-${sectionIndex}`}
-                        style={styles.programSectionCard}
-                      >
-                        {!!sectionTitle && (
-                          <Text style={styles.programSectionTitle}>{sectionTitle}</Text>
-                        )}
+                        if (!distanceKm && !pacePerKm && !notes && !week?.paceType && !week?.manipulationType) return null;
 
-                        {exercises.map((item, exerciseIndex) => {
-                          const exerciseName = String(item?.name || '').trim();
-                          const sets = String(item?.sets || '').trim();
-                          const reps = String(item?.reps || '').trim();
-                          const notes = String(item?.notes || '').trim();
+                        return (
+                          <View key={week?.id || `running-week-${weekIndex}`} style={styles.programSectionCard}>
+                            <Text style={styles.programSectionTitle}>שבוע {week?.weekNumber || weekIndex + 1}</Text>
+                            <Text style={styles.activeWeekHint}>זה השבוע הפעיל שלך כרגע. אחרי שמירת הצלחה או אי הצלחה יוצג השבוע הבא.</Text>
 
-                          if (!exerciseName && !sets && !reps && !notes) return null;
-
-                          const exerciseKey = item?.id || `exercise-${sectionIndex}-${exerciseIndex}`;
-
-                          return (
-                            <View
-                              key={exerciseKey}
-                              style={styles.programExerciseCard}
-                            >
-                              <View style={styles.programExerciseHeader}>
-                                <Text style={styles.programExerciseName}>
-                                  {exerciseName || 'ללא שם תרגיל'}
-                                </Text>
-                              </View>
-
-                              {(sets || reps) && (
-                                <View style={styles.programMetaRow}>
-                                  {!!sets && (
-                                    <View style={styles.programMetaChip}>
-                                      <Text selectable={false} style={styles.programMetaChipText}>סטים: {sets}</Text>
-                                    </View>
-                                  )}
-
-                                  {!!reps && (
-                                    <View style={styles.programMetaChip}>
-                                      <Text selectable={false} style={styles.programMetaChipText}>חזרות: {reps}</Text>
-                                    </View>
-                                  )}
+                            <View style={styles.programMetaRow}>
+                              {!!distanceKm && (
+                                <View style={styles.programMetaChip}>
+                                  <Text selectable={false} style={styles.programMetaChipText}>מרחק: {distanceKm} ק״מ</Text>
                                 </View>
                               )}
 
-                              {!!notes && (
-                                <Text style={styles.programExerciseNotes}>{notes}</Text>
+                              {!!pacePerKm && (
+                                <View style={styles.programMetaChip}>
+                                  <Text selectable={false} style={styles.programMetaChipText}>זמן לק״מ: {pacePerKm}</Text>
+                                </View>
                               )}
-                            </View>
-                          );
-                        })}
-                      </View>
-                    );
-                  })
-                ) : (
-                  <Text style={styles.emptyProgramText}>לא נמצאה תוכנית אימון</Text>
-                )}
 
-                {!!String(trainingProgram?.notes || '').trim() && (
-                  <View style={styles.generalNotesCard}>
-                    <Text style={styles.generalNotesTitle}>הערות כלליות</Text>
-                    <Text style={styles.generalNotesText}>{trainingProgram?.notes}</Text>
-                  </View>
-                )}
-              </ScrollView>
+                              <View style={styles.programMetaChip}>
+                                <Text selectable={false} style={styles.programMetaChipText}>צורת ריצה: {getPaceTypeLabel(week?.paceType)}</Text>
+                              </View>
+
+                              <View style={styles.programMetaChip}>
+                                <Text selectable={false} style={styles.programMetaChipText}>מניפולציה: {getManipulationLabel(week?.manipulationType)}</Text>
+                              </View>
+                            </View>
+
+                            {!!notes && <Text style={styles.programExerciseNotes}>{notes}</Text>}
+                            <View style={styles.runningClientFeedbackBox}>
+                              <Text style={styles.runningClientFeedbackTitle}>עדכון למאמן על השבוע</Text>
+                              <View style={styles.clientWorkoutFeedbackRow}>
+                                <Pressable style={[styles.clientWorkoutFeedbackButton, week.clientSucceeded === true && styles.clientWorkoutFeedbackSuccess]} onPress={() => updateLocalRunningWeek(week.id, { clientSucceeded: true })}>
+                                  <Text style={[styles.clientWorkoutFeedbackText, week.clientSucceeded === true && styles.clientWorkoutFeedbackTextActive]}>הצלחתי</Text>
+                                </Pressable>
+                                <Pressable style={[styles.clientWorkoutFeedbackButton, week.clientSucceeded === false && styles.clientWorkoutFeedbackFail]} onPress={() => updateLocalRunningWeek(week.id, { clientSucceeded: false })}>
+                                  <Text style={[styles.clientWorkoutFeedbackText, week.clientSucceeded === false && styles.clientWorkoutFeedbackTextActive]}>לא הצלחתי</Text>
+                                </Pressable>
+                              </View>
+                              <TextInput style={[styles.inputBox, styles.textInput, styles.clientWorkoutNotesInput]} placeholder="פירוט למאמן" placeholderTextColor="#8A94A6" value={String(week.clientNotes || '')} onChangeText={(value) => updateLocalRunningWeek(week.id, { clientNotes: value })} textAlign="right" multiline />
+                              <Pressable style={[styles.saveRunningFeedbackButton, savingRunningWeekId === week.id && styles.disabledButton]} onPress={() => saveRunningWeekFeedback(week.id)} disabled={savingRunningWeekId === week.id}>
+                                {savingRunningWeekId === week.id ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.saveRunningFeedbackButtonText}>שמירת עדכון שבוע</Text>}
+                              </Pressable>
+                            </View>
+                          </View>
+                        );
+                      })
+                    ) : (
+                      <Text style={styles.emptyProgramText}>לא נמצאה תוכנית ריצה</Text>
+                    )
+                  ) : trainingSections.length > 0 ? (
+                    trainingSections.map((section, sectionIndex) => {
+                      const sectionTitle = String(section?.title || '').trim();
+                      const exercises = Array.isArray(section?.exercises) ? section.exercises : [];
+
+                      if (!sectionTitle && exercises.length === 0) return null;
+
+                      return (
+                        <View
+                          key={section?.id || `section-${sectionIndex}`}
+                          style={styles.programSectionCard}
+                        >
+                          {!!sectionTitle && (
+                            <Text style={styles.programSectionTitle}>{sectionTitle}</Text>
+                          )}
+
+                          {exercises.map((item, exerciseIndex) => {
+                            const exerciseName = String(item?.name || '').trim();
+                            const sets = String(item?.sets || '').trim();
+                            const reps = String(item?.reps || '').trim();
+                            const notes = String(item?.notes || '').trim();
+
+                            if (!exerciseName && !sets && !reps && !notes) return null;
+
+                            const exerciseKey = item?.id || `exercise-${sectionIndex}-${exerciseIndex}`;
+
+                            return (
+                              <View
+                                key={exerciseKey}
+                                style={styles.programExerciseCard}
+                              >
+                                <View style={styles.programExerciseHeader}>
+                                  <Text style={styles.programExerciseName}>
+                                    {exerciseName || 'ללא שם תרגיל'}
+                                  </Text>
+                                </View>
+
+                                {(sets || reps) && (
+                                  <View style={styles.programMetaRow}>
+                                    {!!sets && (
+                                      <View style={styles.programMetaChip}>
+                                        <Text selectable={false} style={styles.programMetaChipText}>סטים: {sets}</Text>
+                                      </View>
+                                    )}
+
+                                    {!!reps && (
+                                      <View style={styles.programMetaChip}>
+                                        <Text selectable={false} style={styles.programMetaChipText}>חזרות: {reps}</Text>
+                                      </View>
+                                    )}
+                                  </View>
+                                )}
+
+                                {!!notes && (
+                                  <Text style={styles.programExerciseNotes}>{notes}</Text>
+                                )}
+                              </View>
+                            );
+                          })}
+                        </View>
+                      );
+                    })
+                  ) : (
+                    <Text style={styles.emptyProgramText}>לא נמצאה תוכנית כוח</Text>
+                  )}
+
+                  {selectedProgramView === 'strength' && !!strengthGeneralNotes && (
+                    <View style={styles.generalNotesCard}>
+                      <Text style={styles.generalNotesTitle}>הערות כלליות לכוח</Text>
+                      <Text style={styles.generalNotesText}>{strengthGeneralNotes}</Text>
+                    </View>
+                  )}
+
+                  {selectedProgramView === 'running' && !isActiveRunningProgramCompleted && !!runningGeneralNotes && (
+                    <View style={styles.generalNotesCard}>
+                      <Text style={styles.generalNotesTitle}>הערות כלליות לריצה</Text>
+                      <Text style={styles.generalNotesText}>{runningGeneralNotes}</Text>
+                    </View>
+                  )}
+                </ScrollView>
+              )}
             </View>
           </View>
         </Modal>
@@ -2132,6 +2440,41 @@ const styles = StyleSheet.create({
     gap: 10,
   },
 
+  programChoiceBox: {
+    width: '100%',
+    gap: 12,
+    paddingVertical: 6,
+  },
+
+  programChoiceTitle: {
+    color: '#0F172A',
+    fontSize: 16,
+    fontWeight: '800',
+    textAlign: 'center',
+    writingDirection: 'rtl',
+    marginBottom: 4,
+  },
+
+  programChoiceButton: {
+    width: '100%',
+    minHeight: 52,
+    borderRadius: 16,
+    backgroundColor: '#E0F2FE',
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+  },
+
+  programChoiceButtonText: {
+    color: '#0C4A6E',
+    fontSize: 15,
+    fontWeight: '900',
+    textAlign: 'center',
+    writingDirection: 'rtl',
+  },
+
   programModalTitle: {
     flex: 1,
     color: '#0F172A',
@@ -2226,6 +2569,31 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     writingDirection: 'rtl',
   },
+
+  completedProgramBox: {
+    width: '100%',
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    borderRadius: 18,
+    padding: 16,
+    gap: 8,
+  },
+  completedProgramTitle: {
+    color: '#166534',
+    fontSize: 17,
+    fontWeight: '900',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  completedProgramText: {
+    color: '#14532D',
+    fontSize: 14,
+    lineHeight: 22,
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  activeWeekHint: { color: '#64748B', fontSize: 13, lineHeight: 20, textAlign: 'right', writingDirection: 'rtl', marginBottom: 8 },
 
   emptyProgramText: {
     color: '#64748B',
@@ -2343,6 +2711,49 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '900',
     textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+
+  trainingProgramMenuButton: {
+    width: '100%',
+    minHeight: 52,
+    borderRadius: 16,
+    backgroundColor: '#E0F2FE',
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+    marginBottom: 12,
+  },
+
+  trainingProgramMenuButtonText: {
+    color: '#0C4A6E',
+    fontSize: 15,
+    fontWeight: '900',
+    textAlign: 'center',
+    writingDirection: 'rtl',
+  },
+
+  sideMenuLoaderBox: {
+    width: '100%',
+    minHeight: 52,
+    borderRadius: 16,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+    marginBottom: 12,
+    gap: 6,
+  },
+
+  sideMenuLoaderText: {
+    color: '#475569',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
     writingDirection: 'rtl',
   },
 
@@ -2467,5 +2878,21 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     writingDirection: 'rtl',
   },
+
+  clientWorkoutFeedbackBox: { width: '100%', backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 18, padding: 12, marginBottom: 14, gap: 10 },
+  clientWorkoutFeedbackRow: { width: '100%', flexDirection: 'row-reverse', gap: 8 },
+  clientWorkoutFeedbackButton: { flex: 1, minHeight: 44, borderRadius: 14, borderWidth: 1, borderColor: '#CBD5E1', backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
+  clientWorkoutFeedbackSuccess: { backgroundColor: '#16A34A', borderColor: '#16A34A' },
+  clientWorkoutFeedbackFail: { backgroundColor: '#DC2626', borderColor: '#DC2626' },
+  clientWorkoutFeedbackText: { color: '#334155', fontSize: 13, fontWeight: '800', textAlign: 'center', writingDirection: 'rtl' },
+  clientWorkoutFeedbackTextActive: { color: '#FFFFFF' },
+  clientWorkoutNotesInput: { minHeight: 86, paddingVertical: 12, textAlignVertical: 'top' },
+  runningClientFeedbackBox: { backgroundColor: '#FFFFFF', borderRadius: 16, borderWidth: 1, borderColor: '#E2E8F0', padding: 12, marginTop: 10, gap: 9 },
+  runningClientFeedbackTitle: { color: '#0F172A', fontSize: 14, fontWeight: '900', textAlign: 'right', writingDirection: 'rtl' },
+  saveRunningFeedbackButton: { minHeight: 44, borderRadius: 14, backgroundColor: '#2563EB', alignItems: 'center', justifyContent: 'center' },
+  saveRunningFeedbackButtonText: { color: '#FFFFFF', fontSize: 14, fontWeight: '900', textAlign: 'center', writingDirection: 'rtl' },
+  coachFeedbackCard: { backgroundColor: '#FFFBEB', borderRadius: 14, borderWidth: 1, borderColor: '#FDE68A', padding: 10, marginTop: 8 },
+  coachFeedbackTitle: { color: '#92400E', fontSize: 13, fontWeight: '900', textAlign: 'right', writingDirection: 'rtl', marginBottom: 4 },
+  coachFeedbackText: { color: '#78350F', fontSize: 13, lineHeight: 20, fontWeight: '700', textAlign: 'right', writingDirection: 'rtl' },
 
 });

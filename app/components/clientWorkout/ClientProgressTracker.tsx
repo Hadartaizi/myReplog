@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  I18nManager,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -19,6 +18,7 @@ import {
   getDoc,
   getDocs,
   query,
+  setDoc,
   updateDoc,
   where,
 } from "firebase/firestore";
@@ -47,13 +47,12 @@ type WorkoutItem = {
   updatedAt?: any;
   note?: string;
   notes?: string;
+  coachFeedback?: string;
+  coachFeedbackUpdatedAt?: string;
   exercises?: any[];
   exerciseName?: string;
   numSets?: number | string;
-  repsPerSet?: Record<
-    string,
-    { reps?: string | number; weight?: string | number }
-  >;
+  repsPerSet?: Record<string, { reps?: string | number; weight?: string | number }>;
   [key: string]: any;
 };
 
@@ -71,6 +70,46 @@ type ExerciseItem = {
   updatedAt?: any;
   sourceType?: "exercise_doc" | "embedded_exercise" | "legacy_workout";
   [key: string]: any;
+};
+
+type ProgramType = "strength" | "running";
+type RunningPaceType = "steady" | "intervals";
+type RunningManipulationType =
+  | "volume"
+  | "fartlek"
+  | "tempo"
+  | "threshold"
+  | "intervals"
+  | "recovery"
+  | "hills";
+type TrainingViewType = "strength" | "running";
+
+type RunningWeek = {
+  id: string;
+  weekNumber: number;
+  distanceKm?: string;
+  pacePerKm?: string;
+  paceType?: RunningPaceType;
+  manipulationType?: RunningManipulationType;
+  notes?: string;
+  clientSucceeded?: boolean | null;
+  clientNotes?: string;
+  clientUpdatedAt?: string;
+  coachFeedback?: string;
+  coachFeedbackUpdatedAt?: string;
+};
+
+type TrainingProgramDoc = {
+  clientUid?: string;
+  clientName?: string;
+  clientEmail?: string;
+  sections?: any[];
+  notes?: string;
+  programText?: string;
+  updatedAt?: string;
+  programType?: ProgramType;
+  runningWeeks?: RunningWeek[];
+  runningWeeksCount?: number;
 };
 
 type Props = {
@@ -97,14 +136,7 @@ type GroupedExercise = {
 function ArrowDownIcon({ size = 20, color = "#1E293B" }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Path
-        d="M6 9l6 6 6-6"
-        stroke={color}
-        strokeWidth={2.4}
-        fill="none"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      <Path d="M6 9l6 6 6-6" stroke={color} strokeWidth={2.4} fill="none" strokeLinecap="round" strokeLinejoin="round" />
     </Svg>
   );
 }
@@ -112,14 +144,7 @@ function ArrowDownIcon({ size = 20, color = "#1E293B" }) {
 function ArrowUpIcon({ size = 20, color = "#1E293B" }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Path
-        d="M18 15l-6-6-6 6"
-        stroke={color}
-        strokeWidth={2.4}
-        fill="none"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      <Path d="M18 15l-6-6-6 6" stroke={color} strokeWidth={2.4} fill="none" strokeLinecap="round" strokeLinejoin="round" />
     </Svg>
   );
 }
@@ -128,28 +153,9 @@ function UsersIcon({ size = 18, color = "#0F172A" }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
       <Circle cx="9" cy="9" r="3" stroke={color} strokeWidth={2} fill="none" />
-      <Circle
-        cx="16.5"
-        cy="10"
-        r="2.5"
-        stroke={color}
-        strokeWidth={2}
-        fill="none"
-      />
-      <Path
-        d="M3.5 18a5.5 5.5 0 0111 0"
-        stroke={color}
-        strokeWidth={2}
-        fill="none"
-        strokeLinecap="round"
-      />
-      <Path
-        d="M14 18a4 4 0 014-3.5A4 4 0 0122 18"
-        stroke={color}
-        strokeWidth={2}
-        fill="none"
-        strokeLinecap="round"
-      />
+      <Circle cx="16.5" cy="10" r="2.5" stroke={color} strokeWidth={2} fill="none" />
+      <Path d="M3.5 18a5.5 5.5 0 0111 0" stroke={color} strokeWidth={2} fill="none" strokeLinecap="round" />
+      <Path d="M14 18a4 4 0 014-3.5A4 4 0 0122 18" stroke={color} strokeWidth={2} fill="none" strokeLinecap="round" />
     </Svg>
   );
 }
@@ -170,90 +176,35 @@ function SearchIcon({ size = 18, color = "#64748B" }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
       <Circle cx="11" cy="11" r="6.5" stroke={color} strokeWidth={2} fill="none" />
-      <Line
-        x1="16"
-        y1="16"
-        x2="21"
-        y2="21"
-        stroke={color}
-        strokeWidth={2}
-        strokeLinecap="round"
-      />
-    </Svg>
-  );
-}
-
-function StarIcon({ size = 16, color = "#FFFFFF" }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Path
-        d="M12 3.8l2.3 4.67 5.15.75-3.72 3.63.88 5.13L12 15.54 7.39 18l.88-5.13L4.55 9.22l5.15-.75L12 3.8z"
-        fill={color}
-      />
+      <Line x1="16" y1="16" x2="21" y2="21" stroke={color} strokeWidth={2} strokeLinecap="round" />
     </Svg>
   );
 }
 
 function getDateFromAny(value: any): Date | null {
   if (!value) return null;
-
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return value;
-  }
-
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
   if (value?.toDate && typeof value.toDate === "function") {
     const date = value.toDate();
     return date instanceof Date && !Number.isNaN(date.getTime()) ? date : null;
   }
-
-  if (typeof value === "object" && typeof value?.seconds === "number") {
-    return new Date(value.seconds * 1000);
-  }
-
+  if (typeof value === "object" && typeof value?.seconds === "number") return new Date(value.seconds * 1000);
   if (typeof value === "string" || typeof value === "number") {
     const date = new Date(value);
     if (!Number.isNaN(date.getTime())) return date;
   }
-
   return null;
-}
-
-function calculateAverageWorkoutsPerWeek(dayGroups: DayGroup[]) {
-  if (dayGroups.length === 0) return 0;
-
-  const validTimes = dayGroups
-    .map((group) => Number(group.sortTime))
-    .filter((time) => Number.isFinite(time) && time > 0);
-
-  if (validTimes.length === 0) return dayGroups.length;
-
-  const newestWorkoutTime = Math.max(...validTimes);
-  const oldestWorkoutTime = Math.min(...validTimes);
-  const millisecondsInDay = 1000 * 60 * 60 * 24;
-  const daysRange = Math.max(
-    1,
-    Math.ceil((newestWorkoutTime - oldestWorkoutTime) / millisecondsInDay) + 1
-  );
-  const weeksRange = Math.max(1, Math.ceil(daysRange / 7));
-
-  return Math.round(dayGroups.length / weeksRange);
 }
 
 function formatDateIL(value: any): string {
   const date = getDateFromAny(value);
   if (!date) return "אין תאריך";
-
-  return new Intl.DateTimeFormat("he-IL", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(date);
+  return new Intl.DateTimeFormat("he-IL", { day: "2-digit", month: "2-digit", year: "numeric" }).format(date);
 }
 
 function formatDateTimeIL(value: any): string {
   const date = getDateFromAny(value);
-  if (!date) return "אין תאריך";
-
+  if (!date) return "לא זמין";
   return new Intl.DateTimeFormat("he-IL", {
     day: "2-digit",
     month: "2-digit",
@@ -269,20 +220,19 @@ function getNumericValue(value: any): number | null {
   return Number.isNaN(n) ? null : n;
 }
 
-function getExerciseName(exercise: ExerciseItem | WorkoutItem): string {
-  const raw = String(
-    exercise.exerciseName || exercise.name || exercise.title || ""
-  ).trim();
+function getNumberFromAny(value: any): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
 
+function getExerciseName(exercise: ExerciseItem | WorkoutItem): string {
+  const raw = String(exercise.exerciseName || exercise.name || exercise.title || "").trim();
   return raw || "תרגיל ללא שם";
 }
 
 function hasSetLikeData(exercise: Partial<ExerciseItem>): boolean {
-  return (
-    getNumericValue(exercise.sets) !== null ||
-    getNumericValue(exercise.reps) !== null ||
-    getNumericValue(exercise.weight) !== null
-  );
+  return getNumericValue(exercise.sets) !== null || getNumericValue(exercise.reps) !== null || getNumericValue(exercise.weight) !== null;
 }
 
 function hasMeaningfulExerciseData(exercise: Partial<ExerciseItem>): boolean {
@@ -291,28 +241,16 @@ function hasMeaningfulExerciseData(exercise: Partial<ExerciseItem>): boolean {
 }
 
 function getWorkoutSortTime(workout: WorkoutItem): number {
-  const date =
-    getDateFromAny(workout.date) ||
-    getDateFromAny(workout.createdAt) ||
-    getDateFromAny(workout.updatedAt);
-
+  const date = getDateFromAny(workout.date) || getDateFromAny(workout.createdAt) || getDateFromAny(workout.updatedAt);
   return date ? date.getTime() : 0;
 }
 
 function getWorkoutBaseDate(workout: WorkoutItem): Date | null {
-  return (
-    getDateFromAny(workout.date) ||
-    getDateFromAny(workout.createdAt) ||
-    getDateFromAny(workout.updatedAt)
-  );
+  return getDateFromAny(workout.date) || getDateFromAny(workout.createdAt) || getDateFromAny(workout.updatedAt);
 }
 
 function getExerciseBaseDate(exercise: ExerciseItem): Date | null {
-  return (
-    getDateFromAny(exercise.date) ||
-    getDateFromAny(exercise.createdAt) ||
-    getDateFromAny(exercise.updatedAt)
-  );
+  return getDateFromAny(exercise.date) || getDateFromAny(exercise.createdAt) || getDateFromAny(exercise.updatedAt);
 }
 
 function getDayKeyFromDate(date: Date | null): string {
@@ -328,12 +266,6 @@ function getLatestTimeFromItems(values: any[]): number {
     const time = getDateFromAny(value)?.getTime() || 0;
     return Math.max(max, time);
   }, 0);
-}
-
-function getNumberFromAny(value: any): number | null {
-  if (value === null || value === undefined || value === "") return null;
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
 }
 
 function getSavedTime(exercise: Partial<ExerciseItem | WorkoutItem>): number {
@@ -359,14 +291,10 @@ function getExerciseOrderValue(exercise: Partial<ExerciseItem | WorkoutItem>): n
 function compareExercisesBySaveOrder(a: Partial<ExerciseItem>, b: Partial<ExerciseItem>) {
   const aSavedTime = getSavedTime(a);
   const bSavedTime = getSavedTime(b);
-
   if (aSavedTime !== bSavedTime) return aSavedTime - bSavedTime;
-
   const aOrder = getExerciseOrderValue(a);
   const bOrder = getExerciseOrderValue(b);
-
   if (aOrder !== bOrder) return aOrder - bOrder;
-
   return String(a.id || "").localeCompare(String(b.id || ""));
 }
 
@@ -378,17 +306,42 @@ function getGroupFirstSavedRow(rows: ExerciseItem[]): ExerciseItem | null {
 function compareGroupedExercisesBySaveOrder(a: GroupedExercise, b: GroupedExercise) {
   const aFirst = getGroupFirstSavedRow(a.rows);
   const bFirst = getGroupFirstSavedRow(b.rows);
-
   if (aFirst && bFirst) {
     const result = compareExercisesBySaveOrder(aFirst, bFirst);
     if (result !== 0) return result;
   }
-
   return a.name.localeCompare(b.name, "he");
 }
 
 function normalizeText(value: string): string {
   return String(value || "").trim().toLowerCase();
+}
+
+function getClientResolvedUid(client: ClientItem | null): string {
+  if (!client) return "";
+  return String(client.authUid || client.uid || client.id || "").trim();
+}
+
+function getPaceTypeLabel(value?: RunningPaceType) {
+  if (value === "intervals") return "קצב משתנה בין מהיר לקל";
+  return "קצב קבוע";
+}
+
+function getManipulationLabel(value?: RunningManipulationType | string) {
+  if (value === "volume") return "ריצת נפח";
+  if (value === "fartlek") return "ריצת פארטלק";
+  if (value === "tempo" || value === "quality") return "ריצת טמפו";
+  if (value === "threshold") return "ריצת טראשהולד";
+  if (value === "intervals") return "אינטרוולים";
+  if (value === "recovery") return "ריצת התאוששות";
+  if (value === "hills") return "עליות";
+  return "";
+}
+
+function getSucceededLabel(value?: boolean | null) {
+  if (value === true) return "הצליח/ה";
+  if (value === false) return "לא הצליח/ה";
+  return "לא עודכן";
 }
 
 function normalizeRepsPerSetToRows(params: {
@@ -399,37 +352,17 @@ function normalizeRepsPerSetToRows(params: {
   date?: any;
   createdAt?: any;
   updatedAt?: any;
-  repsPerSet?: Record<
-    string,
-    { reps?: string | number; weight?: string | number }
-  >;
+  repsPerSet?: Record<string, { reps?: string | number; weight?: string | number }>;
   numSets?: number | string;
   order?: number | string;
   exerciseOrder?: number | string;
   clientEntryOrder?: number | string;
   sourceType: "embedded_exercise" | "legacy_workout";
 }): ExerciseItem[] {
-  const {
-    baseId,
-    uid,
-    workoutId,
-    exerciseName,
-    date,
-    createdAt,
-    updatedAt,
-    repsPerSet,
-    numSets,
-    order,
-    exerciseOrder,
-    clientEntryOrder,
-    sourceType,
-  } = params;
-
+  const { baseId, uid, workoutId, exerciseName, date, createdAt, updatedAt, repsPerSet, numSets, order, exerciseOrder, clientEntryOrder, sourceType } = params;
   const name = String(exerciseName || "").trim() || "תרגיל ללא שם";
   const map = repsPerSet || {};
-  const keys = Object.keys(map)
-    .filter((key) => map[key] !== undefined && map[key] !== null)
-    .sort((a, b) => Number(a) - Number(b));
+  const keys = Object.keys(map).filter((key) => map[key] !== undefined && map[key] !== null).sort((a, b) => Number(a) - Number(b));
 
   if (keys.length > 0) {
     return keys.map((setKey, idx) => {
@@ -456,7 +389,6 @@ function normalizeRepsPerSetToRows(params: {
   }
 
   const totalSets = getNumericValue(numSets) || 0;
-
   if (totalSets > 0) {
     return Array.from({ length: totalSets }).map((_, idx) => ({
       id: `${baseId}-set-${idx}`,
@@ -483,7 +415,6 @@ function normalizeRepsPerSetToRows(params: {
 
 function normalizeEmbeddedExercises(workout: WorkoutItem): ExerciseItem[] {
   if (!Array.isArray(workout.exercises)) return [];
-
   return workout.exercises.flatMap((exercise: any, index: number) => {
     const normalizedFromMap = normalizeRepsPerSetToRows({
       baseId: `${workout.id}-embedded-${index}`,
@@ -501,9 +432,7 @@ function normalizeEmbeddedExercises(workout: WorkoutItem): ExerciseItem[] {
       sourceType: "embedded_exercise",
     });
 
-    if (normalizedFromMap.length > 0) {
-      return normalizedFromMap;
-    }
+    if (normalizedFromMap.length > 0) return normalizedFromMap;
 
     const singleRow: ExerciseItem = {
       id: `${workout.id}-embedded-${index}`,
@@ -526,11 +455,7 @@ function normalizeEmbeddedExercises(workout: WorkoutItem): ExerciseItem[] {
 }
 
 function normalizeLegacyWorkoutToExercises(workout: WorkoutItem): ExerciseItem[] {
-  const hasLegacyMap =
-    !!workout.exerciseName ||
-    !!workout.repsPerSet ||
-    getNumericValue(workout.numSets) !== null;
-
+  const hasLegacyMap = !!workout.exerciseName || !!workout.repsPerSet || getNumericValue(workout.numSets) !== null;
   if (!hasLegacyMap) return [];
 
   const rows = normalizeRepsPerSetToRows({
@@ -549,9 +474,7 @@ function normalizeLegacyWorkoutToExercises(workout: WorkoutItem): ExerciseItem[]
     sourceType: "legacy_workout",
   });
 
-  if (rows.length > 0) {
-    return rows;
-  }
+  if (rows.length > 0) return rows;
 
   const fallback: ExerciseItem = {
     id: `${workout.id}-legacy-fallback`,
@@ -574,34 +497,12 @@ function normalizeLegacyWorkoutToExercises(workout: WorkoutItem): ExerciseItem[]
   return hasMeaningfulExerciseData(fallback) ? [fallback] : [];
 }
 
-function mergeExercises(
-  workouts: WorkoutItem[],
-  exercisesFromCollection: ExerciseItem[]
-): ExerciseItem[] {
-  const workoutIdsWithExerciseDocs = new Set(
-    exercisesFromCollection
-      .map((exercise) => exercise.workoutId)
-      .filter(Boolean) as string[]
-  );
-
-  const workoutIdsWithEmbeddedExercises = new Set(
-    workouts
-      .filter(
-        (workout) => Array.isArray(workout.exercises) && workout.exercises.length > 0
-      )
-      .map((workout) => workout.id)
-  );
-
-  const embeddedExercises = workouts
-    .filter((workout) => !workoutIdsWithExerciseDocs.has(workout.id))
-    .flatMap((workout) => normalizeEmbeddedExercises(workout));
-
+function mergeExercises(workouts: WorkoutItem[], exercisesFromCollection: ExerciseItem[]): ExerciseItem[] {
+  const workoutIdsWithExerciseDocs = new Set(exercisesFromCollection.map((exercise) => exercise.workoutId).filter(Boolean) as string[]);
+  const workoutIdsWithEmbeddedExercises = new Set(workouts.filter((workout) => Array.isArray(workout.exercises) && workout.exercises.length > 0).map((workout) => workout.id));
+  const embeddedExercises = workouts.filter((workout) => !workoutIdsWithExerciseDocs.has(workout.id)).flatMap((workout) => normalizeEmbeddedExercises(workout));
   const legacyWorkoutExercises = workouts
-    .filter(
-      (workout) =>
-        !workoutIdsWithExerciseDocs.has(workout.id) &&
-        !workoutIdsWithEmbeddedExercises.has(workout.id)
-    )
+    .filter((workout) => !workoutIdsWithExerciseDocs.has(workout.id) && !workoutIdsWithEmbeddedExercises.has(workout.id))
     .flatMap((workout) => normalizeLegacyWorkoutToExercises(workout));
 
   const all = [...exercisesFromCollection, ...embeddedExercises, ...legacyWorkoutExercises];
@@ -619,28 +520,18 @@ function mergeExercises(
       exercise.sourceType || "unknown",
       index,
     ].join("|");
-
     const key = exercise.id || fallbackKey;
-
     if (seen.has(key)) return false;
     seen.add(key);
-
     return hasMeaningfulExerciseData(exercise);
   });
 }
 
-function groupExercisesByWorkout(
-  workouts: WorkoutItem[],
-  exercises: ExerciseItem[]
-): Record<string, ExerciseItem[]> {
+function groupExercisesByWorkout(workouts: WorkoutItem[], exercises: ExerciseItem[]): Record<string, ExerciseItem[]> {
   const grouped: Record<string, ExerciseItem[]> = {};
-
   workouts.forEach((workout) => {
-    grouped[workout.id] = exercises
-      .filter((exercise) => exercise.workoutId === workout.id)
-      .sort(compareExercisesBySaveOrder);
+    grouped[workout.id] = exercises.filter((exercise) => exercise.workoutId === workout.id).sort(compareExercisesBySaveOrder);
   });
-
   return grouped;
 }
 
@@ -650,7 +541,6 @@ function buildDayGroups(workouts: WorkoutItem[], exercises: ExerciseItem[]): Day
 
   const ensureGroup = (date: Date | null): DayGroup => {
     const dayKey = getDayKeyFromDate(date);
-
     if (!map[dayKey]) {
       map[dayKey] = {
         dayKey,
@@ -662,7 +552,6 @@ function buildDayGroups(workouts: WorkoutItem[], exercises: ExerciseItem[]): Day
         latestCreatedAt: date || null,
       };
     }
-
     return map[dayKey];
   };
 
@@ -670,154 +559,65 @@ function buildDayGroups(workouts: WorkoutItem[], exercises: ExerciseItem[]): Day
     const workoutDate = getWorkoutBaseDate(workout);
     const group = ensureGroup(workoutDate);
     const workoutExercises = exercisesByWorkout[workout.id] || [];
-
     group.workouts.push(workout);
     group.exercises.push(...workoutExercises);
-
     const noteText = String(workout.note || workout.notes || "").trim();
-    if (noteText) {
-      group.notes.push(noteText);
-    }
-
+    if (noteText) group.notes.push(noteText);
     group.sortTime = Math.max(group.sortTime, workoutDate?.getTime() || 0);
-
     const latestWorkoutTime = getLatestTimeFromItems([
       workout.createdAt,
       workout.updatedAt,
       workout.date,
-      ...workoutExercises.flatMap((exercise) => [
-        exercise.createdAt,
-        exercise.updatedAt,
-        exercise.date,
-      ]),
+      ...workoutExercises.flatMap((exercise) => [exercise.createdAt, exercise.updatedAt, exercise.date]),
     ]);
-
     const currentLatest = getDateFromAny(group.latestCreatedAt)?.getTime() || 0;
-    if (latestWorkoutTime > currentLatest) {
-      group.latestCreatedAt = workout.createdAt || workout.updatedAt || workout.date;
-    }
+    if (latestWorkoutTime > currentLatest) group.latestCreatedAt = workout.createdAt || workout.updatedAt || workout.date;
   });
 
-  exercises
-    .filter((exercise) => !exercise.workoutId)
-    .forEach((exercise) => {
-      const exerciseDate = getExerciseBaseDate(exercise);
-      const group = ensureGroup(exerciseDate);
-
-      group.exercises.push(exercise);
-      group.sortTime = Math.max(group.sortTime, exerciseDate?.getTime() || 0);
-
-      const exerciseLatest = getLatestTimeFromItems([
-        exercise.createdAt,
-        exercise.updatedAt,
-        exercise.date,
-      ]);
-
-      const currentLatest = getDateFromAny(group.latestCreatedAt)?.getTime() || 0;
-      if (exerciseLatest > currentLatest) {
-        group.latestCreatedAt = exercise.createdAt || exercise.updatedAt || exercise.date;
-      }
-    });
+  exercises.filter((exercise) => !exercise.workoutId).forEach((exercise) => {
+    const exerciseDate = getExerciseBaseDate(exercise);
+    const group = ensureGroup(exerciseDate);
+    group.exercises.push(exercise);
+    group.sortTime = Math.max(group.sortTime, exerciseDate?.getTime() || 0);
+  });
 
   return Object.values(map)
-    .map((group) => {
-      const seenExerciseKeys = new Set<string>();
-
-      const dedupedExercises = group.exercises.filter((exercise, index) => {
-        const key = [
-          exercise.id || "no-id",
-          exercise.workoutId || "no-workout",
-          getExerciseName(exercise),
-          getNumericValue(exercise.sets) ?? "no-sets",
-          getNumericValue(exercise.reps) ?? "no-reps",
-          getNumericValue(exercise.weight) ?? "no-weight",
-          getDayKeyFromDate(getExerciseBaseDate(exercise)),
-          exercise.sourceType || "unknown",
-          index,
-        ].join("|");
-
-        if (seenExerciseKeys.has(key)) return false;
-        seenExerciseKeys.add(key);
-        return true;
-      });
-
-      return {
-        ...group,
-        notes: Array.from(new Set(group.notes)),
-        exercises: dedupedExercises.sort(compareExercisesBySaveOrder),
-      };
-    })
+    .map((group) => ({ ...group, notes: Array.from(new Set(group.notes)), exercises: group.exercises.sort(compareExercisesBySaveOrder) }))
     .sort((a, b) => b.sortTime - a.sortTime);
 }
 
-function groupExercisesInsideDay(
-  exercises: ExerciseItem[],
-  dayKey: string
-): GroupedExercise[] {
+function groupExercisesInsideDay(exercises: ExerciseItem[], dayKey: string): GroupedExercise[] {
   const map: Record<string, GroupedExercise> = {};
-
   exercises.forEach((exercise) => {
     const exerciseName = getExerciseName(exercise);
     const groupKey = `${dayKey}-${exerciseName}`;
-
-    if (!map[groupKey]) {
-      map[groupKey] = {
-        key: groupKey,
-        name: exerciseName,
-        rows: [],
-        latestCreatedAt: exercise.createdAt || exercise.updatedAt || exercise.date,
-      };
-    }
-
+    if (!map[groupKey]) map[groupKey] = { key: groupKey, name: exerciseName, rows: [], latestCreatedAt: exercise.createdAt || exercise.updatedAt || exercise.date };
     map[groupKey].rows.push(exercise);
-
-    const currentLatest = getDateFromAny(map[groupKey].latestCreatedAt)?.getTime() || 0;
-    const candidateLatest =
-      getLatestTimeFromItems([exercise.createdAt, exercise.updatedAt, exercise.date]) || 0;
-
-    if (candidateLatest > currentLatest) {
-      map[groupKey].latestCreatedAt =
-        exercise.createdAt || exercise.updatedAt || exercise.date;
-    }
   });
 
-  const grouped = Object.values(map).map((group) => {
-    const sortedRows = [...group.rows].sort((a, b) => {
-      const aSet = getNumericValue(a.sets);
-      const bSet = getNumericValue(b.sets);
+  return Object.values(map)
+    .map((group) => {
+      const sortedRows = [...group.rows].sort((a, b) => {
+        const aSet = getNumericValue(a.sets);
+        const bSet = getNumericValue(b.sets);
+        if (aSet !== null && bSet !== null && aSet !== bSet) return aSet - bSet;
+        return compareExercisesBySaveOrder(a, b);
+      });
+      const hasRealRows = sortedRows.some((row) => hasSetLikeData(row));
+      return { ...group, rows: hasRealRows ? sortedRows.filter((row) => hasSetLikeData(row)) : sortedRows };
+    })
+    .sort(compareGroupedExercisesBySaveOrder);
+}
 
-      if (aSet !== null && bSet !== null && aSet !== bSet) {
-        return aSet - bSet;
-      }
-
-      const aTime =
-        getDateFromAny(a.createdAt)?.getTime() ||
-        getDateFromAny(a.updatedAt)?.getTime() ||
-        getDateFromAny(a.date)?.getTime() ||
-        0;
-
-      const bTime =
-        getDateFromAny(b.createdAt)?.getTime() ||
-        getDateFromAny(b.updatedAt)?.getTime() ||
-        getDateFromAny(b.date)?.getTime() ||
-        0;
-
-      return aTime - bTime;
-    });
-
-    const hasRealRows = sortedRows.some((row) => hasSetLikeData(row));
-
-    const filteredRows = hasRealRows
-      ? sortedRows.filter((row) => hasSetLikeData(row))
-      : sortedRows;
-
-    return {
-      ...group,
-      rows: filteredRows,
-    };
-  });
-
-  return grouped.sort(compareGroupedExercisesBySaveOrder);
+function calculateAverageWorkoutsPerWeek(dayGroups: DayGroup[]) {
+  if (dayGroups.length === 0) return 0;
+  const validTimes = dayGroups.map((group) => Number(group.sortTime)).filter((time) => Number.isFinite(time) && time > 0);
+  if (validTimes.length === 0) return dayGroups.length;
+  const newestWorkoutTime = Math.max(...validTimes);
+  const oldestWorkoutTime = Math.min(...validTimes);
+  const daysRange = Math.max(1, Math.ceil((newestWorkoutTime - oldestWorkoutTime) / (1000 * 60 * 60 * 24)) + 1);
+  const weeksRange = Math.max(1, Math.ceil(daysRange / 7));
+  return Math.round(dayGroups.length / weeksRange);
 }
 
 export default function ClientProgressTracker({ clients: initialClients = [] }: Props) {
@@ -825,96 +625,64 @@ export default function ClientProgressTracker({ clients: initialClients = [] }: 
   const isSmallScreen = width < 380;
   const isTablet = width >= 768;
 
-  const dynamic = useMemo(() => {
-    return {
-      titleSize: isSmallScreen ? 18 : isTablet ? 22 : 20,
-      textSize: isSmallScreen ? 13 : 14,
-      subTextSize: isSmallScreen ? 12 : 13,
-      pillHeight: isSmallScreen ? 46 : 50,
-      cardPadding: isSmallScreen ? 14 : 16,
-    };
-  }, [isSmallScreen, isTablet]);
+  const dynamic = useMemo(() => ({
+    titleSize: isSmallScreen ? 18 : isTablet ? 22 : 20,
+    textSize: isSmallScreen ? 13 : 14,
+    subTextSize: isSmallScreen ? 12 : 13,
+    pillHeight: isSmallScreen ? 46 : 50,
+    cardPadding: isSmallScreen ? 14 : 16,
+  }), [isSmallScreen, isTablet]);
 
   const [clients, setClients] = useState<ClientItem[]>(initialClients);
   const [loadingClients, setLoadingClients] = useState(initialClients.length === 0);
-  const [selectedClient, setSelectedClient] = useState<ClientItem | null>(
-    initialClients[0] || null
-  );
+  const [selectedClient, setSelectedClient] = useState<ClientItem | null>(initialClients[0] || null);
   const [loadingData, setLoadingData] = useState(false);
   const [savingTrackerFlag, setSavingTrackerFlag] = useState(false);
   const [workouts, setWorkouts] = useState<WorkoutItem[]>([]);
   const [exercises, setExercises] = useState<ExerciseItem[]>([]);
+  const [programData, setProgramData] = useState<TrainingProgramDoc | null>(null);
+  const [programDocId, setProgramDocId] = useState<string>("");
+  const [selectedTrainingView, setSelectedTrainingView] = useState<TrainingViewType | null>(null);
   const [openDayIds, setOpenDayIds] = useState<Record<string, boolean>>({});
   const [openExerciseIds, setOpenExerciseIds] = useState<Record<string, boolean>>({});
+  const [openRunningWeekIds, setOpenRunningWeekIds] = useState<Record<string, boolean>>({});
   const [searchText, setSearchText] = useState("");
+  const [feedbackDrafts, setFeedbackDrafts] = useState<Record<string, string>>({});
+  const [savingFeedbackKey, setSavingFeedbackKey] = useState<string | null>(null);
 
   const loadClients = useCallback(async () => {
     if (initialClients.length > 0) {
-      const normalizedInitial = [...initialClients].sort((a, b) =>
-        (a.name || "").localeCompare(b.name || "", "he")
-      );
-
+      const normalizedInitial = [...initialClients].sort((a, b) => (a.name || "").localeCompare(b.name || "", "he"));
       setClients(normalizedInitial);
-      setSelectedClient((prev) => {
-        if (prev) {
-          const freshSelected =
-            normalizedInitial.find((c) => c.id === prev.id) || prev;
-          return freshSelected;
-        }
-        return normalizedInitial[0] || null;
-      });
+      setSelectedClient((prev) => (prev ? normalizedInitial.find((c) => c.id === prev.id) || prev : normalizedInitial[0] || null));
       setLoadingClients(false);
       return;
     }
 
     try {
       setLoadingClients(true);
-
       const me = auth.currentUser;
       if (!me?.uid) {
         setClients([]);
         setSelectedClient(null);
-        setLoadingClients(false);
         return;
       }
 
       const myUserSnap = await getDoc(doc(db, "users", me.uid));
       const myUser = myUserSnap.data();
-
       let q;
-
-      if (myUser?.role === "owner") {
-        q = query(collection(db, "users"), where("role", "==", "client"));
-      } else if (myUser?.role === "admin") {
-        q = query(
-          collection(db, "users"),
-          where("role", "==", "client"),
-          where("createdByUid", "==", me.uid)
-        );
-      } else {
+      if (myUser?.role === "owner") q = query(collection(db, "users"), where("role", "==", "client"));
+      else if (myUser?.role === "admin") q = query(collection(db, "users"), where("role", "==", "client"), where("createdByUid", "==", me.uid));
+      else {
         setClients([]);
         setSelectedClient(null);
-        setLoadingClients(false);
         return;
       }
 
       const snap = await getDocs(q);
-
-      const list: ClientItem[] = snap.docs
-        .map((docSnap) => ({
-          id: docSnap.id,
-          ...(docSnap.data() as Omit<ClientItem, "id">),
-        }))
-        .sort((a, b) => (a.name || "").localeCompare(b.name || "", "he"));
-
+      const list: ClientItem[] = snap.docs.map((docSnap) => ({ id: docSnap.id, ...(docSnap.data() as Omit<ClientItem, "id">) })).sort((a, b) => (a.name || "").localeCompare(b.name || "", "he"));
       setClients(list);
-      setSelectedClient((prev) => {
-        if (prev) {
-          const freshSelected = list.find((c) => c.id === prev.id) || prev;
-          return freshSelected;
-        }
-        return list.find((c) => !!c.showInTracker) || list[0] || null;
-      });
+      setSelectedClient((prev) => (prev ? list.find((c) => c.id === prev.id) || prev : list.find((c) => !!c.showInTracker) || list[0] || null));
     } catch (error) {
       console.error("שגיאה בטעינת לקוחות:", error);
       Alert.alert("שגיאה", "לא ניתן לטעון את רשימת הלקוחות");
@@ -923,172 +691,182 @@ export default function ClientProgressTracker({ clients: initialClients = [] }: 
     }
   }, [initialClients]);
 
+
+
+  const getClientUidCandidates = useCallback((client: ClientItem | null) => {
+    if (!client) return [] as string[];
+    return Array.from(
+      new Set(
+        [client.authUid, client.uid, client.id]
+          .map((value) => String(value || "").trim())
+          .filter(Boolean)
+      )
+    );
+  }, []);
+
+  const fetchDocsForUidCandidates = useCallback(async <T extends { id: string }>(
+    collectionName: string,
+    uidCandidates: string[]
+  ): Promise<T[]> => {
+    const seen = new Set<string>();
+    const collected: T[] = [];
+
+    for (const uidValue of uidCandidates) {
+      const snap = await getDocs(
+        query(collection(db, collectionName), where("uid", "==", uidValue))
+      );
+
+      snap.docs.forEach((docSnap) => {
+        if (seen.has(docSnap.id)) return;
+        seen.add(docSnap.id);
+        collected.push({
+          id: docSnap.id,
+          ...(docSnap.data() as Omit<T, "id">),
+        } as T);
+      });
+    }
+
+    return collected;
+  }, []);
+
+  const fetchProgramForUidCandidates = useCallback(async (uidCandidates: string[]) => {
+    for (const uidValue of uidCandidates) {
+      const snap = await getDoc(doc(db, "clientTrainingPrograms", uidValue));
+      if (snap.exists()) {
+        return {
+          docId: snap.id,
+          data: snap.data() as TrainingProgramDoc,
+        };
+      }
+    }
+
+    return { docId: uidCandidates[0] || "", data: null as TrainingProgramDoc | null };
+  }, []);
+
   const loadClientData = useCallback(async (client: ClientItem | null) => {
     if (!client) {
       setWorkouts([]);
       setExercises([]);
+      setProgramData(null);
+      setProgramDocId("");
       return;
     }
 
     if (!client.showInTracker) {
       setWorkouts([]);
       setExercises([]);
+      setProgramData(null);
+      setProgramDocId("");
       setLoadingData(false);
       return;
     }
 
-    const targetUid = client.authUid || client.uid || client.id;
+    const uidCandidates = getClientUidCandidates(client);
+    if (uidCandidates.length === 0) return;
 
     try {
       setLoadingData(true);
 
-      const workoutsQuery = query(collection(db, "workouts"), where("uid", "==", targetUid));
-      const exercisesQuery = query(collection(db, "exercises"), where("uid", "==", targetUid));
-
-      const [workoutsSnap, exercisesSnap] = await Promise.all([
-        getDocs(workoutsQuery),
-        getDocs(exercisesQuery),
+      const [workoutsListRaw, exercisesFromCollectionRaw, programResult] = await Promise.all([
+        fetchDocsForUidCandidates<WorkoutItem>("workouts", uidCandidates),
+        fetchDocsForUidCandidates<ExerciseItem>("exercises", uidCandidates),
+        fetchProgramForUidCandidates(uidCandidates),
       ]);
 
-      const workoutsList: WorkoutItem[] = workoutsSnap.docs
-        .map((docSnap) => ({
-          id: docSnap.id,
-          ...(docSnap.data() as Omit<WorkoutItem, "id">),
-        }))
-        .sort((a, b) => getWorkoutSortTime(b) - getWorkoutSortTime(a));
+      const workoutsList = workoutsListRaw.sort(
+        (a, b) => getWorkoutSortTime(b) - getWorkoutSortTime(a)
+      );
 
-      const exercisesFromCollection: ExerciseItem[] = exercisesSnap.docs.map((docSnap) => ({
-        id: docSnap.id,
-        ...(docSnap.data() as Omit<ExerciseItem, "id">),
-        sourceType: "exercise_doc",
+      const exercisesFromCollection = exercisesFromCollectionRaw.map((exercise) => ({
+        ...exercise,
+        sourceType: "exercise_doc" as const,
       }));
 
-      const mergedExercises = mergeExercises(workoutsList, exercisesFromCollection);
-
       setWorkouts(workoutsList);
-      setExercises(mergedExercises);
+      setExercises(mergeExercises(workoutsList, exercisesFromCollection));
+      setProgramData(programResult.data);
+      setProgramDocId(programResult.docId);
     } catch (error) {
       console.error("שגיאה בטעינת נתוני לקוח:", error);
       Alert.alert("שגיאה", "לא ניתן לטעון את נתוני הלקוח");
       setWorkouts([]);
       setExercises([]);
+      setProgramData(null);
+      setProgramDocId("");
     } finally {
       setLoadingData(false);
     }
-  }, []);
+  }, [fetchDocsForUidCandidates, fetchProgramForUidCandidates, getClientUidCandidates]);
 
-  useEffect(() => {
-    loadClients();
-  }, [loadClients]);
+  useEffect(() => { loadClients(); }, [loadClients]);
+  useEffect(() => { loadClientData(selectedClient); }, [selectedClient, loadClientData]);
 
-  useEffect(() => {
-    loadClientData(selectedClient);
-  }, [selectedClient, loadClientData]);
-
-  const trackedClients = useMemo(
-    () => clients.filter((client) => !!client.showInTracker),
-    [clients]
-  );
-
+  const trackedClients = useMemo(() => clients.filter((client) => !!client.showInTracker), [clients]);
   const visibleClients = useMemo(() => {
     const term = normalizeText(searchText);
-
-    if (!term) {
-      return trackedClients;
-    }
-
-    return clients.filter((client) => {
-      const name = normalizeText(client.name || "");
-      return name.startsWith(term);
-    });
+    if (!term) return trackedClients;
+    return clients.filter((client) => normalizeText(client.name || "").startsWith(term));
   }, [clients, trackedClients, searchText]);
 
   const dayGroups = useMemo(() => buildDayGroups(workouts, exercises), [workouts, exercises]);
+  const runningWeeks = useMemo(() => Array.isArray(programData?.runningWeeks) ? programData.runningWeeks : [], [programData]);
+  const hasStrengthTracking = dayGroups.length > 0;
+  const hasRunningTracking = runningWeeks.length > 0;
+
+  useEffect(() => {
+    if (hasStrengthTracking && !hasRunningTracking) setSelectedTrainingView("strength");
+    else if (hasRunningTracking && !hasStrengthTracking) setSelectedTrainingView("running");
+    else if (!hasStrengthTracking && !hasRunningTracking) setSelectedTrainingView(null);
+    else setSelectedTrainingView((prev) => (prev === "strength" || prev === "running" ? prev : null));
+  }, [hasStrengthTracking, hasRunningTracking, selectedClient?.id]);
+
+  useEffect(() => {
+    if (dayGroups.length > 0) setOpenDayIds({ [dayGroups[0].dayKey]: true });
+    else setOpenDayIds({});
+    setOpenExerciseIds({});
+  }, [dayGroups]);
+
+  useEffect(() => {
+    // אימוני ריצה במעקב מוצגים סגורים כברירת מחדל ונפתחים בלחיצה על השבוע.
+    setOpenRunningWeekIds({});
+  }, [programDocId, selectedClient?.id]);
 
   const summary = useMemo(() => {
     const now = new Date();
     const currentMonth = now.getMonth();
     const currentYear = now.getFullYear();
-
     const workoutsThisMonth = dayGroups.filter((group) => {
       const d = new Date(group.sortTime);
       return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
     }).length;
-
     const latestWorkout = dayGroups[0];
-
-    const uniqueExerciseNames = new Set(
-      exercises.map((exercise) => getExerciseName(exercise)).filter(Boolean)
-    );
-
     return {
       totalWorkouts: dayGroups.length,
       averageWorkoutsPerWeek: calculateAverageWorkoutsPerWeek(dayGroups),
-      uniqueExercises: uniqueExerciseNames.size,
       workoutsThisMonth,
       latestWorkoutLabel: latestWorkout ? latestWorkout.displayDate : "אין נתונים",
     };
-  }, [dayGroups, exercises]);
-
-  useEffect(() => {
-    if (dayGroups.length > 0) {
-      setOpenDayIds({ [dayGroups[0].dayKey]: true });
-    } else {
-      setOpenDayIds({});
-    }
-    setOpenExerciseIds({});
   }, [dayGroups]);
 
-  const toggleDay = (dayKey: string) => {
-    setOpenDayIds((prev) => ({
-      ...prev,
-      [dayKey]: !prev[dayKey],
-    }));
-  };
-
-  const toggleExercise = (exerciseKey: string) => {
-    setOpenExerciseIds((prev) => ({
-      ...prev,
-      [exerciseKey]: !prev[exerciseKey],
-    }));
-  };
+  const toggleDay = (dayKey: string) => setOpenDayIds((prev) => ({ ...prev, [dayKey]: !prev[dayKey] }));
+  const toggleExercise = (exerciseKey: string) => setOpenExerciseIds((prev) => ({ ...prev, [exerciseKey]: !prev[exerciseKey] }));
+  const toggleRunningWeek = (weekId: string) => setOpenRunningWeekIds((prev) => ({ ...prev, [weekId]: !prev[weekId] }));
 
   const toggleClientTrackerFlag = useCallback(async () => {
     if (!selectedClient) return;
-
     const nextValue = !selectedClient.showInTracker;
-
     try {
       setSavingTrackerFlag(true);
-
-      await updateDoc(doc(db, "users", selectedClient.id), {
-        showInTracker: nextValue,
-        updatedAt: new Date().toISOString(),
-      });
-
-      setClients((prev) =>
-        prev.map((client) =>
-          client.id === selectedClient.id
-            ? { ...client, showInTracker: nextValue }
-            : client
-        )
-      );
-
-      setSelectedClient((prev) =>
-        prev ? { ...prev, showInTracker: nextValue } : prev
-      );
-
+      await updateDoc(doc(db, "users", selectedClient.id), { showInTracker: nextValue, updatedAt: new Date().toISOString() });
+      setClients((prev) => prev.map((client) => client.id === selectedClient.id ? { ...client, showInTracker: nextValue } : client));
+      setSelectedClient((prev) => prev ? { ...prev, showInTracker: nextValue } : prev);
       if (!nextValue) {
         setWorkouts([]);
         setExercises([]);
+        setProgramData(null);
+        setProgramDocId("");
       }
-
-      Alert.alert(
-        "עודכן בהצלחה",
-        nextValue
-          ? "הלקוח נוסף למעקב וכל האימונים שלו יוצגו."
-          : "הלקוח הוסר מהמעקב והאימונים שלו לא יוצגו עד שתפעילי שוב."
-      );
+      Alert.alert("עודכן בהצלחה", nextValue ? "הלקוח נוסף למעקב וכל האימונים שלו יוצגו." : "הלקוח הוסר מהמעקב.");
     } catch (error) {
       console.error("שגיאה בעדכון מעקב לקוח:", error);
       Alert.alert("שגיאה", "לא ניתן לעדכן את הגדרת המעקב עבור הלקוח");
@@ -1097,13 +875,52 @@ export default function ClientProgressTracker({ clients: initialClients = [] }: 
     }
   }, [selectedClient]);
 
+  const getDraftValue = (key: string, fallback?: string) => feedbackDrafts[key] ?? String(fallback || "");
+  const updateFeedbackDraft = (key: string, value: string) => setFeedbackDrafts((prev) => ({ ...prev, [key]: value }));
+
+  const saveStrengthFeedback = useCallback(async (group: DayGroup) => {
+    const workout = group.workouts[0];
+    if (!workout) return Alert.alert("שגיאה", "לא נמצא אימון לשמירת משוב");
+    const key = `strength-${group.dayKey}`;
+    const feedback = getDraftValue(key, workout.coachFeedback).trim();
+    try {
+      setSavingFeedbackKey(key);
+      const updatedAt = new Date().toISOString();
+      await updateDoc(doc(db, "workouts", workout.id), { coachFeedback: feedback, coachFeedbackUpdatedAt: updatedAt });
+      setWorkouts((prev) => prev.map((item) => item.id === workout.id ? { ...item, coachFeedback: feedback, coachFeedbackUpdatedAt: updatedAt } : item));
+      Alert.alert("נשמר", "המשוב נשמר לאימון הכוח");
+    } catch (error) {
+      console.error("שגיאה בשמירת משוב כוח:", error);
+      Alert.alert("שגיאה", "לא ניתן לשמור את המשוב");
+    } finally {
+      setSavingFeedbackKey(null);
+    }
+  }, [feedbackDrafts]);
+
+  const saveRunningFeedback = useCallback(async (weekId: string) => {
+    if (!selectedClient || !programData) return;
+    const targetProgramDocId = programDocId || getClientUidCandidates(selectedClient)[0] || "";
+    if (!targetProgramDocId) return;
+    const key = `running-${weekId}`;
+    const feedback = getDraftValue(key, runningWeeks.find((week) => week.id === weekId)?.coachFeedback).trim();
+    try {
+      setSavingFeedbackKey(key);
+      const updatedAt = new Date().toISOString();
+      const nextWeeks = runningWeeks.map((week) => week.id === weekId ? { ...week, coachFeedback: feedback, coachFeedbackUpdatedAt: updatedAt } : week);
+      await setDoc(doc(db, "clientTrainingPrograms", targetProgramDocId), { runningWeeks: nextWeeks, updatedAt }, { merge: true });
+      setProgramData((prev) => prev ? { ...prev, runningWeeks: nextWeeks, updatedAt } : prev);
+      setProgramDocId(targetProgramDocId);
+      Alert.alert("נשמר", "המשוב נשמר לאימון הריצה");
+    } catch (error) {
+      console.error("שגיאה בשמירת משוב ריצה:", error);
+      Alert.alert("שגיאה", "לא ניתן לשמור את המשוב");
+    } finally {
+      setSavingFeedbackKey(null);
+    }
+  }, [feedbackDrafts, getClientUidCandidates, programData, programDocId, runningWeeks, selectedClient]);
+
   if (loadingClients) {
-    return (
-      <View style={styles.loadingBox}>
-        <ActivityIndicator size="large" color="#0F172A" />
-        <Text style={styles.loadingText}>טוען רשימת לקוחות...</Text>
-      </View>
-    );
+    return <View style={styles.loadingBox}><ActivityIndicator size="large" color="#0F172A" /><Text style={styles.loadingText}>טוען רשימת לקוחות...</Text></View>;
   }
 
   return (
@@ -1111,802 +928,254 @@ export default function ClientProgressTracker({ clients: initialClients = [] }: 
       <View style={styles.topHeader}>
         <View style={styles.headerTitleRow}>
           <UsersIcon size={18} color="#0F172A" />
-          <Text style={[styles.headerTitle, { fontSize: dynamic.titleSize }]}>
-            מעקב לקוחות
-          </Text>
+          <Text style={[styles.headerTitle, { fontSize: dynamic.titleSize }]}>מעקב אימון לקוח</Text>
         </View>
-
-        <Text style={[styles.headerSubtitle, { fontSize: dynamic.subTextSize }]}>
-          חיפוש לפי תחילת שם. בלי חיפוש יוצגו רק לקוחות שסומנו למעקב.
-        </Text>
+        <Text style={[styles.headerSubtitle, { fontSize: dynamic.subTextSize }]}>המעקב מחולק לאימוני כוח ואימוני ריצה. כאן מוצגים ביצועי הלקוח, תגובתו והמשוב של המאמן.</Text>
       </View>
 
       <View style={styles.searchCard}>
         <View style={styles.searchInputWrap}>
           <SearchIcon size={18} color="#64748B" />
-          <TextInput
-            value={searchText}
-            onChangeText={setSearchText}
-            placeholder="חפשי לפי תחילת שם הלקוח..."
-            placeholderTextColor="#94A3B8"
-            style={styles.searchInput}
-            textAlign="right"
-          />
+          <TextInput value={searchText} onChangeText={setSearchText} placeholder="חיפוש לפי שם לקוח" placeholderTextColor="#94A3B8" style={styles.searchInput} textAlign="right" />
         </View>
-
-        <Text style={styles.searchInfoText}>
-          {searchText.trim()
-            ? `נמצאו ${visibleClients.length} לקוחות לפי החיפוש`
-            : `לקוחות במעקב: ${trackedClients.length}`}
-        </Text>
       </View>
 
       {clients.length === 0 ? (
-        <View style={styles.emptyBox}>
-          <Text style={styles.emptyText}>אין לקוחות להצגה</Text>
-        </View>
+        <View style={styles.emptyBox}><Text style={styles.emptyText}>אין לקוחות להצגה</Text></View>
       ) : (
-        <>
-          {visibleClients.length === 0 ? (
-            <View style={styles.emptyBox}>
-              <Text style={styles.emptyText}>
-                {searchText.trim()
-                  ? "לא נמצאו לקוחות שמתחילים באותיות האלו"
-                  : "עדיין לא סומנו לקוחות למעקב"}
-              </Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.clientsScrollContent}>
+          {visibleClients.map((client) => {
+            const isSelected = selectedClient?.id === client.id;
+            return (
+              <Pressable key={client.id} onPress={() => setSelectedClient(client)} style={({ pressed }) => [styles.clientPill, { minHeight: dynamic.pillHeight }, isSelected && styles.clientPillActive, pressed && styles.pressed]}>
+                <Text style={[styles.clientPillText, isSelected && styles.clientPillTextActive]} numberOfLines={1}>{client.name || client.email || "לקוח ללא שם"}</Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      )}
+
+      {selectedClient && (
+        <View style={styles.selectedClientCard}>
+          <View style={styles.selectedClientHeader}>
+            <View style={styles.selectedClientInfo}>
+              <Text style={styles.selectedClientName}>{selectedClient.name || "לקוח ללא שם"}</Text>
+              <Text style={styles.selectedClientEmail}>{selectedClient.email || "ללא אימייל"}</Text>
             </View>
-          ) : (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.clientsScrollContent}
-            >
-              {visibleClients.map((client) => {
-                const isSelected =
-                  (selectedClient?.uid || selectedClient?.id) === (client.uid || client.id);
+            <View style={styles.trackerSwitchBox}>
+              <Text style={styles.trackerSwitchText}>{savingTrackerFlag ? "שומר..." : selectedClient.showInTracker ? "במעקב" : "לא במעקב"}</Text>
+              <Switch value={!!selectedClient.showInTracker} onValueChange={toggleClientTrackerFlag} disabled={savingTrackerFlag} trackColor={{ false: "#CBD5E1", true: "#0F172A" }} thumbColor="#FFFFFF" />
+            </View>
+          </View>
+          <Text style={styles.selectedClientStatusText}>{selectedClient.showInTracker ? "הלקוח מסומן למעקב וכל האימונים שלו מוצגים." : "הלקוח לא מסומן למעקב כרגע."}</Text>
+        </View>
+      )}
 
+      {selectedClient && !selectedClient.showInTracker ? (
+        <View style={styles.emptyBox}><Text style={styles.emptyText}>הלקוח הזה לא מסומן למעקב. הפעילי מעקב כדי לראות אימוני כוח וריצה.</Text></View>
+      ) : loadingData ? (
+        <View style={styles.loadingBox}><ActivityIndicator size="large" color="#0F172A" /><Text style={styles.loadingText}>טוען נתוני לקוח...</Text></View>
+      ) : selectedClient ? (
+        <>
+          <View style={styles.summaryGrid}>
+            <View style={[styles.summaryCard, { padding: dynamic.cardPadding }]}><Text style={styles.summaryValue}>{summary.totalWorkouts}</Text><Text style={styles.summaryLabel}>אימוני כוח</Text></View>
+            <View style={[styles.summaryCard, { padding: dynamic.cardPadding }]}><Text style={styles.summaryValue}>{runningWeeks.length}</Text><Text style={styles.summaryLabel}>שבועות ריצה</Text></View>
+            <View style={[styles.summaryCard, { padding: dynamic.cardPadding }]}><Text style={styles.summaryValue}>{summary.averageWorkoutsPerWeek}</Text><Text style={styles.summaryLabel}>כוח בשבוע</Text></View>
+            <View style={[styles.summaryCard, { padding: dynamic.cardPadding }]}><Text style={styles.summaryValue}>{summary.latestWorkoutLabel}</Text><Text style={styles.summaryLabel}>אימון כוח אחרון</Text></View>
+          </View>
+
+          {hasStrengthTracking && hasRunningTracking && !selectedTrainingView ? (
+            <View style={styles.choiceCard}>
+              <Text style={styles.choiceTitle}>איזה סוג אימון להציג?</Text>
+              <Pressable style={styles.choiceButton} onPress={() => setSelectedTrainingView("strength")}><Text style={styles.choiceButtonText}>אימוני כוח</Text></Pressable>
+              <Pressable style={styles.choiceButton} onPress={() => setSelectedTrainingView("running")}><Text style={styles.choiceButtonText}>אימוני ריצה</Text></Pressable>
+            </View>
+          ) : null}
+
+          {hasStrengthTracking && hasRunningTracking && selectedTrainingView ? (
+            <View style={styles.viewTabsRow}>
+              <Pressable onPress={() => setSelectedTrainingView("strength")} style={[styles.viewTab, selectedTrainingView === "strength" && styles.viewTabActive]}><Text style={[styles.viewTabText, selectedTrainingView === "strength" && styles.viewTabTextActive]}>כוח</Text></Pressable>
+              <Pressable onPress={() => setSelectedTrainingView("running")} style={[styles.viewTab, selectedTrainingView === "running" && styles.viewTabActive]}><Text style={[styles.viewTabText, selectedTrainingView === "running" && styles.viewTabTextActive]}>ריצה</Text></Pressable>
+            </View>
+          ) : null}
+
+          {selectedTrainingView === "strength" && (
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}><WorkoutIcon size={18} color="#0F172A" /><Text style={styles.sectionTitle}>אימוני כוח - ביצוע, תגובת לקוח ומשוב מאמן</Text></View>
+              {dayGroups.length === 0 ? <View style={styles.emptyBox}><Text style={styles.emptyText}>אין אימוני כוח להצגה</Text></View> : dayGroups.map((group) => {
+                const isOpen = !!openDayIds[group.dayKey];
+                const groupedExercises = groupExercisesInsideDay(group.exercises, group.dayKey);
+                const firstWorkout = group.workouts[0];
+                const feedbackKey = `strength-${group.dayKey}`;
+                const existingFeedback = firstWorkout?.coachFeedback || "";
                 return (
-                  <Pressable
-                    key={client.id}
-                    onPress={() => setSelectedClient(client)}
-                    style={({ pressed }) => [
-                      styles.clientPill,
-                      { minHeight: dynamic.pillHeight },
-                      isSelected && styles.clientPillActive,
-                      pressed && styles.pressed,
-                    ]}
-                  >
-                    <View style={styles.clientPillTopRow}>
-                      {!!client.showInTracker && (
-                        <View style={styles.trackedBadge}>
-                          <StarIcon size={12} color="#FFFFFF" />
-                          <Text style={styles.trackedBadgeText}>במעקב</Text>
+                  <View key={group.dayKey} style={styles.dayCard}>
+                    <Pressable onPress={() => toggleDay(group.dayKey)} style={({ pressed }) => [styles.dayHeader, pressed && styles.pressed]}>
+                      <View style={styles.dayTitleWrap}><Text style={styles.dayTitle}>{group.displayDate}</Text><Text style={styles.daySubtitle}>{groupedExercises.length} תרגילים · נשמר: {formatDateTimeIL(group.latestCreatedAt)}</Text></View>
+                      {isOpen ? <ArrowUpIcon /> : <ArrowDownIcon />}
+                    </Pressable>
+
+                    {isOpen && (
+                      <View style={styles.dayBody}>
+                        {group.notes.length > 0 && <View style={styles.clientResponseBox}><Text style={styles.responseTitle}>תגובת / הערות הלקוח</Text>{group.notes.map((note, index) => <Text key={`${group.dayKey}-note-${index}`} style={styles.responseText}>{note}</Text>)}</View>}
+                        {groupedExercises.map((exerciseGroup) => {
+                          const exerciseOpen = !!openExerciseIds[exerciseGroup.key];
+                          return (
+                            <View key={exerciseGroup.key} style={styles.exerciseGroupCard}>
+                              <Pressable onPress={() => toggleExercise(exerciseGroup.key)} style={styles.exerciseHeader}>
+                                <Text style={styles.exerciseTitle}>{exerciseGroup.name}</Text>
+                                {exerciseOpen ? <ArrowUpIcon size={18} /> : <ArrowDownIcon size={18} />}
+                              </Pressable>
+                              {exerciseOpen && <View style={styles.setsTable}>{exerciseGroup.rows.map((row, index) => <View key={row.id || `${exerciseGroup.key}-${index}`} style={styles.setRow}><Text style={styles.setCell}>סט {row.sets || index + 1}</Text><Text style={styles.setCell}>חזרות: {row.reps || "-"}</Text><Text style={styles.setCell}>משקל: {row.weight || "-"}</Text></View>)}</View>}
+                            </View>
+                          );
+                        })}
+                        <View style={styles.feedbackBox}>
+                          <Text style={styles.feedbackTitle}>משוב מאמן ללקוח</Text>
+                          <TextInput value={getDraftValue(feedbackKey, existingFeedback)} onChangeText={(value) => updateFeedbackDraft(feedbackKey, value)} placeholder="כתבי משוב שיוצג ללקוח ליד האימון" placeholderTextColor="#94A3B8" style={styles.feedbackInput} multiline textAlign="right" />
+                          {!!firstWorkout?.coachFeedbackUpdatedAt && <Text style={styles.feedbackUpdatedText}>עודכן: {formatDateTimeIL(firstWorkout.coachFeedbackUpdatedAt)}</Text>}
+                          <Pressable onPress={() => saveStrengthFeedback(group)} disabled={savingFeedbackKey === feedbackKey} style={[styles.saveFeedbackButton, savingFeedbackKey === feedbackKey && styles.disabledButton]}>{savingFeedbackKey === feedbackKey ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.saveFeedbackButtonText}>שמור משוב</Text>}</Pressable>
                         </View>
-                      )}
-                    </View>
-
-                    <Text
-                      style={[
-                        styles.clientPillName,
-                        { fontSize: dynamic.textSize },
-                        isSelected && styles.clientPillNameActive,
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {client.name || "ללא שם"}
-                    </Text>
-
-                    <Text
-                      style={[
-                        styles.clientPillEmail,
-                        { fontSize: dynamic.subTextSize },
-                        isSelected && styles.clientPillEmailActive,
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {client.email || "ללא אימייל"}
-                    </Text>
-                  </Pressable>
+                      </View>
+                    )}
+                  </View>
                 );
               })}
-            </ScrollView>
-          )}
-
-          {selectedClient && (
-            <View style={styles.selectedClientCard}>
-              <View style={styles.selectedClientTopRow}>
-                <View style={styles.selectedClientTextWrap}>
-                  <Text style={styles.selectedClientTitle}>
-                    {selectedClient.name || "ללא שם"}
-                  </Text>
-                  <Text style={styles.selectedClientEmail}>
-                    {selectedClient.email || "ללא אימייל"}
-                  </Text>
-                </View>
-
-                <View style={styles.switchBlock}>
-                  <Text style={styles.switchLabel}>
-                    {savingTrackerFlag
-                      ? "שומר..."
-                      : selectedClient.showInTracker
-                      ? "במעקב"
-                      : "לא במעקב"}
-                  </Text>
-
-                  <Switch
-                    value={!!selectedClient.showInTracker}
-                    onValueChange={toggleClientTrackerFlag}
-                    disabled={savingTrackerFlag}
-                    trackColor={{ false: "#CBD5E1", true: "#0F172A" }}
-                    thumbColor={"#FFFFFF"}
-                  />
-                </View>
-              </View>
-
-              <Text style={styles.selectedClientStatusText}>
-                {selectedClient.showInTracker
-                  ? "הלקוח מסומן למעקב וכל האימונים שלו מוצגים."
-                  : "הלקוח לא מסומן למעקב כרגע."}
-              </Text>
             </View>
           )}
 
-          {selectedClient && !selectedClient.showInTracker ? (
-            <View style={styles.emptyBox}>
-              <Text style={styles.emptyText}>
-                הלקוח הזה לא מסומן למעקב. לחצי על "הוסף למעקב" כדי להציג את כל האימונים שלו.
-              </Text>
-            </View>
-          ) : loadingData ? (
-            <View style={styles.loadingBox}>
-              <ActivityIndicator size="large" color="#0F172A" />
-              <Text style={styles.loadingText}>טוען נתוני לקוח...</Text>
-            </View>
-          ) : (
-            selectedClient && (
-              <>
-                <View style={styles.summaryGrid}>
-                  <View style={[styles.summaryCard, { padding: dynamic.cardPadding }]}>
-                    <Text style={styles.summaryValue}>{summary.totalWorkouts}</Text>
-                    <Text style={styles.summaryLabel}>סה״כ אימונים</Text>
-                  </View>
-
-                  <View style={[styles.summaryCard, { padding: dynamic.cardPadding }]}>
-                    <Text style={styles.summaryValue}>{summary.averageWorkoutsPerWeek}</Text>
-                    <Text style={styles.summaryLabel}>ממוצע אימונים בשבוע</Text>
-                  </View>
-
-                  <View style={[styles.summaryCard, { padding: dynamic.cardPadding }]}>
-                    <Text style={styles.summaryValue}>{summary.workoutsThisMonth}</Text>
-                    <Text style={styles.summaryLabel}>אימונים החודש</Text>
-                  </View>
-
-                  <View style={[styles.summaryCard, { padding: dynamic.cardPadding }]}>
-                    <Text style={styles.summaryValue}>{summary.latestWorkoutLabel}</Text>
-                    <Text style={styles.summaryLabel}>אימון אחרון</Text>
-                  </View>
-                </View>
-
-                <View style={styles.section}>
-                  <View style={styles.sectionHeader}>
-                    <WorkoutIcon size={18} color="#0F172A" />
-                    <Text style={styles.sectionTitle}>כל האימונים וההזנות</Text>
-                  </View>
-
-                  {dayGroups.length === 0 ? (
-                    <View style={styles.emptyBox}>
-                      <Text style={styles.emptyText}>אין אימונים להצגה</Text>
-                    </View>
-                  ) : (
-                    dayGroups.map((group) => {
-                      const isOpen = !!openDayIds[group.dayKey];
-                      const groupedExercises = groupExercisesInsideDay(
-                        group.exercises,
-                        group.dayKey
-                      );
-
-                      return (
-                        <View key={group.dayKey} style={styles.workoutCard}>
-                          <Pressable
-                            onPress={() => toggleDay(group.dayKey)}
-                            style={({ pressed }) => [
-                              styles.workoutHeaderButton,
-                              pressed && styles.pressed,
-                            ]}
-                          >
-                            <View style={styles.workoutHeaderRow}>
-                              <View style={styles.workoutHeaderArrow}>
-                                {isOpen ? (
-                                  <ArrowUpIcon size={20} color="#1E293B" />
-                                ) : (
-                                  <ArrowDownIcon size={20} color="#1E293B" />
-                                )}
-                              </View>
-
-                              <View style={styles.workoutHeaderTextBox}>
-                                <Text style={styles.workoutTitle}>
-                                  אימון מתאריך {group.displayDate}
-                                </Text>
-
-                                <Text style={styles.workoutMeta}>
-                                  {groupedExercises.length} תרגילים
-                                </Text>
-
-                                <Text style={styles.workoutMeta}>
-                                  הוזן למערכת: {formatDateTimeIL(group.latestCreatedAt)}
-                                </Text>
-                              </View>
-                            </View>
-                          </Pressable>
-
-                          {isOpen && (
-                            <View style={styles.workoutBody}>
-                              {group.notes.length > 0 && (
-                                <View style={styles.noteBox}>
-                                  <Text style={styles.noteTitle}>הערות לאימון</Text>
-                                  {group.notes.map((note, index) => (
-                                    <Text
-                                      key={`${group.dayKey}-note-${index}`}
-                                      style={styles.noteText}
-                                    >
-                                      {note}
-                                    </Text>
-                                  ))}
-                                </View>
-                              )}
-
-                              {groupedExercises.length === 0 ? (
-                                <View style={styles.emptyInnerBox}>
-                                  <Text style={styles.emptyText}>
-                                    לא נמצאו תרגילים לאותו יום
-                                  </Text>
-                                </View>
-                              ) : (
-                                groupedExercises.map((exerciseGroup) => {
-                                  const isExerciseOpen = !!openExerciseIds[exerciseGroup.key];
-
-                                  return (
-                                    <View key={exerciseGroup.key} style={styles.exerciseCard}>
-                                      <Pressable
-                                        onPress={() => toggleExercise(exerciseGroup.key)}
-                                        style={({ pressed }) => [
-                                          styles.exerciseHeaderButton,
-                                          pressed && styles.pressed,
-                                        ]}
-                                      >
-                                        <View style={styles.exerciseHeaderRow}>
-                                          <View style={styles.workoutHeaderArrow}>
-                                            {isExerciseOpen ? (
-                                              <ArrowUpIcon size={18} color="#1E293B" />
-                                            ) : (
-                                              <ArrowDownIcon size={18} color="#1E293B" />
-                                            )}
-                                          </View>
-
-                                          <View style={styles.exerciseHeaderTextBox}>
-                                            <Text style={styles.exerciseName}>
-                                              {exerciseGroup.name}
-                                            </Text>
-
-                                            <Text style={styles.exerciseTapHint}>
-                                              לחצי לצפייה בסטים, חזרות ומשקל
-                                            </Text>
-                                          </View>
-                                        </View>
-                                      </Pressable>
-
-                                      {isExerciseOpen && (
-                                        <View style={styles.exerciseDetailsBox}>
-                                          {exerciseGroup.rows.map((row, rowIndex) => {
-                                            const setNumber = getNumericValue(row.sets);
-                                            const repsValue = getNumericValue(row.reps);
-                                            const weightValue = getNumericValue(row.weight);
-
-                                            return (
-                                              <View
-                                                key={
-                                                  row.id ||
-                                                  `${exerciseGroup.key}-row-${rowIndex}`
-                                                }
-                                                style={styles.setRow}
-                                              >
-                                                <Text style={styles.setRowText}>
-                                                  {setNumber !== null
-                                                    ? `סט ${setNumber}`
-                                                    : `סט ${rowIndex + 1}`}
-                                                </Text>
-
-                                                <Text style={styles.setRowText}>
-                                                  {repsValue !== null
-                                                    ? `חזרות: ${repsValue}`
-                                                    : "חזרות: לא הוזן"}
-                                                </Text>
-
-                                                <Text style={styles.setRowText}>
-                                                  {weightValue !== null
-                                                    ? `משקל: ${weightValue}`
-                                                    : "משקל: לא הוזן"}
-                                                </Text>
-                                              </View>
-                                            );
-                                          })}
-
-                                          <Text style={styles.exerciseDate}>
-                                            תאריך תרגיל:{" "}
-                                            {formatDateIL(
-                                              exerciseGroup.rows[0]?.date || group.sortTime
-                                            )}
-                                          </Text>
-
-                                          <Text style={styles.exerciseDate}>
-                                            הוזן למערכת:{" "}
-                                            {formatDateTimeIL(exerciseGroup.latestCreatedAt)}
-                                          </Text>
-                                        </View>
-                                      )}
-                                    </View>
-                                  );
-                                })
-                              )}
-                            </View>
-                          )}
+          {selectedTrainingView === "running" && (
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}><WorkoutIcon size={18} color="#0F172A" /><Text style={styles.sectionTitle}>אימוני ריצה - ביצוע, תגובת לקוח ומשוב מאמן</Text></View>
+              {runningWeeks.length === 0 ? <View style={styles.emptyBox}><Text style={styles.emptyText}>אין אימוני ריצה להצגה</Text></View> : runningWeeks.map((week, index) => {
+                const weekId = week.id || `running-week-${index}`;
+                const feedbackKey = `running-${weekId}`;
+                const isOpen = !!openRunningWeekIds[weekId];
+                return (
+                  <View key={weekId} style={styles.runningWeekCard}>
+                    <Pressable onPress={() => toggleRunningWeek(weekId)} style={({ pressed }) => [styles.runningWeekHeaderPressable, pressed && styles.pressedLight]}>
+                      <View style={styles.runningWeekHeaderRow}>
+                        <Text style={styles.runningWeekToggleText}>{isOpen ? "סגירה" : "פתיחה"}</Text>
+                        <View style={styles.runningWeekHeaderTextWrap}>
+                          <Text style={styles.runningWeekTitle}>שבוע {week.weekNumber || index + 1}</Text>
+                          <Text style={styles.runningWeekStatusLine}>סטטוס לקוח: {getSucceededLabel(week.clientSucceeded)}</Text>
                         </View>
-                      );
-                    })
-                  )}
-                </View>
-              </>
-            )
+                      </View>
+                    </Pressable>
+
+                    {isOpen && (
+                      <>
+                        <View style={styles.runningMetaRow}>
+                          {!!String(week.distanceKm || "").trim() && <View style={styles.metaChip}><Text style={styles.metaChipText}>מרחק: {week.distanceKm} ק״מ</Text></View>}
+                          {!!String(week.pacePerKm || "").trim() && <View style={styles.metaChip}><Text style={styles.metaChipText}>קצב: {week.pacePerKm}</Text></View>}
+                          <View style={styles.metaChip}><Text style={styles.metaChipText}>{getPaceTypeLabel(week.paceType)}</Text></View>
+                          <View style={styles.metaChip}><Text style={styles.metaChipText}>{getManipulationLabel(week.manipulationType)}</Text></View>
+                        </View>
+                        {!!String(week.notes || "").trim() && <Text style={styles.runningNotes}>{week.notes}</Text>}
+
+                        <View style={styles.clientResponseBox}>
+                          <Text style={styles.responseTitle}>תגובת הלקוח</Text>
+                          <Text style={styles.responseText}>סטטוס: {getSucceededLabel(week.clientSucceeded)}</Text>
+                          {!!String(week.clientNotes || "").trim() ? <Text style={styles.responseText}>פירוט: {week.clientNotes}</Text> : <Text style={styles.responseMuted}>לא הוזן פירוט מהלקוח</Text>}
+                          {!!week.clientUpdatedAt && <Text style={styles.responseMuted}>עודכן: {formatDateTimeIL(week.clientUpdatedAt)}</Text>}
+                        </View>
+
+                        <View style={styles.feedbackBox}>
+                          <Text style={styles.feedbackTitle}>משוב מאמן ללקוח</Text>
+                          <TextInput value={getDraftValue(feedbackKey, week.coachFeedback)} onChangeText={(value) => updateFeedbackDraft(feedbackKey, value)} placeholder="כתבי משוב שיוצג ללקוח ליד שבוע הריצה" placeholderTextColor="#94A3B8" style={styles.feedbackInput} multiline textAlign="right" />
+                          {!!week.coachFeedbackUpdatedAt && <Text style={styles.feedbackUpdatedText}>עודכן: {formatDateTimeIL(week.coachFeedbackUpdatedAt)}</Text>}
+                          <Pressable onPress={() => saveRunningFeedback(weekId)} disabled={savingFeedbackKey === feedbackKey} style={[styles.saveFeedbackButton, savingFeedbackKey === feedbackKey && styles.disabledButton]}>{savingFeedbackKey === feedbackKey ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.saveFeedbackButtonText}>שמור משוב</Text>}</Pressable>
+                        </View>
+                      </>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
           )}
+
+          {!hasStrengthTracking && !hasRunningTracking && <View style={styles.emptyBox}><Text style={styles.emptyText}>אין עדיין אימוני כוח או ריצה להצגה עבור הלקוח</Text></View>}
         </>
-      )}
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    width: "100%",
-    gap: 14,
-  },
-
-  topHeader: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    padding: 16,
-  },
-
-  headerTitleRow: {
-    flexDirection: "row-reverse",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-  },
-
-  headerTitle: {
-    color: "#0F172A",
-    fontWeight: "800",
-    textAlign: "center",
-  },
-
-  headerSubtitle: {
-    marginTop: 8,
-    color: "#64748B",
-    textAlign: "center",
-    lineHeight: 20,
-  },
-
-  searchCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    padding: 14,
-    gap: 10,
-  },
-
-  searchInputWrap: {
-    minHeight: 48,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#CBD5E1",
-    backgroundColor: "#F8FAFC",
-    paddingHorizontal: 12,
-    flexDirection: "row-reverse",
-    alignItems: "center",
-    gap: 8,
-  },
-
-  searchInput: {
-    flex: 1,
-    color: "#0F172A",
-    fontSize: 14,
-    textAlign: "right",
-    writingDirection: "rtl",
-    flexDirection: "row-reverse",
-  },
-
-  searchInfoText: {
-    color: "#64748B",
-    fontSize: 12,
-    textAlign: "right",
-  },
-
-  clientsScrollContent: {
-    gap: 10,
-    paddingVertical: 2,
-  },
-
-  clientPill: {
-    minWidth: 170,
-    maxWidth: 230,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    justifyContent: "center",
-  },
-
-  clientPillActive: {
-    backgroundColor: "#EEF2FF",
-    borderColor: "#C7D2FE",
-  },
-
-  clientPillTopRow: {
-    flexDirection: "row-reverse",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 6,
-    minHeight: 20,
-  },
-
-  trackedBadge: {
-    flexDirection: "row-reverse",
-    alignItems: "center",
-    gap: 4,
-    backgroundColor: "#0F172A",
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    alignSelf: "flex-end",
-  },
-
-  trackedBadgeText: {
-    color: "#FFFFFF",
-    fontSize: 10,
-    fontWeight: "700",
-    textAlign: "center",
-  },
-
-  clientPillName: {
-    color: "#0F172A",
-    fontWeight: "800",
-    textAlign: "right",
-    writingDirection: I18nManager.isRTL ? "rtl" : "ltr",
-  },
-
-  clientPillNameActive: {
-    color: "#1E293B",
-  },
-
-  clientPillEmail: {
-    marginTop: 4,
-    color: "#64748B",
-    textAlign: "right",
-  },
-
-  clientPillEmailActive: {
-    color: "#475569",
-  },
-
-  selectedClientCard: {
-    backgroundColor: "#F8FAFC",
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    padding: 16,
-    gap: 10,
-  },
-
-  selectedClientTopRow: {
-    flexDirection: "row-reverse",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-  },
-
-  selectedClientTextWrap: {
-    flex: 1,
-    alignItems: "flex-end",
-  },
-
-  selectedClientTitle: {
-    color: "#0F172A",
-    fontSize: 18,
-    fontWeight: "800",
-    textAlign: "right",
-  },
-
-  selectedClientEmail: {
-    marginTop: 4,
-    color: "#64748B",
-    fontSize: 13,
-    textAlign: "right",
-  },
-
-  selectedClientStatusText: {
-    color: "#475569",
-    fontSize: 13,
-    textAlign: "right",
-    lineHeight: 20,
-  },
-
-  switchBlock: {
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    minWidth: 90,
-  },
-
-  switchLabel: {
-    color: "#334155",
-    fontSize: 12,
-    fontWeight: "700",
-    textAlign: "center",
-  },
-
-  disabledButton: {
-    opacity: 0.6,
-  },
-
-  summaryGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-    rowGap: 10,
-    columnGap: 10,
-  },
-
-  summaryCard: {
-    width: "48%",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    alignItems: "center",
-    justifyContent: "center",
-    minHeight: 95,
-  },
-
-  summaryValue: {
-    color: "#0F172A",
-    fontSize: 18,
-    fontWeight: "800",
-    textAlign: "center",
-  },
-
-  summaryLabel: {
-    marginTop: 6,
-    color: "#64748B",
-    fontSize: 13,
-    fontWeight: "600",
-    textAlign: "center",
-  },
-
-  section: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    padding: 14,
-    gap: 12,
-  },
-
-  sectionHeader: {
-    flexDirection: "row-reverse",
-    alignItems: "center",
-    justifyContent: "flex-start",
-    alignSelf: "stretch",
-    gap: 8,
-  },
-
-  sectionTitle: {
-    color: "#0F172A",
-    fontSize: 16,
-    fontWeight: "800",
-    textAlign: "right",
-  },
-
-  workoutCard: {
-    backgroundColor: "#F8FAFC",
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    overflow: "hidden",
-  },
-
-  workoutHeaderButton: {
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-  },
-
-  workoutHeaderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-
-  workoutHeaderArrow: {
-    width: 32,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  workoutHeaderTextBox: {
-    flex: 1,
-    alignItems: "flex-end",
-  },
-
-  workoutTitle: {
-    color: "#0F172A",
-    fontSize: 15,
-    fontWeight: "800",
-    textAlign: "right",
-  },
-
-  workoutMeta: {
-    marginTop: 4,
-    color: "#64748B",
-    fontSize: 12,
-    textAlign: "right",
-  },
-
-  workoutBody: {
-    paddingHorizontal: 14,
-    paddingBottom: 14,
-    gap: 10,
-  },
-
-  noteBox: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    padding: 12,
-    alignItems: "flex-end",
-  },
-
-  noteTitle: {
-    color: "#0F172A",
-    fontSize: 13,
-    fontWeight: "800",
-    textAlign: "right",
-    marginBottom: 6,
-  },
-
-  noteText: {
-    color: "#475569",
-    fontSize: 13,
-    lineHeight: 20,
-    textAlign: "right",
-    width: "100%",
-    marginTop: 4,
-  },
-
-  exerciseCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    overflow: "hidden",
-  },
-
-  exerciseHeaderButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-  },
-
-  exerciseHeaderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-
-  exerciseHeaderTextBox: {
-    flex: 1,
-    alignItems: "flex-end",
-  },
-
-  exerciseName: {
-    color: "#0F172A",
-    fontSize: 14,
-    fontWeight: "700",
-    textAlign: "right",
-  },
-
-  exerciseTapHint: {
-    marginTop: 4,
-    color: "#64748B",
-    fontSize: 12,
-    textAlign: "right",
-  },
-
-  exerciseDetailsBox: {
-    borderTopWidth: 1,
-    borderTopColor: "#E2E8F0",
-    paddingHorizontal: 12,
-    paddingBottom: 12,
-    paddingTop: 10,
-    alignItems: "stretch",
-    gap: 8,
-  },
-
-  setRow: {
-    backgroundColor: "#F8FAFC",
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-    alignItems: "flex-end",
-    gap: 4,
-  },
-
-  setRowText: {
-    color: "#334155",
-    fontSize: 13,
-    textAlign: "right",
-  },
-
-  exerciseDate: {
-    color: "#64748B",
-    fontSize: 12,
-    textAlign: "right",
-    marginTop: 4,
-  },
-
-  emptyBox: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    paddingVertical: 20,
-    paddingHorizontal: 14,
-    alignItems: "center",
-  },
-
-  emptyInnerBox: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    paddingVertical: 14,
-    paddingHorizontal: 12,
-    alignItems: "center",
-  },
-
-  emptyText: {
-    color: "#64748B",
-    fontSize: 14,
-    textAlign: "center",
-  },
-
-  loadingBox: {
-    paddingVertical: 28,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-  },
-
-  loadingText: {
-    color: "#64748B",
-    fontSize: 14,
-    textAlign: "center",
-  },
-
-  pressed: {
-    opacity: 0.8,
-  },
+  container: { width: "100%", gap: 14 },
+  topHeader: { backgroundColor: "#FFFFFF", borderRadius: 20, borderWidth: 1, borderColor: "#E2E8F0", padding: 16, gap: 6 },
+  headerTitleRow: { flexDirection: "row-reverse", alignItems: "center", gap: 8, justifyContent: "flex-start" },
+  headerTitle: { color: "#0F172A", fontWeight: "900", textAlign: "right" },
+  headerSubtitle: { color: "#64748B", lineHeight: 20, textAlign: "right" },
+  searchCard: { backgroundColor: "#FFFFFF", borderRadius: 18, borderWidth: 1, borderColor: "#E2E8F0", padding: 12 },
+  searchInputWrap: { flexDirection: "row-reverse", alignItems: "center", gap: 8, backgroundColor: "#F8FAFC", borderRadius: 14, borderWidth: 1, borderColor: "#CBD5E1", paddingHorizontal: 12 },
+  searchInput: { flex: 1, minHeight: 48, color: "#0F172A", fontSize: 14, writingDirection: "rtl" },
+  clientsScrollContent: { gap: 10, paddingVertical: 2 },
+  clientPill: { minWidth: 130, maxWidth: 210, borderRadius: 999, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#CBD5E1", alignItems: "center", justifyContent: "center", paddingHorizontal: 14 },
+  clientPillActive: { backgroundColor: "#0F172A", borderColor: "#0F172A" },
+  clientPillText: { color: "#0F172A", fontSize: 14, fontWeight: "800", textAlign: "center" },
+  clientPillTextActive: { color: "#FFFFFF" },
+  selectedClientCard: { backgroundColor: "#FFFFFF", borderRadius: 20, borderWidth: 1, borderColor: "#E2E8F0", padding: 14, gap: 10 },
+  selectedClientHeader: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", gap: 12 },
+  selectedClientInfo: { flex: 1, alignItems: "flex-end" },
+  selectedClientName: { color: "#0F172A", fontSize: 16, fontWeight: "900", textAlign: "right" },
+  selectedClientEmail: { color: "#64748B", fontSize: 13, textAlign: "right", marginTop: 3 },
+  trackerSwitchBox: { flexDirection: "row-reverse", alignItems: "center", gap: 8 },
+  trackerSwitchText: { color: "#334155", fontSize: 13, fontWeight: "800", textAlign: "right" },
+  selectedClientStatusText: { color: "#64748B", fontSize: 13, textAlign: "right", lineHeight: 20 },
+  summaryGrid: { flexDirection: "row-reverse", flexWrap: "wrap", gap: 10 },
+  summaryCard: { flexGrow: 1, flexBasis: "45%", backgroundColor: "#FFFFFF", borderRadius: 18, borderWidth: 1, borderColor: "#E2E8F0", alignItems: "center", justifyContent: "center", minHeight: 88 },
+  summaryValue: { color: "#0F172A", fontSize: 20, fontWeight: "900", textAlign: "center" },
+  summaryLabel: { color: "#64748B", fontSize: 12, fontWeight: "700", textAlign: "center", marginTop: 6 },
+  choiceCard: { backgroundColor: "#FFFFFF", borderRadius: 20, borderWidth: 1, borderColor: "#E2E8F0", padding: 16, gap: 12 },
+  choiceTitle: { color: "#0F172A", fontSize: 16, fontWeight: "900", textAlign: "center" },
+  choiceButton: { minHeight: 50, borderRadius: 16, backgroundColor: "#EFF6FF", borderWidth: 1, borderColor: "#BFDBFE", alignItems: "center", justifyContent: "center" },
+  choiceButtonText: { color: "#1D4ED8", fontSize: 14, fontWeight: "900", textAlign: "center" },
+  viewTabsRow: { flexDirection: "row-reverse", gap: 10 },
+  viewTab: { flex: 1, minHeight: 46, borderRadius: 999, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#CBD5E1", alignItems: "center", justifyContent: "center" },
+  viewTabActive: { backgroundColor: "#0F172A", borderColor: "#0F172A" },
+  viewTabText: { color: "#334155", fontSize: 14, fontWeight: "900", textAlign: "center" },
+  viewTabTextActive: { color: "#FFFFFF" },
+  section: { gap: 12 },
+  sectionHeader: { flexDirection: "row-reverse", alignItems: "center", gap: 8, justifyContent: "flex-start" },
+  sectionTitle: { color: "#0F172A", fontSize: 16, fontWeight: "900", textAlign: "right", flex: 1 },
+  dayCard: { backgroundColor: "#FFFFFF", borderRadius: 20, borderWidth: 1, borderColor: "#E2E8F0", overflow: "hidden" },
+  dayHeader: { flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between", padding: 14, gap: 12 },
+  dayTitleWrap: { flex: 1, alignItems: "flex-end" },
+  dayTitle: { color: "#0F172A", fontSize: 16, fontWeight: "900", textAlign: "right" },
+  daySubtitle: { color: "#64748B", fontSize: 12, fontWeight: "600", textAlign: "right", marginTop: 4 },
+  dayBody: { borderTopWidth: 1, borderTopColor: "#E2E8F0", padding: 12, gap: 12 },
+  clientResponseBox: { backgroundColor: "#F8FAFC", borderRadius: 16, borderWidth: 1, borderColor: "#E2E8F0", padding: 12, gap: 6 },
+  responseTitle: { color: "#0F172A", fontSize: 14, fontWeight: "900", textAlign: "right" },
+  responseText: { color: "#334155", fontSize: 13, lineHeight: 20, textAlign: "right", writingDirection: "rtl" },
+  responseMuted: { color: "#64748B", fontSize: 12, lineHeight: 18, textAlign: "right" },
+  exerciseGroupCard: { backgroundColor: "#F8FAFC", borderRadius: 16, borderWidth: 1, borderColor: "#E2E8F0", overflow: "hidden" },
+  exerciseHeader: { flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between", padding: 12 },
+  exerciseTitle: { flex: 1, color: "#0F172A", fontSize: 14, fontWeight: "900", textAlign: "right" },
+  setsTable: { borderTopWidth: 1, borderTopColor: "#E2E8F0", padding: 8, gap: 6 },
+  setRow: { flexDirection: "row-reverse", gap: 8, backgroundColor: "#FFFFFF", borderRadius: 12, paddingVertical: 8, paddingHorizontal: 10 },
+  setCell: { flex: 1, color: "#334155", fontSize: 12, fontWeight: "700", textAlign: "right" },
+  feedbackBox: { backgroundColor: "#FFFBEB", borderRadius: 16, borderWidth: 1, borderColor: "#FDE68A", padding: 12, gap: 8 },
+  feedbackTitle: { color: "#92400E", fontSize: 14, fontWeight: "900", textAlign: "right" },
+  feedbackInput: { minHeight: 86, backgroundColor: "#FFFFFF", borderRadius: 14, borderWidth: 1, borderColor: "#FDE68A", color: "#0F172A", fontSize: 14, paddingHorizontal: 12, paddingVertical: 10, textAlignVertical: "top", writingDirection: "rtl" },
+  feedbackUpdatedText: { color: "#92400E", fontSize: 12, fontWeight: "700", textAlign: "right" },
+  saveFeedbackButton: { minHeight: 46, borderRadius: 14, backgroundColor: "#0F172A", alignItems: "center", justifyContent: "center" },
+  saveFeedbackButtonText: { color: "#FFFFFF", fontSize: 14, fontWeight: "900", textAlign: "center" },
+  runningWeekCard: { backgroundColor: "#FFFFFF", borderRadius: 20, borderWidth: 1, borderColor: "#E2E8F0", padding: 14, gap: 12 },
+  runningWeekHeaderPressable: { width: "100%", borderRadius: 16, backgroundColor: "#F8FAFC", borderWidth: 1, borderColor: "#E2E8F0", paddingVertical: 12, paddingHorizontal: 12 },
+  runningWeekHeaderRow: { flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between", gap: 10 },
+  runningWeekHeaderTextWrap: { flex: 1, alignItems: "flex-end", gap: 3 },
+  runningWeekToggleText: { color: "#2563EB", fontSize: 12, fontWeight: "900", textAlign: "left" },
+  runningWeekStatusLine: { color: "#64748B", fontSize: 12, fontWeight: "700", textAlign: "right", writingDirection: "rtl" },
+  runningWeekTitle: { color: "#0F172A", fontSize: 16, fontWeight: "900", textAlign: "right" },
+  runningMetaRow: { flexDirection: "row-reverse", flexWrap: "wrap", gap: 8 },
+  metaChip: { backgroundColor: "#E2E8F0", borderRadius: 999, paddingVertical: 6, paddingHorizontal: 10 },
+  metaChipText: { color: "#334155", fontSize: 12, fontWeight: "800", textAlign: "center" },
+  runningNotes: { color: "#475569", fontSize: 13, lineHeight: 20, textAlign: "right", writingDirection: "rtl" },
+  loadingBox: { backgroundColor: "#FFFFFF", borderRadius: 18, borderWidth: 1, borderColor: "#E2E8F0", paddingVertical: 24, paddingHorizontal: 16, alignItems: "center", justifyContent: "center", gap: 10 },
+  loadingText: { color: "#64748B", fontSize: 14, fontWeight: "700", textAlign: "center" },
+  emptyBox: { backgroundColor: "#FFFFFF", borderRadius: 18, borderWidth: 1, borderColor: "#E2E8F0", paddingVertical: 22, paddingHorizontal: 14, alignItems: "center" },
+  emptyText: { color: "#64748B", fontSize: 14, fontWeight: "700", textAlign: "center", lineHeight: 20 },
+  pressed: { opacity: 0.82 },
+  disabledButton: { opacity: 0.55 },
 });

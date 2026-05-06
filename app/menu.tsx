@@ -3227,7 +3227,7 @@ export default function Menu() {
                               </View>
 
                               <Text style={styles.categoryButtonText} numberOfLines={1}>
-                                ניהול אימונים וכרטיסיות
+                                ניהול אימונים, מעקב וכרטיסיות
                               </Text>
                             </View>
 
@@ -3248,7 +3248,7 @@ export default function Menu() {
                               onPress={() => setTrainingProgramManagerOpen((prev) => !prev)}
                             >
                               <View style={styles.buttonRow}>
-                                <Text style={styles.subActionButtonText}>תוכנית אימון</Text>
+                                <Text style={styles.subActionButtonText}>בניית תוכנית אימון לקוח</Text>
                                 <Text style={styles.subActionExpandText}>
                                   {trainingProgramManagerOpen ? "הסתרה" : "הצגה"}
                                 </Text>
