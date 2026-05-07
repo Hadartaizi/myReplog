@@ -23,6 +23,8 @@ import {
   doc,
   updateDoc,
   deleteDoc,
+  setDoc,
+  writeBatch,
 } from 'firebase/firestore';
 
 const APP_BG = '#F4F7FB';
@@ -59,6 +61,39 @@ const getExerciseDisplayName = (workout: any) => {
 
   if (directName && !directName.startsWith('אימון ')) return directName;
   return embeddedFirstName || directName || 'תרגיל ללא שם';
+};
+
+const sortSetKeys = (repsPerSet: any) => {
+  return Object.keys(repsPerSet || {}).sort((a, b) => Number(a) - Number(b));
+};
+
+const buildWorkoutExercisePayload = (workout: any, updatedAt: string) => {
+  const repsPerSet = workout.repsPerSet || {};
+  const keys = sortSetKeys(repsPerSet);
+  const numSets = String(workout.numSets ?? keys.length ?? '');
+  const exerciseName = getExerciseDisplayName(workout);
+
+  const reps = keys
+    .map((key) => String(repsPerSet[key]?.reps || '').trim())
+    .filter(Boolean)
+    .join(', ');
+
+  const weight = keys
+    .map((key) => String(repsPerSet[key]?.weight || '').trim())
+    .filter(Boolean)
+    .join(', ');
+
+  return {
+    numSets,
+    sets: numSets,
+    repsPerSet,
+    reps,
+    weight,
+    title: exerciseName,
+    name: exerciseName,
+    exerciseName,
+    updatedAt,
+  };
 };
 
 export default function Steps() {
@@ -357,13 +392,48 @@ export default function Steps() {
     try {
       setSavingId(workout.id);
 
-      const docRef = doc(db, 'workouts', workout.id);
+      const updatedAt = new Date().toISOString();
+      const payload = buildWorkoutExercisePayload(workout, updatedAt);
+      const uid = workout.uid || auth.currentUser?.uid || '';
 
-      await updateDoc(docRef, {
-        numSets: String(workout.numSets ?? ''),
-        repsPerSet: workout.repsPerSet || {},
-        updatedAt: new Date().toISOString(),
-      });
+      await updateDoc(doc(db, 'workouts', workout.id), payload);
+
+      const linkedExercisesSnap = await getDocs(
+        query(collection(db, 'exercises'), where('workoutId', '==', workout.id))
+      );
+
+      if (!linkedExercisesSnap.empty) {
+        const batch = writeBatch(db);
+
+        linkedExercisesSnap.docs.forEach((exerciseDoc) => {
+          batch.update(doc(db, 'exercises', exerciseDoc.id), {
+            ...payload,
+            uid,
+            workoutId: workout.id,
+            date: workout.date || '',
+            dateKey: workout.dateKey || '',
+            clientSucceeded: workout.clientSucceeded ?? null,
+            clientNotes: workout.clientNotes || '',
+            clientUpdatedAt: workout.clientUpdatedAt || '',
+          });
+        });
+
+        await batch.commit();
+      } else {
+        await setDoc(
+          doc(db, 'exercises', workout.id),
+          {
+            ...workout,
+            ...payload,
+            uid,
+            workoutId: workout.id,
+            date: workout.date || '',
+            dateKey: workout.dateKey || '',
+            sourceType: 'exercise_doc',
+          },
+          { merge: true }
+        );
+      }
 
       setEditingId(null);
       setOriginalWorkout(null);
@@ -384,6 +454,20 @@ export default function Steps() {
     }
   };
 
+  const deleteLinkedExercises = async (workoutId: string) => {
+    const linkedExercisesSnap = await getDocs(
+      query(collection(db, 'exercises'), where('workoutId', '==', workoutId))
+    );
+
+    if (linkedExercisesSnap.empty) return;
+
+    const batch = writeBatch(db);
+    linkedExercisesSnap.docs.forEach((exerciseDoc) => {
+      batch.delete(doc(db, 'exercises', exerciseDoc.id));
+    });
+    await batch.commit();
+  };
+
   const deleteWorkout = async (workoutId: string) => {
     const confirmed = await confirmAction(
       'אישור מחיקה',
@@ -396,6 +480,7 @@ export default function Steps() {
       setDeletingId(workoutId);
 
       await deleteDoc(doc(db, 'workouts', workoutId));
+      await deleteLinkedExercises(workoutId);
 
       const updated = allWorkouts.filter((w) => w.id !== workoutId);
       setAllWorkouts(updated);

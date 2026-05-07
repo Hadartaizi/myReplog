@@ -69,6 +69,12 @@ type ExerciseItem = {
   createdAt?: any;
   updatedAt?: any;
   sourceType?: "exercise_doc" | "embedded_exercise" | "legacy_workout";
+  clientSucceeded?: boolean | null;
+  clientNotes?: string;
+  clientUpdatedAt?: string;
+  source?: string;
+  programExerciseId?: string;
+  programSectionTitle?: string;
   [key: string]: any;
 };
 
@@ -108,6 +114,9 @@ type TrainingProgramDoc = {
   programText?: string;
   updatedAt?: string;
   programType?: ProgramType;
+  strengthCoachFeedback?: string;
+  strengthCoachFeedbackUpdatedAt?: string;
+  strengthProgramHistory?: any[];
   runningWeeks?: RunningWeek[];
   runningWeeksCount?: number;
 };
@@ -357,9 +366,15 @@ function normalizeRepsPerSetToRows(params: {
   order?: number | string;
   exerciseOrder?: number | string;
   clientEntryOrder?: number | string;
-  sourceType: "embedded_exercise" | "legacy_workout";
+  clientSucceeded?: boolean | null;
+  clientNotes?: string;
+  clientUpdatedAt?: string;
+  source?: string;
+  programExerciseId?: string;
+  programSectionTitle?: string;
+  sourceType: "exercise_doc" | "embedded_exercise" | "legacy_workout";
 }): ExerciseItem[] {
-  const { baseId, uid, workoutId, exerciseName, date, createdAt, updatedAt, repsPerSet, numSets, order, exerciseOrder, clientEntryOrder, sourceType } = params;
+  const { baseId, uid, workoutId, exerciseName, date, createdAt, updatedAt, repsPerSet, numSets, order, exerciseOrder, clientEntryOrder, clientSucceeded, clientNotes, clientUpdatedAt, source, programExerciseId, programSectionTitle, sourceType } = params;
   const name = String(exerciseName || "").trim() || "תרגיל ללא שם";
   const map = repsPerSet || {};
   const keys = Object.keys(map).filter((key) => map[key] !== undefined && map[key] !== null).sort((a, b) => Number(a) - Number(b));
@@ -383,6 +398,12 @@ function normalizeRepsPerSetToRows(params: {
         exerciseOrder,
         clientEntryOrder,
         setOrder: Number(setKey) + 1,
+        clientSucceeded,
+        clientNotes,
+        clientUpdatedAt,
+        source,
+        programExerciseId,
+        programSectionTitle,
         sourceType,
       };
     });
@@ -406,6 +427,12 @@ function normalizeRepsPerSetToRows(params: {
       exerciseOrder,
       clientEntryOrder,
       setOrder: idx + 1,
+      clientSucceeded,
+      clientNotes,
+      clientUpdatedAt,
+      source,
+      programExerciseId,
+      programSectionTitle,
       sourceType,
     }));
   }
@@ -429,6 +456,12 @@ function normalizeEmbeddedExercises(workout: WorkoutItem): ExerciseItem[] {
       order: exercise?.order || workout.order,
       exerciseOrder: exercise?.exerciseOrder || workout.exerciseOrder,
       clientEntryOrder: exercise?.clientEntryOrder || workout.clientEntryOrder,
+      clientSucceeded: exercise?.clientSucceeded ?? workout.clientSucceeded,
+      clientNotes: exercise?.clientNotes ?? workout.clientNotes,
+      clientUpdatedAt: exercise?.clientUpdatedAt ?? workout.clientUpdatedAt,
+      source: exercise?.source || workout.source,
+      programExerciseId: exercise?.programExerciseId || workout.programExerciseId,
+      programSectionTitle: exercise?.programSectionTitle || workout.programSectionTitle,
       sourceType: "embedded_exercise",
     });
 
@@ -446,6 +479,12 @@ function normalizeEmbeddedExercises(workout: WorkoutItem): ExerciseItem[] {
       date: exercise?.date || workout.date,
       createdAt: exercise?.createdAt || workout.createdAt,
       updatedAt: exercise?.updatedAt || workout.updatedAt,
+      clientSucceeded: exercise?.clientSucceeded ?? workout.clientSucceeded,
+      clientNotes: exercise?.clientNotes ?? workout.clientNotes,
+      clientUpdatedAt: exercise?.clientUpdatedAt ?? workout.clientUpdatedAt,
+      source: exercise?.source || workout.source,
+      programExerciseId: exercise?.programExerciseId || workout.programExerciseId,
+      programSectionTitle: exercise?.programSectionTitle || workout.programSectionTitle,
       sourceType: "embedded_exercise",
       ...exercise,
     };
@@ -471,6 +510,12 @@ function normalizeLegacyWorkoutToExercises(workout: WorkoutItem): ExerciseItem[]
     order: workout.order,
     exerciseOrder: workout.exerciseOrder,
     clientEntryOrder: workout.clientEntryOrder,
+    clientSucceeded: workout.clientSucceeded,
+    clientNotes: workout.clientNotes,
+    clientUpdatedAt: workout.clientUpdatedAt,
+    source: workout.source,
+    programExerciseId: workout.programExerciseId,
+    programSectionTitle: workout.programSectionTitle,
     sourceType: "legacy_workout",
   });
 
@@ -491,40 +536,98 @@ function normalizeLegacyWorkoutToExercises(workout: WorkoutItem): ExerciseItem[]
     order: workout.order,
     exerciseOrder: workout.exerciseOrder,
     clientEntryOrder: workout.clientEntryOrder,
+    clientSucceeded: workout.clientSucceeded,
+    clientNotes: workout.clientNotes,
+    clientUpdatedAt: workout.clientUpdatedAt,
+    source: workout.source,
+    programExerciseId: workout.programExerciseId,
+    programSectionTitle: workout.programSectionTitle,
     sourceType: "legacy_workout",
   };
 
   return hasMeaningfulExerciseData(fallback) ? [fallback] : [];
 }
 
-function mergeExercises(workouts: WorkoutItem[], exercisesFromCollection: ExerciseItem[]): ExerciseItem[] {
-  const workoutIdsWithExerciseDocs = new Set(exercisesFromCollection.map((exercise) => exercise.workoutId).filter(Boolean) as string[]);
-  const workoutIdsWithEmbeddedExercises = new Set(workouts.filter((workout) => Array.isArray(workout.exercises) && workout.exercises.length > 0).map((workout) => workout.id));
-  const embeddedExercises = workouts.filter((workout) => !workoutIdsWithExerciseDocs.has(workout.id)).flatMap((workout) => normalizeEmbeddedExercises(workout));
-  const legacyWorkoutExercises = workouts
-    .filter((workout) => !workoutIdsWithExerciseDocs.has(workout.id) && !workoutIdsWithEmbeddedExercises.has(workout.id))
-    .flatMap((workout) => normalizeLegacyWorkoutToExercises(workout));
-
-  const all = [...exercisesFromCollection, ...embeddedExercises, ...legacyWorkoutExercises];
-  const seen = new Set<string>();
-
-  return all.filter((exercise, index) => {
-    const fallbackKey = [
-      exercise.id || "no-id",
-      exercise.workoutId || "no-workout",
-      getExerciseName(exercise),
-      getNumericValue(exercise.sets) ?? "no-sets",
-      getNumericValue(exercise.reps) ?? "no-reps",
-      getNumericValue(exercise.weight) ?? "no-weight",
-      getDayKeyFromDate(getExerciseBaseDate(exercise)),
-      exercise.sourceType || "unknown",
-      index,
-    ].join("|");
-    const key = exercise.id || fallbackKey;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return hasMeaningfulExerciseData(exercise);
+function normalizeExerciseDocToRows(exercise: ExerciseItem): ExerciseItem[] {
+  const normalizedFromMap = normalizeRepsPerSetToRows({
+    baseId: exercise.id || `${exercise.workoutId || "exercise"}-doc`,
+    uid: exercise.uid,
+    workoutId: exercise.workoutId,
+    exerciseName: exercise.exerciseName || exercise.name,
+    date: exercise.date,
+    createdAt: exercise.createdAt,
+    updatedAt: exercise.updatedAt,
+    repsPerSet: (exercise as any).repsPerSet,
+    numSets: exercise.sets,
+    order: (exercise as any).order,
+    exerciseOrder: (exercise as any).exerciseOrder,
+    clientEntryOrder: (exercise as any).clientEntryOrder,
+    clientSucceeded: exercise.clientSucceeded,
+    clientNotes: exercise.clientNotes,
+    clientUpdatedAt: exercise.clientUpdatedAt,
+    source: exercise.source,
+    programExerciseId: exercise.programExerciseId,
+    programSectionTitle: exercise.programSectionTitle,
+    sourceType: "exercise_doc",
   });
+
+  if (normalizedFromMap.length > 0) return normalizedFromMap;
+  return hasMeaningfulExerciseData(exercise) ? [{ ...exercise, sourceType: "exercise_doc" }] : [];
+}
+
+function getItemUpdatedTime(item: Partial<ExerciseItem | WorkoutItem>): number {
+  return (
+    getDateFromAny(item.updatedAt)?.getTime() ||
+    getDateFromAny(item.createdAt)?.getTime() ||
+    getDateFromAny(item.date)?.getTime() ||
+    0
+  );
+}
+
+function getMergeSetKey(exercise: ExerciseItem): string {
+  const workoutKey = String(exercise.workoutId || exercise.id || "no-workout");
+  const nameKey = normalizeText(getExerciseName(exercise));
+  const setKey = String(
+    getNumberFromAny((exercise as any).setOrder) ??
+      getNumberFromAny(exercise.sets) ??
+      "no-set"
+  );
+  return `${workoutKey}|${nameKey}|${setKey}`;
+}
+
+function mergeExercises(workouts: WorkoutItem[], exercisesFromCollection: ExerciseItem[]): ExerciseItem[] {
+  const exerciseDocRows = exercisesFromCollection.flatMap(normalizeExerciseDocToRows);
+  const workoutDerivedRows = workouts.flatMap((workout) => {
+    const embedded = normalizeEmbeddedExercises(workout);
+    if (embedded.length > 0) return embedded;
+    return normalizeLegacyWorkoutToExercises(workout);
+  });
+
+  const latestByKey = new Map<string, ExerciseItem>();
+
+  const addExercise = (exercise: ExerciseItem) => {
+    if (!hasMeaningfulExerciseData(exercise)) return;
+
+    const key = getMergeSetKey(exercise);
+    const existing = latestByKey.get(key);
+
+    if (!existing) {
+      latestByKey.set(key, exercise);
+      return;
+    }
+
+    const existingTime = getItemUpdatedTime(existing);
+    const nextTime = getItemUpdatedTime(exercise);
+
+    if (nextTime >= existingTime) {
+      latestByKey.set(key, exercise);
+    }
+  };
+
+  exerciseDocRows.forEach(addExercise);
+  workoutDerivedRows.forEach(addExercise);
+
+  return Array.from(latestByKey.values()).sort(compareExercisesBySaveOrder);
 }
 
 function groupExercisesByWorkout(workouts: WorkoutItem[], exercises: ExerciseItem[]): Record<string, ExerciseItem[]> {
@@ -607,6 +710,31 @@ function groupExercisesInsideDay(exercises: ExerciseItem[], dayKey: string): Gro
       return { ...group, rows: hasRealRows ? sortedRows.filter((row) => hasSetLikeData(row)) : sortedRows };
     })
     .sort(compareGroupedExercisesBySaveOrder);
+}
+
+function getExerciseGroupStatus(rows: ExerciseItem[]) {
+  const row = rows.find((item) => item.clientSucceeded === true || item.clientSucceeded === false);
+  return row?.clientSucceeded ?? null;
+}
+
+function getExerciseGroupClientNotes(rows: ExerciseItem[]) {
+  const notes = rows
+    .map((row) => String(row.clientNotes || "").trim())
+    .filter(Boolean);
+  return Array.from(new Set(notes));
+}
+
+function getExerciseGroupUpdatedAt(rows: ExerciseItem[]) {
+  const row = [...rows]
+    .filter((item) => item.clientUpdatedAt)
+    .sort((a, b) => (getDateFromAny(b.clientUpdatedAt)?.getTime() || 0) - (getDateFromAny(a.clientUpdatedAt)?.getTime() || 0))[0];
+  return row?.clientUpdatedAt || "";
+}
+
+function getExerciseGroupProgramSource(rows: ExerciseItem[]) {
+  const row = rows.find((item) => item.source === "trainingProgram" || item.programExerciseId || item.programSectionTitle);
+  const sectionTitle = String(row?.programSectionTitle || "").trim();
+  return sectionTitle ? `מתוך תוכנית כוח · ${sectionTitle}` : row ? "מתוך תוכנית כוח" : "";
 }
 
 function calculateAverageWorkoutsPerWeek(dayGroups: DayGroup[]) {
@@ -886,16 +1014,87 @@ export default function ClientProgressTracker({ clients: initialClients = [] }: 
     try {
       setSavingFeedbackKey(key);
       const updatedAt = new Date().toISOString();
-      await updateDoc(doc(db, "workouts", workout.id), { coachFeedback: feedback, coachFeedbackUpdatedAt: updatedAt });
-      setWorkouts((prev) => prev.map((item) => item.id === workout.id ? { ...item, coachFeedback: feedback, coachFeedbackUpdatedAt: updatedAt } : item));
-      Alert.alert("נשמר", "המשוב נשמר לאימון הכוח");
+
+      await updateDoc(doc(db, "workouts", workout.id), {
+        coachFeedback: feedback,
+        coachFeedbackUpdatedAt: updatedAt,
+      });
+
+      const programExerciseIds = Array.from(
+        new Set(
+          group.exercises
+            .map((row) => String(row.programExerciseId || "").trim())
+            .filter(Boolean),
+        ),
+      );
+
+      let nextSections = Array.isArray(programData?.sections) ? programData.sections : [];
+      let updatedProgramSections = false;
+
+      if (programExerciseIds.length > 0 && nextSections.length > 0) {
+        nextSections = nextSections.map((section: any) => ({
+          ...section,
+          exercises: Array.isArray(section.exercises)
+            ? section.exercises.map((exercise: any) => {
+                if (!programExerciseIds.includes(String(exercise.id || ""))) return exercise;
+                updatedProgramSections = true;
+                return {
+                  ...exercise,
+                  coachFeedback: feedback,
+                  coachFeedbackUpdatedAt: updatedAt,
+                };
+              })
+            : [],
+        }));
+      }
+
+      const targetProgramDocId =
+        programDocId || (selectedClient ? getClientUidCandidates(selectedClient)[0] : "") || "";
+
+      if (updatedProgramSections && targetProgramDocId) {
+        await setDoc(
+          doc(db, "clientTrainingPrograms", targetProgramDocId),
+          {
+            sections: nextSections,
+            strengthCoachFeedback: feedback,
+            strengthCoachFeedbackUpdatedAt: updatedAt,
+            updatedAt,
+          },
+          { merge: true },
+        );
+      }
+
+      setWorkouts((prev) =>
+        prev.map((item) =>
+          item.id === workout.id
+            ? { ...item, coachFeedback: feedback, coachFeedbackUpdatedAt: updatedAt }
+            : item,
+        ),
+      );
+
+      if (updatedProgramSections) {
+        setProgramData((prev) =>
+          prev
+            ? {
+                ...prev,
+                sections: nextSections,
+                strengthCoachFeedback: feedback,
+                strengthCoachFeedbackUpdatedAt: updatedAt,
+                updatedAt,
+              }
+            : prev,
+        );
+        if (targetProgramDocId) setProgramDocId(targetProgramDocId);
+      }
+
+      Alert.alert("נשמר", "המשוב נשמר לאימון הכוח ויוצג גם בתוכנית הכוח של הלקוח");
     } catch (error) {
       console.error("שגיאה בשמירת משוב כוח:", error);
       Alert.alert("שגיאה", "לא ניתן לשמור את המשוב");
     } finally {
       setSavingFeedbackKey(null);
     }
-  }, [feedbackDrafts]);
+  }, [feedbackDrafts, getClientUidCandidates, programData, programDocId, selectedClient]);
 
   const saveRunningFeedback = useCallback(async (weekId: string) => {
     if (!selectedClient || !programData) return;
@@ -1020,13 +1219,45 @@ export default function ClientProgressTracker({ clients: initialClients = [] }: 
                         {group.notes.length > 0 && <View style={styles.clientResponseBox}><Text style={styles.responseTitle}>תגובת / הערות הלקוח</Text>{group.notes.map((note, index) => <Text key={`${group.dayKey}-note-${index}`} style={styles.responseText}>{note}</Text>)}</View>}
                         {groupedExercises.map((exerciseGroup) => {
                           const exerciseOpen = !!openExerciseIds[exerciseGroup.key];
+                          const clientStatus = getExerciseGroupStatus(exerciseGroup.rows);
+                          const clientNotes = getExerciseGroupClientNotes(exerciseGroup.rows);
+                          const clientUpdatedAt = getExerciseGroupUpdatedAt(exerciseGroup.rows);
+                          const programSourceLabel = getExerciseGroupProgramSource(exerciseGroup.rows);
                           return (
                             <View key={exerciseGroup.key} style={styles.exerciseGroupCard}>
                               <Pressable onPress={() => toggleExercise(exerciseGroup.key)} style={styles.exerciseHeader}>
-                                <Text style={styles.exerciseTitle}>{exerciseGroup.name}</Text>
+                                <View style={styles.exerciseTitleWrap}>
+                                  <Text style={styles.exerciseTitle}>{exerciseGroup.name}</Text>
+                                  {!!programSourceLabel && <Text style={styles.exerciseSourceText}>{programSourceLabel}</Text>}
+                                  <Text style={styles.exerciseStatusText}>סטטוס לקוח: {getSucceededLabel(clientStatus)}</Text>
+                                </View>
                                 {exerciseOpen ? <ArrowUpIcon size={18} /> : <ArrowDownIcon size={18} />}
                               </Pressable>
-                              {exerciseOpen && <View style={styles.setsTable}>{exerciseGroup.rows.map((row, index) => <View key={row.id || `${exerciseGroup.key}-${index}`} style={styles.setRow}><Text style={styles.setCell}>סט {row.sets || index + 1}</Text><Text style={styles.setCell}>חזרות: {row.reps || "-"}</Text><Text style={styles.setCell}>משקל: {row.weight || "-"}</Text></View>)}</View>}
+                              {exerciseOpen && (
+                                <>
+                                  <View style={styles.clientResponseBox}>
+                                    <Text style={styles.responseTitle}>משוב המתאמן לתרגיל</Text>
+                                    <Text style={styles.responseText}>סטטוס: {getSucceededLabel(clientStatus)}</Text>
+                                    {clientNotes.length > 0 ? (
+                                      clientNotes.map((note, index) => (
+                                        <Text key={`${exerciseGroup.key}-client-note-${index}`} style={styles.responseText}>פירוט: {note}</Text>
+                                      ))
+                                    ) : (
+                                      <Text style={styles.responseMuted}>לא הוזן פירוט מהלקוח</Text>
+                                    )}
+                                    {!!clientUpdatedAt && <Text style={styles.responseMuted}>עודכן: {formatDateTimeIL(clientUpdatedAt)}</Text>}
+                                  </View>
+                                  <View style={styles.setsTable}>
+                                    {exerciseGroup.rows.map((row, index) => (
+                                      <View key={row.id || `${exerciseGroup.key}-${index}`} style={styles.setRow}>
+                                        <Text style={styles.setCell}>סט {row.sets || index + 1}</Text>
+                                        <Text style={styles.setCell}>חזרות: {row.reps || "-"}</Text>
+                                        <Text style={styles.setCell}>משקל: {row.weight || "-"}</Text>
+                                      </View>
+                                    ))}
+                                  </View>
+                                </>
+                              )}
                             </View>
                           );
                         })}

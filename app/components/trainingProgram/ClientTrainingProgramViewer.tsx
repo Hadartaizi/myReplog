@@ -64,6 +64,17 @@ type RunningProgramSnapshot = {
   notes?: string;
 };
 
+type StrengthProgramSnapshot = {
+  id?: string;
+  title?: string;
+  createdAt?: string;
+  archivedAt?: string;
+  completedAt?: string;
+  sections?: ProgramSection[];
+  notes?: string;
+  strengthNotes?: string;
+};
+
 type TrainingProgramDoc = {
   sections?: ProgramSection[];
   notes?: string;
@@ -79,6 +90,8 @@ type TrainingProgramDoc = {
   activeRunningProgramId?: string;
   runningProgramStartedAt?: string;
   runningProgramHistory?: RunningProgramSnapshot[];
+  strengthProgramHistory?: StrengthProgramSnapshot[];
+  strengthHistory?: StrengthProgramSnapshot[];
 };
 
 function formatDateTime(value?: string) {
@@ -183,6 +196,39 @@ const hasSectionContent = (section?: ProgramSection | null) => {
   );
 };
 
+const normalizeSectionsForDisplay = (sections?: ProgramSection[] | null) =>
+  (Array.isArray(sections) ? sections : [])
+    .map((section, sectionIndex) => ({
+      ...section,
+      id: String(section.id || `section-${sectionIndex}`),
+      title: String(section.title || "").trim(),
+      exercises: (Array.isArray(section.exercises) ? section.exercises : [])
+        .map((exercise, exerciseIndex) => ({
+          ...exercise,
+          id: String(exercise.id || `exercise-${sectionIndex}-${exerciseIndex}`),
+          name: String(exercise.name || "").trim(),
+          sets: String(exercise.sets || "").trim(),
+          reps: String(exercise.reps || "").trim(),
+          notes: String(exercise.notes || "").trim(),
+        }))
+        .filter(
+          (exercise) =>
+            !!exercise.name || !!exercise.sets || !!exercise.reps || !!exercise.notes
+        ),
+    }))
+    .filter(hasSectionContent);
+
+const getStrengthHistorySource = (program?: TrainingProgramDoc | null) => {
+  const primary = Array.isArray(program?.strengthProgramHistory)
+    ? program?.strengthProgramHistory || []
+    : [];
+  const legacy = Array.isArray(program?.strengthHistory)
+    ? program?.strengthHistory || []
+    : [];
+
+  return primary.length > 0 ? primary : legacy;
+};
+
 export default function ClientTrainingProgramViewer() {
   const [loading, setLoading] = useState(true);
   const [savingWeekId, setSavingWeekId] = useState<string | null>(null);
@@ -219,7 +265,7 @@ export default function ClientTrainingProgramViewer() {
   }, [loadProgram]);
 
   const sections = useMemo(
-    () => (Array.isArray(programData?.sections) ? programData.sections.filter(hasSectionContent) : []),
+    () => normalizeSectionsForDisplay(programData?.sections),
     [programData]
   );
 
@@ -244,7 +290,25 @@ export default function ClientTrainingProgramViewer() {
     [programData]
   );
 
-  const hasStrengthProgram = sections.length > 0;
+  const strengthProgramHistory = useMemo(
+    () =>
+      getStrengthHistorySource(programData)
+        .map((program, index) => ({
+          ...program,
+          id: String(program.id || `history-strength-program-${index}`),
+          title: String(program.title || `תוכנית כוח קודמת ${index + 1}`),
+          sections: normalizeSectionsForDisplay(program.sections),
+        }))
+        .filter((program) => (program.sections || []).length > 0)
+        .sort(
+          (a, b) =>
+            (new Date(b.archivedAt || b.createdAt || "").getTime() || 0) -
+            (new Date(a.archivedAt || a.createdAt || "").getTime() || 0)
+        ),
+    [programData]
+  );
+
+  const hasStrengthProgram = sections.length > 0 || strengthProgramHistory.length > 0;
   const hasRunningProgram = runningWeeks.length > 0 || runningProgramHistory.length > 0;
   const strengthGeneralNotes = String(programData?.strengthNotes || programData?.notes || programData?.programText || "").trim();
   const runningGeneralNotes = String(programData?.runningNotes || programData?.notes || programData?.programText || "").trim();
@@ -517,51 +581,130 @@ export default function ClientTrainingProgramViewer() {
               ) : (
                 <Text style={styles.emptyText}>לא נמצאה תוכנית ריצה</Text>
               )
-            ) : sections.length > 0 ? (
-              sections.map((section, sectionIndex) => {
-                const sectionId = String(section.id || `section-${sectionIndex}`);
-                const isOpen = !!openStrengthSectionIds[sectionId];
-                const exercises = Array.isArray(section.exercises) ? section.exercises : [];
-                return (
-                  <View key={sectionId} style={styles.sectionCard}>
-                    <Pressable onPress={() => toggleStrengthSection(sectionId)} style={({ pressed }) => [styles.collapsedHeader, pressed && styles.pressed]}>
-                      <View style={styles.collapsedHeaderTextWrap}>
-                        <Text style={styles.sectionTitle}>{section.title || `חלק ${sectionIndex + 1}`}</Text>
-                        <Text style={styles.weekStatusText}>{exercises.length} תרגילים</Text>
-                      </View>
-                      <Text style={styles.expandText}>{isOpen ? "סגירה" : "פתיחה"}</Text>
-                    </Pressable>
-
-                    {isOpen && (
-                      <View style={styles.openContent}>
-                        {exercises.map((exercise, exerciseIndex) => {
-                          const exerciseName = String(exercise?.name || "").trim();
-                          const sets = String(exercise?.sets || "").trim();
-                          const reps = String(exercise?.reps || "").trim();
-                          const notes = String(exercise?.notes || "").trim();
-                          if (!exerciseName && !sets && !reps && !notes) return null;
-                          return (
-                            <View key={exercise.id || `${exerciseName}-${exerciseIndex}`} style={styles.exerciseRow}>
-                              <Text style={styles.exerciseName}>{exerciseName || `תרגיל ${exerciseIndex + 1}`}</Text>
-                              <View style={styles.exerciseStatsRow}>
-                                <View style={styles.statBox}>
-                                  <Text style={styles.statLabel}>סטים</Text>
-                                  <Text style={styles.statValue}>{sets || "-"}</Text>
-                                </View>
-                                <View style={styles.statBox}>
-                                  <Text style={styles.statLabel}>חזרות</Text>
-                                  <Text style={styles.statValue}>{reps || "-"}</Text>
-                                </View>
-                              </View>
-                              {!!notes && <Text style={styles.exerciseNotes}>{notes}</Text>}
+            ) : sections.length > 0 || strengthProgramHistory.length > 0 ? (
+              <View style={styles.runningProgramsWrap}>
+                {sections.length > 0 && (
+                  <View style={styles.activeProgramBox}>
+                    <Text style={styles.historyProgramTitle}>תוכנית כוח פעילה</Text>
+                    {sections.map((section, sectionIndex) => {
+                      const sectionId = String(section.id || `section-${sectionIndex}`);
+                      const isOpen = !!openStrengthSectionIds[sectionId];
+                      const exercises = Array.isArray(section.exercises) ? section.exercises : [];
+                      return (
+                        <View key={sectionId} style={styles.sectionCard}>
+                          <Pressable onPress={() => toggleStrengthSection(sectionId)} style={({ pressed }) => [styles.collapsedHeader, pressed && styles.pressed]}>
+                            <View style={styles.collapsedHeaderTextWrap}>
+                              <Text style={styles.sectionTitle}>{section.title || `חלק ${sectionIndex + 1}`}</Text>
+                              <Text style={styles.weekStatusText}>{exercises.length} תרגילים</Text>
                             </View>
-                          );
-                        })}
-                      </View>
-                    )}
+                            <Text style={styles.expandText}>{isOpen ? "סגירה" : "פתיחה"}</Text>
+                          </Pressable>
+
+                          {isOpen && (
+                            <View style={styles.openContent}>
+                              {exercises.map((exercise, exerciseIndex) => {
+                                const exerciseName = String(exercise?.name || "").trim();
+                                const sets = String(exercise?.sets || "").trim();
+                                const reps = String(exercise?.reps || "").trim();
+                                const notes = String(exercise?.notes || "").trim();
+                                if (!exerciseName && !sets && !reps && !notes) return null;
+                                return (
+                                  <View key={exercise.id || `${exerciseName}-${exerciseIndex}`} style={styles.exerciseRow}>
+                                    <Text style={styles.exerciseName}>{exerciseName || `תרגיל ${exerciseIndex + 1}`}</Text>
+                                    <View style={styles.exerciseStatsRow}>
+                                      <View style={styles.statBox}>
+                                        <Text style={styles.statLabel}>סטים</Text>
+                                        <Text style={styles.statValue}>{sets || "-"}</Text>
+                                      </View>
+                                      <View style={styles.statBox}>
+                                        <Text style={styles.statLabel}>חזרות</Text>
+                                        <Text style={styles.statValue}>{reps || "-"}</Text>
+                                      </View>
+                                    </View>
+                                    {!!notes && <Text style={styles.exerciseNotes}>{notes}</Text>}
+                                  </View>
+                                );
+                              })}
+                            </View>
+                          )}
+                        </View>
+                      );
+                    })}
                   </View>
-                );
-              })
+                )}
+
+                {strengthProgramHistory.length > 0 && (
+                  <View style={styles.historyProgramsBox}>
+                    <Text style={styles.historyProgramsHeading}>היסטוריית תוכניות כוח</Text>
+                    {strengthProgramHistory.map((program, programIndex) => {
+                      const programId = String(program.id || `history-strength-${programIndex}`);
+                      const isProgramOpen = !!openHistoryProgramIds[programId];
+                      const historyNotes = String(program.strengthNotes || program.notes || "").trim();
+
+                      return (
+                        <View key={programId} style={styles.historyProgramCard}>
+                          <Pressable onPress={() => toggleHistoryProgram(programId)} style={({ pressed }) => [styles.historyProgramHeader, pressed && styles.pressed]}>
+                            <View style={styles.collapsedHeaderTextWrap}>
+                              <Text style={styles.historyProgramTitle}>{program.title || `תוכנית כוח קודמת ${programIndex + 1}`}</Text>
+                              <Text style={styles.historyProgramDate}>תאריך: {formatDateTime(program.archivedAt || program.createdAt)}</Text>
+                            </View>
+                            <Text style={styles.expandText}>{isProgramOpen ? "סגירה" : "פתיחה"}</Text>
+                          </Pressable>
+
+                          {isProgramOpen && (
+                            <View style={styles.openContent}>
+                              {(program.sections || []).map((section, sectionIndex) => {
+                                const sectionId = String(section.id || `${programId}-section-${sectionIndex}`);
+                                const exercises = Array.isArray(section.exercises) ? section.exercises : [];
+
+                                return (
+                                  <View key={sectionId} style={styles.sectionCard}>
+                                    <Text style={styles.sectionTitle}>{section.title || `חלק ${sectionIndex + 1}`}</Text>
+                                    <Text style={styles.weekStatusText}>{exercises.length} תרגילים</Text>
+
+                                    <View style={styles.openContent}>
+                                      {exercises.map((exercise, exerciseIndex) => {
+                                        const exerciseName = String(exercise?.name || "").trim();
+                                        const sets = String(exercise?.sets || "").trim();
+                                        const reps = String(exercise?.reps || "").trim();
+                                        const notes = String(exercise?.notes || "").trim();
+                                        if (!exerciseName && !sets && !reps && !notes) return null;
+                                        return (
+                                          <View key={exercise.id || `${programId}-${sectionIndex}-${exerciseIndex}`} style={styles.exerciseRow}>
+                                            <Text style={styles.exerciseName}>{exerciseName || `תרגיל ${exerciseIndex + 1}`}</Text>
+                                            <View style={styles.exerciseStatsRow}>
+                                              <View style={styles.statBox}>
+                                                <Text style={styles.statLabel}>סטים</Text>
+                                                <Text style={styles.statValue}>{sets || "-"}</Text>
+                                              </View>
+                                              <View style={styles.statBox}>
+                                                <Text style={styles.statLabel}>חזרות</Text>
+                                                <Text style={styles.statValue}>{reps || "-"}</Text>
+                                              </View>
+                                            </View>
+                                            {!!notes && <Text style={styles.exerciseNotes}>{notes}</Text>}
+                                          </View>
+                                        );
+                                      })}
+                                    </View>
+                                  </View>
+                                );
+                              })}
+
+                              {!!historyNotes && (
+                                <View style={styles.notesBox}>
+                                  <Text style={styles.notesTitle}>הערות כלליות לתוכנית</Text>
+                                  <Text style={styles.notesText}>{historyNotes}</Text>
+                                </View>
+                              )}
+                            </View>
+                          )}
+                        </View>
+                      );
+                    })}
+                  </View>
+                )}
+              </View>
             ) : (
               <Text style={styles.emptyText}>לא נמצאה תוכנית כוח</Text>
             )}

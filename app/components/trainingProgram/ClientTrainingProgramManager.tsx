@@ -57,12 +57,28 @@ type ProgramExercise = {
   sets: string;
   reps: string;
   notes: string;
+  clientSucceeded?: boolean | null;
+  clientNotes?: string;
+  clientUpdatedAt?: string;
+  coachFeedback?: string;
+  coachFeedbackUpdatedAt?: string;
 };
 
 type ProgramSection = {
   id: string;
   title: string;
   exercises: ProgramExercise[];
+};
+
+type StrengthProgramSnapshot = {
+  id: string;
+  title?: string;
+  createdAt: string;
+  archivedAt?: string;
+  sections: ProgramSection[];
+  notes?: string;
+  strengthNotes?: string;
+  completedAt?: string;
 };
 
 type RunningWeek = {
@@ -101,6 +117,9 @@ type TrainingProgramDoc = {
   programType?: ProgramType;
   splitType?: TrainingSplitType;
   sections?: ProgramSection[];
+  activeStrengthProgramId?: string;
+  strengthProgramStartedAt?: string;
+  strengthProgramHistory?: StrengthProgramSnapshot[];
   notes?: string;
   strengthNotes?: string;
   runningNotes?: string;
@@ -145,7 +164,16 @@ function createId(prefix = "id") {
 }
 
 function createExercise(): ProgramExercise {
-  return { id: createId("exercise"), name: "", sets: "", reps: "", notes: "" };
+  return {
+    id: createId("exercise"),
+    name: "",
+    sets: "",
+    reps: "",
+    notes: "",
+    clientSucceeded: null,
+    clientNotes: "",
+    coachFeedback: "",
+  };
 }
 
 function createSection(title = ""): ProgramSection {
@@ -314,9 +342,75 @@ function hasRunningFeedback(week: RunningWeek) {
   return week.clientSucceeded === true || week.clientSucceeded === false;
 }
 
-function areAllRunningWeeksCompleted(weeks: RunningWeek[]) {
-  const withContent = normalizeRunningWeeksForSave(weeks);
-  return withContent.length > 0 && withContent.every(hasRunningFeedback);
+function normalizeSectionsForSave(sections: ProgramSection[]) {
+  return sections
+    .map((section) => ({
+      ...section,
+      id: section.id || createId("section"),
+      title: String(section.title || "").trim(),
+      exercises: (section.exercises || [])
+        .map((exercise) => ({
+          ...exercise,
+          id: exercise.id || createId("exercise"),
+          name: String(exercise.name || "").trim(),
+          sets: String(exercise.sets || "").trim(),
+          reps: String(exercise.reps || "").trim(),
+          notes: String(exercise.notes || "").trim(),
+          clientSucceeded:
+            exercise.clientSucceeded === true || exercise.clientSucceeded === false
+              ? exercise.clientSucceeded
+              : null,
+          clientNotes: String(exercise.clientNotes || "").trim(),
+          clientUpdatedAt: String(exercise.clientUpdatedAt || "").trim(),
+          coachFeedback: String(exercise.coachFeedback || "").trim(),
+          coachFeedbackUpdatedAt: String(exercise.coachFeedback || "").trim()
+            ? exercise.coachFeedbackUpdatedAt || new Date().toISOString()
+            : "",
+        }))
+        .filter(
+          (exercise) =>
+            exercise.name ||
+            exercise.sets ||
+            exercise.reps ||
+            exercise.notes ||
+            exercise.clientNotes ||
+            exercise.coachFeedback,
+        ),
+    }))
+    .filter((section) => section.title || section.exercises.length > 0);
+}
+
+function hasStrengthFeedback(exercise: ProgramExercise) {
+  return exercise.clientSucceeded === true || exercise.clientSucceeded === false;
+}
+
+function areAllStrengthExercisesCompleted(sections: ProgramSection[]) {
+  const cleanedSections = normalizeSectionsForSave(sections);
+  const exercises = cleanedSections.flatMap((section) => section.exercises || []);
+  return exercises.length > 0 && exercises.every(hasStrengthFeedback);
+}
+
+function createStrengthProgramSnapshot(params: {
+  id?: string;
+  sections: ProgramSection[];
+  notes?: string;
+  createdAt?: string;
+  archivedAt?: string;
+}): StrengthProgramSnapshot {
+  const cleanedSections = normalizeSectionsForSave(params.sections);
+  const createdAt = params.createdAt || new Date().toISOString();
+  const completed = areAllStrengthExercisesCompleted(cleanedSections);
+  const snapshot: StrengthProgramSnapshot = {
+    id: params.id || createId("strength-program"),
+    title: `תוכנית כוח ${new Date(createdAt).toLocaleDateString("he-IL")}`,
+    createdAt,
+    archivedAt: params.archivedAt || new Date().toISOString(),
+    sections: cleanedSections,
+    notes: String(params.notes || "").trim(),
+    strengthNotes: String(params.notes || "").trim(),
+  };
+  if (completed) snapshot.completedAt = new Date().toISOString();
+  return snapshot;
 }
 
 function createRunningProgramSnapshot(params: {
@@ -812,24 +906,7 @@ export default function ClientTrainingProgramManager({
     const resolvedClientUid = getClientResolvedUid(targetClient);
     if (!resolvedClientUid) return Alert.alert("שגיאה", "לא נמצא מזהה תקין");
 
-    const cleanedSections = sections
-      .map((section) => ({
-        ...section,
-        title: section.title.trim(),
-        exercises: section.exercises
-          .map((exercise) => ({
-            ...exercise,
-            name: exercise.name.trim(),
-            sets: exercise.sets.trim(),
-            reps: exercise.reps.trim(),
-            notes: exercise.notes.trim(),
-          }))
-          .filter(
-            (exercise) =>
-              exercise.name || exercise.sets || exercise.reps || exercise.notes,
-          ),
-      }))
-      .filter((section) => section.title || section.exercises.length > 0);
+    const cleanedSections = normalizeSectionsForSave(sections);
 
     const cleanedRunningWeeks = normalizeRunningWeeksForSave(runningWeeks);
 
@@ -883,7 +960,13 @@ export default function ClientTrainingProgramManager({
 
       const payload: Partial<TrainingProgramDoc> =
         programType === "strength"
-          ? { ...basePayload, sections: cleanedSections }
+          ? {
+              ...basePayload,
+              sections: cleanedSections,
+              activeStrengthProgramId:
+                existingData.activeStrengthProgramId || createId("strength-program"),
+              strengthProgramStartedAt: existingData.strengthProgramStartedAt || nowIso,
+            }
           : {
               ...basePayload,
               runningWeeksCount: cleanedRunningWeeks.length,
@@ -907,6 +990,82 @@ export default function ClientTrainingProgramManager({
     } catch (error) {
       console.error("שגיאה בשמירת תוכנית אימון:", error);
       Alert.alert("שגיאה", "לא ניתן לשמור את תוכנית האימון");
+    } finally {
+      setSavingProgram(false);
+    }
+  };
+
+
+  const handleArchiveStrengthProgramAndReset = async () => {
+    const signedInUser = auth.currentUser;
+    if (!signedInUser) return Alert.alert("שגיאה", "לא נמצא משתמש מחובר");
+    const targetClient = selectedClient || selectablePeople.find((client) => getClientResolvedUid(client) === selectedClientUid) || null;
+    if (!targetClient) return Alert.alert("שגיאה", "יש לבחור מתאמן או את עצמך");
+
+    const resolvedClientUid = getClientResolvedUid(targetClient);
+    if (!resolvedClientUid) return Alert.alert("שגיאה", "לא נמצא מזהה תקין");
+
+    try {
+      setSavingProgram(true);
+      const nowIso = new Date().toISOString();
+      const programRef = doc(db, "clientTrainingPrograms", resolvedClientUid);
+      const existingSnap = await getDoc(programRef);
+      const existingData = existingSnap.exists() ? (existingSnap.data() as Partial<TrainingProgramDoc>) : {};
+      const existingSections = Array.isArray(existingData.sections) ? existingData.sections : [];
+      const history = Array.isArray(existingData.strengthProgramHistory) ? existingData.strengthProgramHistory : [];
+      const activeSectionsForHistory = normalizeSectionsForSave(existingSections);
+
+      const nextHistory =
+        activeSectionsForHistory.length > 0
+          ? [
+              createStrengthProgramSnapshot({
+                id: existingData.activeStrengthProgramId,
+                sections: activeSectionsForHistory,
+                notes: String(existingData.strengthNotes || existingData.notes || ""),
+                createdAt: existingData.strengthProgramStartedAt || existingData.updatedAt,
+                archivedAt: nowIso,
+              }),
+              ...history,
+            ]
+          : history;
+
+      await setDoc(
+        programRef,
+        {
+          clientUid: resolvedClientUid,
+          clientDocId: targetClient.id,
+          clientName: targetClient.name || "",
+          clientEmail: targetClient.email || "",
+          clientRole:
+            selfItem && resolvedClientUid === getClientResolvedUid(selfItem)
+              ? "self"
+              : targetClient.role || "client",
+          programType: "strength",
+          sections: [],
+          activeStrengthProgramId: "",
+          strengthProgramStartedAt: "",
+          strengthProgramHistory: nextHistory,
+          strengthNotes: "",
+          notes: "",
+          updatedAt: nowIso,
+          updatedByUid: signedInUser.uid,
+          updatedByName: currentUserData?.name || "",
+          updatedByRole: currentUserData?.role || "",
+        },
+        { merge: true },
+      );
+
+      setProgramType("strength");
+      setSplitType("fullbody");
+      setSections(getSectionsBySplit("fullbody"));
+      setStrengthNotes("");
+
+      Platform.OS === "web"
+        ? window.alert("תוכנית הכוח הפעילה עברה להיסטוריה והשדות אופסו. התוכנית החדשה תוצג ללקוח רק אחרי לחיצה על שמירת עריכה לתוכנית.")
+        : Alert.alert("הצלחה", "תוכנית הכוח הפעילה עברה להיסטוריה והשדות אופסו. התוכנית החדשה תוצג ללקוח רק אחרי לחיצה על שמירת עריכה לתוכנית.");
+    } catch (error) {
+      console.error("שגיאה בהעברת תוכנית כוח להיסטוריה:", error);
+      Alert.alert("שגיאה", "לא ניתן להעביר את תוכנית הכוח להיסטוריה");
     } finally {
       setSavingProgram(false);
     }
@@ -1414,6 +1573,16 @@ export default function ClientTrainingProgramManager({
                       <Text style={styles.saveButtonText}>שמירת עריכה לתוכנית</Text>
                     )}
                   </TouchableOpacity>
+                  {programType === "strength" && (
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      onPress={handleArchiveStrengthProgramAndReset}
+                      disabled={savingProgram}
+                      style={[styles.newRunningProgramButton, savingProgram && styles.disabledButton]}
+                    >
+                      <Text style={styles.newRunningProgramButtonText}>העבר תוכנית כוח פעילה להיסטוריה ואפס שדות</Text>
+                    </TouchableOpacity>
+                  )}
                   {programType === "running" && (
                     <TouchableOpacity
                       activeOpacity={0.85}
@@ -1421,7 +1590,7 @@ export default function ClientTrainingProgramManager({
                       disabled={savingProgram}
                       style={[styles.newRunningProgramButton, savingProgram && styles.disabledButton]}
                     >
-                      <Text style={styles.newRunningProgramButtonText}>העבר תוכנית פעילה להיסטוריה ואפס שדות</Text>
+                      <Text style={styles.newRunningProgramButtonText}>העבר תוכנית ריצה פעילה להיסטוריה ואפס שדות</Text>
                     </TouchableOpacity>
                   )}
                 </>

@@ -8,6 +8,7 @@ import {
   getDoc,
   getDocs,
   setDoc,
+  updateDoc,
   query,
   where,
 } from 'firebase/firestore';
@@ -44,6 +45,12 @@ const normalizeText = (text: string) =>
     .replace(/[^֐-׿\w\s]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
+
+const safeFirestoreId = (value: string) =>
+  String(value || '')
+    .trim()
+    .replace(/[^A-Za-z0-9_-]/g, '_')
+    .slice(0, 420) || `id_${Date.now()}`;
 
 const hasOwn = (obj: any, key: string) =>
   !!obj && Object.prototype.hasOwnProperty.call(obj, key);
@@ -150,6 +157,24 @@ type LastExerciseRow = {
   sets: number;
   reps: string;
   weight: string;
+};
+
+type ProgramStrengthSetEntry = {
+  reps: string;
+  weight: string;
+};
+
+type ProgramStrengthEntry = {
+  setsCount: string;
+  sets: ProgramStrengthSetEntry[];
+  clientSucceeded: boolean | null;
+  clientNotes: string;
+  notesOpen: boolean;
+  saved: boolean;
+  isEditing: boolean;
+  savedWorkoutId?: string;
+  savedAt?: string;
+  savedDateKey?: string;
 };
 
 type TrainingProgramExercise = {
@@ -338,6 +363,22 @@ function TimerIcon({ size = 22, color = '#FFFFFF' }) {
   );
 }
 
+function WriteIcon({ size = 18, color = '#0C4A6E' }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M4 20h4.5L19 9.5a2.1 2.1 0 0 0 0-3L17.5 5a2.1 2.1 0 0 0-3 0L4 15.5V20z"
+        stroke={color}
+        strokeWidth={2}
+        fill="none"
+        strokeLinejoin="round"
+      />
+      <Line x1="13.5" y1="6" x2="18" y2="10.5" stroke={color} strokeWidth={2} strokeLinecap="round" />
+      <Line x1="4" y1="20" x2="20" y2="20" stroke={color} strokeWidth={2} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
 export default function Home() {
   const { width, height } = useWindowDimensions();
 
@@ -394,6 +435,8 @@ export default function Home() {
   const [exerciseSucceeded, setExerciseSucceeded] = useState<boolean | null>(null);
   const [exerciseClientNotes, setExerciseClientNotes] = useState('');
   const [savingRunningWeekId, setSavingRunningWeekId] = useState<string | null>(null);
+  const [programStrengthEntries, setProgramStrengthEntries] = useState<Record<string, ProgramStrengthEntry>>({});
+  const [savingProgramStrengthExerciseKey, setSavingProgramStrengthExerciseKey] = useState<string | null>(null);
 
   const [trainingProgram, setTrainingProgram] = useState<TrainingProgramDoc | null>(null);
   const [isLoadingTrainingProgram, setIsLoadingTrainingProgram] = useState(true);
@@ -436,7 +479,7 @@ export default function Home() {
 
       return !!title || hasExercises;
     });
-  }, [trainingProgram]);
+  }, [trainingProgram, date]);
 
   const hasRunningProgramContent = useMemo(() => {
     if (!trainingProgram) return false;
@@ -1098,6 +1141,478 @@ export default function Home() {
   const resetTimer = () => {
     setIsTimerRunning(false);
     setTimerRemaining(0);
+  };
+
+
+  const getProgramStrengthExerciseKey = (
+    sectionIndex: number,
+    exerciseIndex: number,
+    item?: TrainingProgramExercise | null
+  ) => {
+    const rawId = String(item?.id || '').trim();
+    if (rawId) return `program-strength-${rawId}`;
+    return `program-strength-${sectionIndex}-${exerciseIndex}-${normalizeText(item?.name || '')}`;
+  };
+
+  const getProgramSetsCount = (item?: TrainingProgramExercise | null) => {
+    const parsed = parseInt(String(item?.sets || '').replace(/[^0-9]/g, ''), 10);
+    return Math.max(1, Math.min(20, Number.isFinite(parsed) && parsed > 0 ? parsed : 1));
+  };
+
+  const buildDefaultProgramStrengthEntry = (item?: TrainingProgramExercise | null): ProgramStrengthEntry => {
+    const plannedSetsCount = getProgramSetsCount(item);
+    const plannedReps = String(item?.reps || '').trim();
+
+    return {
+      setsCount: String(plannedSetsCount),
+      sets: Array.from({ length: plannedSetsCount }).map(() => ({
+        reps: plannedReps,
+        weight: '',
+      })),
+      clientSucceeded: null,
+      clientNotes: '',
+      notesOpen: false,
+      saved: false,
+      isEditing: true,
+    };
+  };
+
+  const normalizeProgramStrengthEntry = (
+    entry: ProgramStrengthEntry | undefined,
+    item?: TrainingProgramExercise | null
+  ): ProgramStrengthEntry => {
+    const fallback = buildDefaultProgramStrengthEntry(item);
+    if (!entry) return fallback;
+
+    const parsedCount = parseInt(String(entry.setsCount || '').replace(/[^0-9]/g, ''), 10);
+    const setsCount = Math.max(1, Math.min(20, Number.isFinite(parsedCount) && parsedCount > 0 ? parsedCount : fallback.sets.length));
+    const currentSets = Array.isArray(entry.sets) ? entry.sets : [];
+    const nextSets = Array.from({ length: setsCount }).map((_, index) => ({
+      reps: String(currentSets[index]?.reps ?? fallback.sets[index]?.reps ?? '').trim(),
+      weight: String(currentSets[index]?.weight ?? fallback.sets[index]?.weight ?? '').trim(),
+    }));
+
+    return {
+      ...fallback,
+      ...entry,
+      setsCount: String(setsCount),
+      sets: nextSets,
+      clientSucceeded: entry.clientSucceeded === true || entry.clientSucceeded === false ? entry.clientSucceeded : null,
+      clientNotes: String(entry.clientNotes || ''),
+      notesOpen: !!entry.notesOpen,
+      saved: !!entry.saved,
+      isEditing: entry.saved ? !!entry.isEditing : true,
+    };
+  };
+
+  const getProgramStrengthEntry = (key: string, item?: TrainingProgramExercise | null): ProgramStrengthEntry => {
+    return normalizeProgramStrengthEntry(programStrengthEntries[key], item);
+  };
+
+  const updateProgramStrengthEntry = (
+    key: string,
+    patch: Partial<ProgramStrengthEntry>,
+    item?: TrainingProgramExercise | null
+  ) => {
+    setProgramStrengthEntries((prev) => ({
+      ...prev,
+      [key]: normalizeProgramStrengthEntry(
+        {
+          ...(prev[key] || buildDefaultProgramStrengthEntry(item)),
+          ...patch,
+        },
+        item
+      ),
+    }));
+  };
+
+  const updateProgramStrengthSetsCount = (
+    key: string,
+    value: string,
+    item?: TrainingProgramExercise | null
+  ) => {
+    const cleanedValue = value.replace(/[^0-9]/g, '');
+    const nextCount = Math.max(1, Math.min(20, parseInt(cleanedValue || '1', 10) || 1));
+
+    setProgramStrengthEntries((prev) => {
+      const current = normalizeProgramStrengthEntry(prev[key], item);
+      const defaultEntry = buildDefaultProgramStrengthEntry(item);
+      const nextSets = Array.from({ length: nextCount }).map((_, index) => ({
+        reps: String(current.sets[index]?.reps ?? defaultEntry.sets[index]?.reps ?? '').trim(),
+        weight: String(current.sets[index]?.weight ?? '').trim(),
+      }));
+
+      return {
+        ...prev,
+        [key]: {
+          ...current,
+          setsCount: String(nextCount),
+          sets: nextSets,
+          isEditing: true,
+        },
+      };
+    });
+  };
+
+  const updateProgramStrengthSetField = (
+    key: string,
+    setIndex: number,
+    field: keyof ProgramStrengthSetEntry,
+    value: string,
+    item?: TrainingProgramExercise | null
+  ) => {
+    const cleanedValue = field === 'weight'
+      ? value.replace(/[^0-9.]/g, '')
+      : value.replace(/[^0-9]/g, '');
+
+    setProgramStrengthEntries((prev) => {
+      const current = normalizeProgramStrengthEntry(prev[key], item);
+      const nextSets = current.sets.map((set, index) =>
+        index === setIndex ? { ...set, [field]: cleanedValue } : set
+      );
+
+      return {
+        ...prev,
+        [key]: {
+          ...current,
+          sets: nextSets,
+          isEditing: true,
+        },
+      };
+    });
+  };
+
+  const enableProgramStrengthExerciseEdit = (key: string, item?: TrainingProgramExercise | null) => {
+    setProgramStrengthEntries((prev) => ({
+      ...prev,
+      [key]: {
+        ...normalizeProgramStrengthEntry(prev[key], item),
+        isEditing: true,
+      },
+    }));
+  };
+
+  const loadSavedProgramStrengthEntries = useCallback(async () => {
+    const user = auth.currentUser;
+    if (!user || !trainingProgram) return;
+
+    const sections = Array.isArray(trainingProgram.sections) ? trainingProgram.sections : [];
+    const activeDateKey = formatDateForInput(date);
+
+    if (sections.length === 0) {
+      setProgramStrengthEntries({});
+      return;
+    }
+
+    try {
+      const snapshot = await getDocs(
+        query(
+          collection(db, 'workouts'),
+          where('uid', '==', user.uid),
+          where('source', '==', 'trainingProgram'),
+          where('dateKey', '==', activeDateKey)
+        )
+      );
+
+      const latestByKey: Record<string, any> = {};
+
+      snapshot.docs.forEach((docSnap) => {
+        const data = docSnap.data() || {};
+        const stableKey = String(
+          data.programStrengthEntryKey ||
+            (data.programExerciseId ? `program-strength-${data.programExerciseId}` : '')
+        ).trim();
+
+        if (!stableKey) return;
+
+        const existing = latestByKey[stableKey];
+        const currentTime = parseDateSafe(data.clientUpdatedAt)?.getTime() || parseDateSafe(data.updatedAt)?.getTime() || parseDateSafe(data.createdAt)?.getTime() || 0;
+        const existingTime = existing
+          ? parseDateSafe(existing.clientUpdatedAt)?.getTime() || parseDateSafe(existing.updatedAt)?.getTime() || parseDateSafe(existing.createdAt)?.getTime() || 0
+          : 0;
+
+        if (!existing || currentTime >= existingTime) {
+          latestByKey[stableKey] = { id: docSnap.id, ...data };
+        }
+      });
+
+      setProgramStrengthEntries((prev) => {
+        const next: Record<string, ProgramStrengthEntry> = {};
+
+        // שומרים רק פתיחה/סגירה של תיבת הפירוט מהסטייט המקומי,
+        // אבל לא משאירים נתוני ביצוע מיום קודם.
+        const notesOpenByKey = Object.keys(prev).reduce<Record<string, boolean>>((acc, entryKey) => {
+          acc[entryKey] = !!prev[entryKey]?.notesOpen;
+          return acc;
+        }, {});
+
+        sections.forEach((section, sectionIndex) => {
+          const exercises = Array.isArray(section?.exercises) ? section.exercises : [];
+
+          exercises.forEach((item, exerciseIndex) => {
+            const key = getProgramStrengthExerciseKey(sectionIndex, exerciseIndex, item);
+            const savedWorkout = latestByKey[key];
+            if (!savedWorkout) return;
+
+            const repsPerSet = savedWorkout.repsPerSet && typeof savedWorkout.repsPerSet === 'object'
+              ? savedWorkout.repsPerSet
+              : {};
+            const setKeys = Object.keys(repsPerSet).sort((a, b) => Number(a) - Number(b));
+            const fallback = buildDefaultProgramStrengthEntry(item);
+            const sets = setKeys.length > 0
+              ? setKeys.map((setKey) => ({
+                  reps: String(repsPerSet[setKey]?.reps ?? '').replace(/[^0-9]/g, ''),
+                  weight: String(repsPerSet[setKey]?.weight ?? '').replace(/[^0-9.]/g, ''),
+                }))
+              : fallback.sets;
+
+            next[key] = normalizeProgramStrengthEntry(
+              {
+                setsCount: String(sets.length),
+                sets,
+                clientSucceeded:
+                  savedWorkout.clientSucceeded === true || savedWorkout.clientSucceeded === false
+                    ? savedWorkout.clientSucceeded
+                    : null,
+                clientNotes: String(savedWorkout.clientNotes || ''),
+                notesOpen: notesOpenByKey[key] || false,
+                saved: true,
+                isEditing: false,
+                savedWorkoutId: savedWorkout.id,
+                savedAt: String(savedWorkout.createdAt || savedWorkout.clientUpdatedAt || savedWorkout.updatedAt || ''),
+                savedDateKey: activeDateKey,
+              },
+              item
+            );
+          });
+        });
+
+        return next;
+      });
+    } catch (error) {
+      console.error('שגיאה בטעינת ביצועי כוח מתוך תוכנית:', error);
+    }
+  }, [trainingProgram, date]);
+
+  useEffect(() => {
+    loadSavedProgramStrengthEntries();
+  }, [loadSavedProgramStrengthEntries]);
+
+  const saveProgramStrengthExercise = async (
+    key: string,
+    item?: TrainingProgramExercise | null,
+    sectionTitle?: string
+  ) => {
+    if (isSaving || savingProgramStrengthExerciseKey) return;
+
+    const user = auth.currentUser;
+    if (!user) {
+      showToast('לא נמצא משתמש מחובר');
+      return;
+    }
+
+    const exerciseName = String(item?.name || '').trim();
+    if (!exerciseName) {
+      showToast('לא נמצא שם תרגיל לשמירה');
+      return;
+    }
+
+    const entry = getProgramStrengthEntry(key, item);
+    const stableProgramStrengthEntryKey = String(key || '').trim();
+    if (entry.saved && !entry.isEditing) {
+      showToast('התרגיל כבר נשמר. כדי לשנות יש ללחוץ על עריכת ביצוע');
+      return;
+    }
+
+    const cleanedSets = entry.sets.map((set, index) => ({
+      setOrder: index + 1,
+      reps: String(set.reps || '').replace(/[^0-9]/g, ''),
+      weight: String(set.weight || '').replace(/[^0-9.]/g, ''),
+    }));
+
+    if (cleanedSets.length === 0 || cleanedSets.some((set) => !set.reps)) {
+      showToast('יש להזין חזרות לכל סט לפני שמירה');
+      return;
+    }
+
+    try {
+      setSavingProgramStrengthExerciseKey(key);
+      const normalizedName = normalizeText(exerciseName);
+      const now = new Date();
+      const nowIso = now.toISOString();
+      const dateKey = formatDateForInput(date);
+      const workoutDateIso = date.toISOString();
+      const isSavedForCurrentDate = entry.saved && entry.savedDateKey === dateKey;
+      const clientEntryOrder = isSavedForCurrentDate && entry.savedAt
+        ? Number(new Date(entry.savedAt).getTime() || now.getTime())
+        : now.getTime();
+
+      await removeOldDeletedCopiesIfExist(user.uid, exerciseName);
+
+      const repsPerSetForWorkout: RepsPerSetType = cleanedSets.reduce(
+        (acc: RepsPerSetType, set, index) => {
+          acc[String(index)] = {
+            reps: set.reps,
+            weight: set.weight,
+          };
+          return acc;
+        },
+        {}
+      );
+
+      const workoutPayload: WorkoutDocType & Record<string, any> = {
+        uid: user.uid,
+        title: exerciseName,
+        name: exerciseName,
+        exerciseName,
+        date: workoutDateIso,
+        dateKey,
+        createdAt: isSavedForCurrentDate ? entry.savedAt || nowIso : nowIso,
+        updatedAt: nowIso,
+        order: clientEntryOrder,
+        exerciseOrder: clientEntryOrder,
+        clientEntryOrder,
+        enteredByClient: true,
+        clientSucceeded: entry.clientSucceeded,
+        clientNotes: entry.clientNotes.trim(),
+        clientUpdatedAt: nowIso,
+        numSets: cleanedSets.length,
+        repsPerSet: repsPerSetForWorkout,
+        source: 'trainingProgram',
+        programStrengthEntryKey: stableProgramStrengthEntryKey,
+        programExerciseId: String(item?.id || ''),
+        programSectionTitle: String(sectionTitle || ''),
+      };
+
+      let workoutId = isSavedForCurrentDate ? entry.savedWorkoutId || '' : '';
+
+      if (!workoutId && stableProgramStrengthEntryKey) {
+        const existingWorkoutSnap = await getDocs(
+          query(
+            collection(db, 'workouts'),
+            where('uid', '==', user.uid),
+            where('source', '==', 'trainingProgram'),
+            where('programStrengthEntryKey', '==', stableProgramStrengthEntryKey),
+            where('dateKey', '==', dateKey)
+          )
+        );
+
+        if (!existingWorkoutSnap.empty) {
+          const latestExisting = existingWorkoutSnap.docs
+            .map((docSnap) => ({ id: docSnap.id, ...(docSnap.data() || {}) }))
+            .sort((a: any, b: any) => {
+              const bTime = parseDateSafe(b.clientUpdatedAt)?.getTime() || parseDateSafe(b.updatedAt)?.getTime() || parseDateSafe(b.createdAt)?.getTime() || 0;
+              const aTime = parseDateSafe(a.clientUpdatedAt)?.getTime() || parseDateSafe(a.updatedAt)?.getTime() || parseDateSafe(a.createdAt)?.getTime() || 0;
+              return bTime - aTime;
+            })[0];
+
+          workoutId = latestExisting.id;
+        }
+      }
+
+      if (!workoutId) {
+        workoutId = `program_strength_${safeFirestoreId(user.uid)}_${safeFirestoreId(stableProgramStrengthEntryKey)}_${safeFirestoreId(dateKey)}`;
+      }
+
+      // שמירה דטרמיניסטית: עריכה של סטים/חזרות/משקל מעדכנת את אותה רשומת אימון
+      // ולכן המעקב של המאמן לא נשאר עם נתוני סטים ישנים.
+      await setDoc(doc(db, 'workouts', workoutId), workoutPayload, { merge: true });
+
+      const previousExerciseRowsByWorkout = await getDocs(
+        query(collection(db, 'exercises'), where('workoutId', '==', workoutId))
+      );
+      const previousExerciseRowsByProgramKey = stableProgramStrengthEntryKey
+        ? await getDocs(
+            query(
+              collection(db, 'exercises'),
+              where('uid', '==', user.uid),
+              where('source', '==', 'trainingProgram'),
+              where('programStrengthEntryKey', '==', stableProgramStrengthEntryKey),
+              where('dateKey', '==', dateKey)
+            )
+          )
+        : null;
+
+      const docsToDelete = new Map<string, true>();
+      previousExerciseRowsByWorkout.docs.forEach((docSnap) => docsToDelete.set(docSnap.id, true));
+      previousExerciseRowsByProgramKey?.docs.forEach((docSnap) => docsToDelete.set(docSnap.id, true));
+
+      await Promise.all(
+        Array.from(docsToDelete.keys()).map((exerciseDocId) =>
+          deleteDoc(doc(db, 'exercises', exerciseDocId))
+        )
+      );
+
+      await Promise.all(
+        cleanedSets.map((set) =>
+          setDoc(doc(db, 'exercises', `${safeFirestoreId(workoutId)}_set_${set.setOrder}`), {
+            uid: user.uid,
+            workoutId,
+            exerciseName,
+            name: exerciseName,
+            title: exerciseName,
+            sets: set.setOrder,
+            reps: Number(set.reps || 0),
+            weight: Number(set.weight || 0),
+            date: workoutDateIso,
+            dateKey,
+            createdAt: isSavedForCurrentDate ? entry.savedAt || nowIso : nowIso,
+            updatedAt: nowIso,
+            order: set.setOrder,
+            exerciseOrder: clientEntryOrder,
+            setOrder: set.setOrder,
+            clientEntryOrder,
+            enteredByClient: true,
+            clientSucceeded: entry.clientSucceeded,
+            clientNotes: entry.clientNotes.trim(),
+            clientUpdatedAt: nowIso,
+            source: 'trainingProgram',
+            programStrengthEntryKey: stableProgramStrengthEntryKey,
+            programExerciseId: String(item?.id || ''),
+            programSectionTitle: String(sectionTitle || ''),
+          }, { merge: true })
+        )
+      );
+
+      setExistingExercises((prev) => {
+        const withoutOldDuplicates = prev.filter((name) => normalizeText(name) !== normalizedName);
+        return [...withoutOldDuplicates, exerciseName].sort((a, b) => a.localeCompare(b, 'he'));
+      });
+
+      setLastExerciseData((prev) => ({
+        ...prev,
+        [exerciseName]: cleanedSets.map((set) => ({
+          sets: set.setOrder,
+          reps: set.reps,
+          weight: set.weight,
+        })),
+      }));
+
+      setProgramStrengthEntries((prev) => ({
+        ...prev,
+        [key]: {
+          ...entry,
+          setsCount: String(cleanedSets.length),
+          sets: cleanedSets.map((set) => ({ reps: set.reps, weight: set.weight })),
+          saved: true,
+          isEditing: false,
+          savedWorkoutId: workoutId,
+          savedAt: isSavedForCurrentDate ? entry.savedAt || nowIso : nowIso,
+          savedDateKey: dateKey,
+          clientSucceeded: entry.clientSucceeded,
+          clientNotes: entry.clientNotes,
+          notesOpen: !!entry.notesOpen,
+        },
+      }));
+
+      await fetchUserData();
+      showToast(isSavedForCurrentDate ? 'הביצוע עודכן בהצלחה' : 'התרגיל מתוך התוכנית נשמר להיום בהצלחה');
+    } catch (error) {
+      console.error('שגיאה בשמירת תרגיל מתוך תוכנית כוח:', error);
+      showToast('לא ניתן לשמור את התרגיל מתוך התוכנית');
+    } finally {
+      setSavingProgramStrengthExerciseKey(null);
+    }
   };
 
   const updateLocalRunningWeek = (weekId: string, patch: Partial<RunningWeek>) => {
@@ -1892,7 +2407,9 @@ export default function Home() {
 
                             if (!exerciseName && !sets && !reps && !notes) return null;
 
-                            const exerciseKey = item?.id || `exercise-${sectionIndex}-${exerciseIndex}`;
+                            const exerciseKey = getProgramStrengthExerciseKey(sectionIndex, exerciseIndex, item);
+                            const inlineEntry = getProgramStrengthEntry(exerciseKey, item);
+                            const isSavingThisExercise = savingProgramStrengthExerciseKey === exerciseKey;
 
                             return (
                               <View
@@ -1909,13 +2426,13 @@ export default function Home() {
                                   <View style={styles.programMetaRow}>
                                     {!!sets && (
                                       <View style={styles.programMetaChip}>
-                                        <Text selectable={false} style={styles.programMetaChipText}>סטים: {sets}</Text>
+                                        <Text selectable={false} style={styles.programMetaChipText}>סטים בתוכנית: {sets}</Text>
                                       </View>
                                     )}
 
                                     {!!reps && (
                                       <View style={styles.programMetaChip}>
-                                        <Text selectable={false} style={styles.programMetaChipText}>חזרות: {reps}</Text>
+                                        <Text selectable={false} style={styles.programMetaChipText}>חזרות בתוכנית: {reps}</Text>
                                       </View>
                                     )}
                                   </View>
@@ -1924,6 +2441,158 @@ export default function Home() {
                                 {!!notes && (
                                   <Text style={styles.programExerciseNotes}>{notes}</Text>
                                 )}
+
+                                {!!exerciseName && (() => {
+                                  const isEntryLocked = inlineEntry.saved && !inlineEntry.isEditing;
+                                  return (
+                                    <View style={styles.programInlineEntryBox}>
+                                      <View style={styles.programInlineEntryHeaderRow}>
+                                        <Text style={styles.programInlineEntryTitle}>הזנת ביצוע לתרגיל הזה</Text>
+                                        {inlineEntry.saved && (
+                                          <View style={styles.programInlineSavedBadge}>
+                                            <Text style={styles.programInlineSavedBadgeText}>בוצע</Text>
+                                          </View>
+                                        )}
+                                      </View>
+
+                                      <View style={styles.programInlineSetsCountRow}>
+                                        <Text style={styles.miniLabel}>סטים שבוצעו</Text>
+                                        <TextInput
+                                          style={[styles.inputBox, styles.textInput, styles.programInlineSetsCountInput]}
+                                          keyboardType={INTEGER_KEYBOARD}
+                                          inputMode="numeric"
+                                          value={inlineEntry.setsCount}
+                                          onChangeText={(value) => updateProgramStrengthSetsCount(exerciseKey, value, item)}
+                                          placeholder={sets || '1'}
+                                          placeholderTextColor="#8A94A6"
+                                          textAlign="center"
+                                          editable={!isSavingThisExercise && !isEntryLocked}
+                                        />
+                                      </View>
+
+                                      <View style={styles.programInlineSetsList}>
+                                        {inlineEntry.sets.map((setEntry, setIndex) => (
+                                          <View key={`${exerciseKey}-set-${setIndex}`} style={styles.programInlineSetCard}>
+                                            <Text style={styles.programInlineSetTitle}>סט {setIndex + 1}</Text>
+                                            <View style={styles.programInlineInputsRow}>
+                                              <View style={styles.programInlineInputCol}>
+                                                <Text style={styles.miniLabel}>חזרות</Text>
+                                                <TextInput
+                                                  style={[styles.inputBox, styles.textInput, styles.programInlineInput]}
+                                                  keyboardType={INTEGER_KEYBOARD}
+                                                  inputMode="numeric"
+                                                  value={setEntry.reps}
+                                                  onChangeText={(value) => updateProgramStrengthSetField(exerciseKey, setIndex, 'reps', value, item)}
+                                                  placeholder={reps || '0'}
+                                                  placeholderTextColor="#8A94A6"
+                                                  textAlign="center"
+                                                  editable={!isSavingThisExercise && !isEntryLocked}
+                                                />
+                                              </View>
+
+                                              <View style={styles.programInlineInputCol}>
+                                                <Text style={styles.miniLabel}>משקל</Text>
+                                                <TextInput
+                                                  style={[styles.inputBox, styles.textInput, styles.programInlineInput]}
+                                                  keyboardType={DECIMAL_KEYBOARD}
+                                                  inputMode="decimal"
+                                                  value={setEntry.weight}
+                                                  onChangeText={(value) => updateProgramStrengthSetField(exerciseKey, setIndex, 'weight', value, item)}
+                                                  placeholder="אופציונלי"
+                                                  placeholderTextColor="#8A94A6"
+                                                  textAlign="center"
+                                                  editable={!isSavingThisExercise && !isEntryLocked}
+                                                />
+                                              </View>
+                                            </View>
+                                          </View>
+                                        ))}
+                                      </View>
+
+                                      <View style={styles.clientWorkoutFeedbackRow}>
+                                        <Pressable
+                                          style={[styles.clientWorkoutFeedbackButton, inlineEntry.clientSucceeded === true && styles.clientWorkoutFeedbackSuccess]}
+                                          onPress={() => updateProgramStrengthEntry(exerciseKey, { clientSucceeded: true, isEditing: true }, item)}
+                                          disabled={isSavingThisExercise || isEntryLocked}
+                                        >
+                                          <Text style={[styles.clientWorkoutFeedbackText, inlineEntry.clientSucceeded === true && styles.clientWorkoutFeedbackTextActive]}>הצלחתי</Text>
+                                        </Pressable>
+                                        <Pressable
+                                          style={[styles.clientWorkoutFeedbackButton, inlineEntry.clientSucceeded === false && styles.clientWorkoutFeedbackFail]}
+                                          onPress={() => updateProgramStrengthEntry(exerciseKey, { clientSucceeded: false, isEditing: true }, item)}
+                                          disabled={isSavingThisExercise || isEntryLocked}
+                                        >
+                                          <Text style={[styles.clientWorkoutFeedbackText, inlineEntry.clientSucceeded === false && styles.clientWorkoutFeedbackTextActive]}>לא הצלחתי</Text>
+                                        </Pressable>
+                                      </View>
+
+                                      <View style={styles.programNotesIconRow}>
+                                        <Pressable
+                                          accessibilityLabel={inlineEntry.notesOpen ? 'סגירת פירוט למאמן' : 'פתיחת פירוט למאמן'}
+                                          style={[
+                                            styles.programNotesToggleButton,
+                                            inlineEntry.notesOpen && styles.programNotesToggleButtonActive,
+                                            !!inlineEntry.clientNotes.trim() && !inlineEntry.notesOpen && styles.programNotesToggleButtonHasText,
+                                          ]}
+                                          onPress={() =>
+                                            updateProgramStrengthEntry(
+                                              exerciseKey,
+                                              { notesOpen: !inlineEntry.notesOpen },
+                                              item
+                                            )
+                                          }
+                                          disabled={isSavingThisExercise}
+                                        >
+                                          <WriteIcon
+                                            size={18}
+                                            color={inlineEntry.notesOpen ? '#FFFFFF' : inlineEntry.clientNotes.trim() ? '#1D4ED8' : '#0C4A6E'}
+                                          />
+                                        </Pressable>
+                                      </View>
+
+                                      {inlineEntry.notesOpen && (
+                                        <TextInput
+                                          style={[styles.inputBox, styles.textInput, styles.clientWorkoutNotesInput]}
+                                          placeholder="פירוט למאמן על התרגיל"
+                                          placeholderTextColor="#8A94A6"
+                                          value={inlineEntry.clientNotes}
+                                          onChangeText={(value) =>
+                                            updateProgramStrengthEntry(
+                                              exerciseKey,
+                                              { clientNotes: value, isEditing: true, notesOpen: true },
+                                              item
+                                            )
+                                          }
+                                          textAlign="right"
+                                          multiline
+                                          editable={!isSavingThisExercise && !isEntryLocked}
+                                        />
+                                      )}
+
+                                      {isEntryLocked ? (
+                                        <Pressable
+                                          style={styles.editProgramExerciseButton}
+                                          onPress={() => enableProgramStrengthExerciseEdit(exerciseKey, item)}
+                                          disabled={isSavingThisExercise}
+                                        >
+                                          <Text style={styles.editProgramExerciseButtonText}>עריכת ביצוע</Text>
+                                        </Pressable>
+                                      ) : (
+                                        <Pressable
+                                          style={[styles.saveProgramExerciseButton, isSavingThisExercise && styles.disabledButton]}
+                                          onPress={() => saveProgramStrengthExercise(exerciseKey, item, sectionTitle)}
+                                          disabled={isSavingThisExercise}
+                                        >
+                                          {isSavingThisExercise ? (
+                                            <ActivityIndicator color="#FFFFFF" />
+                                          ) : (
+                                            <Text style={styles.saveProgramExerciseButtonText}>{inlineEntry.saved ? 'שמירת עריכה' : 'שמירת ביצוע התרגיל'}</Text>
+                                          )}
+                                        </Pressable>
+                                      )}
+                                    </View>
+                                  );
+                                })()}
                               </View>
                             );
                           })}
@@ -2570,6 +3239,140 @@ const styles = StyleSheet.create({
     writingDirection: 'rtl',
   },
 
+
+  programInlineEntryBox: {
+    width: '100%',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 16,
+    padding: 12,
+    marginTop: 10,
+    gap: 10,
+  },
+
+  programInlineEntryTitle: {
+    color: '#0F172A',
+    fontSize: 14,
+    fontWeight: '900',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+
+  programInlineEntryHeaderRow: {
+    width: '100%',
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+
+  programInlineSavedBadge: {
+    borderRadius: 999,
+    backgroundColor: '#DCFCE7',
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+
+  programInlineSavedBadgeText: {
+    color: '#166534',
+    fontSize: 12,
+    fontWeight: '900',
+    textAlign: 'center',
+    writingDirection: 'rtl',
+  },
+
+  programInlineSetsCountRow: {
+    width: '100%',
+    gap: 6,
+  },
+
+  programInlineSetsCountInput: {
+    minHeight: 46,
+    fontSize: 15,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+
+  programInlineSetsList: {
+    width: '100%',
+    gap: 8,
+  },
+
+  programInlineSetCard: {
+    width: '100%',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 14,
+    padding: 10,
+    gap: 8,
+  },
+
+  programInlineSetTitle: {
+    color: '#0F172A',
+    fontSize: 13,
+    fontWeight: '900',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+
+  programInlineInputsRow: {
+    width: '100%',
+    flexDirection: 'row-reverse',
+    gap: 8,
+  },
+
+  programInlineInputCol: {
+    flex: 1,
+  },
+
+  programInlineInput: {
+    minHeight: 46,
+    fontSize: 14,
+    fontWeight: '800',
+    textAlign: 'center',
+    paddingHorizontal: 8,
+  },
+
+  saveProgramExerciseButton: {
+    width: '100%',
+    minHeight: 44,
+    borderRadius: 14,
+    backgroundColor: '#0F172A',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  saveProgramExerciseButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '900',
+    textAlign: 'center',
+    writingDirection: 'rtl',
+  },
+
+  editProgramExerciseButton: {
+    width: '100%',
+    minHeight: 44,
+    borderRadius: 14,
+    backgroundColor: '#E0F2FE',
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  editProgramExerciseButtonText: {
+    color: '#0C4A6E',
+    fontSize: 14,
+    fontWeight: '900',
+    textAlign: 'center',
+    writingDirection: 'rtl',
+  },
+
   completedProgramBox: {
     width: '100%',
     backgroundColor: '#ECFDF5',
@@ -2877,6 +3680,35 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     textAlign: 'center',
     writingDirection: 'rtl',
+  },
+
+  programNotesIconRow: {
+    width: '100%',
+    alignItems: 'flex-end',
+  },
+
+  programNotesToggleButton: {
+    width: 38,
+    height: 38,
+    minHeight: 38,
+    borderRadius: 10,
+    backgroundColor: '#E0F2FE',
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+  },
+
+  programNotesToggleButtonActive: {
+    backgroundColor: '#0C4A6E',
+    borderColor: '#0C4A6E',
+  },
+
+  programNotesToggleButtonHasText: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#93C5FD',
   },
 
   clientWorkoutFeedbackBox: { width: '100%', backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 18, padding: 12, marginBottom: 14, gap: 10 },
