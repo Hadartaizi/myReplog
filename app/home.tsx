@@ -423,6 +423,7 @@ export default function Home() {
   const [addError, setAddError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingLastExercise, setIsLoadingLastExercise] = useState(false);
+  const [loadingLastExerciseName, setLoadingLastExerciseName] = useState<string | null>(null);
   const [lastExerciseData, setLastExerciseData] = useState<Record<string, LastExerciseRow[]>>({});
   const [selectedExerciseForModal, setSelectedExerciseForModal] = useState<string | null>(null);
   const [isExerciseNameFocused, setIsExerciseNameFocused] = useState(false);
@@ -733,81 +734,181 @@ export default function Home() {
     });
   };
 
+  const isSameExerciseName = (value: any, normalizedTarget: string, allowLoose = false) => {
+    const normalizedValue = normalizeText(String(value || ''));
+    if (!normalizedValue || !normalizedTarget) return false;
+    if (normalizedValue === normalizedTarget) return true;
+
+    // גיבוי למקרים שבהם במסד נשמר שם עם רווח/תיאור נוסף מתוך תוכנית המאמן.
+    return allowLoose && (
+      normalizedValue.includes(normalizedTarget) || normalizedTarget.includes(normalizedValue)
+    );
+  };
+
+  const buildLastRowsFromRepsPerSet = (repsPerSet: any): LastExerciseRow[] => {
+    if (!repsPerSet || typeof repsPerSet !== 'object') return [];
+
+    return Object.keys(repsPerSet)
+      .sort((a, b) => Number(a) - Number(b))
+      .map((key) => ({
+        sets: Number(key) + 1,
+        reps: String(repsPerSet[key]?.reps ?? ''),
+        weight: String(repsPerSet[key]?.weight ?? ''),
+      }))
+      .filter((row) => row.reps.trim() || row.weight.trim());
+  };
+
   const fetchLastExercise = async (exerciseName: string) => {
+    const trimmedExerciseName = String(exerciseName || '').trim();
+
     try {
       const user = auth.currentUser;
-      if (!user) return [];
+      if (!user || !trimmedExerciseName) return [];
 
-      const normalizedTarget = normalizeText(exerciseName);
+      const normalizedTarget = normalizeText(trimmedExerciseName);
 
       if (deletedExerciseNames.has(normalizedTarget)) {
         setLastExerciseData((prev) => ({
           ...prev,
-          [exerciseName]: [],
+          [trimmedExerciseName]: [],
         }));
         return [];
       }
 
       setIsLoadingLastExercise(true);
+      setLoadingLastExerciseName(trimmedExerciseName);
 
-      const q = query(collection(db, 'workouts'), where('uid', '==', user.uid));
-      const snapshot = await getDocs(q);
+      const [workoutsSnapshot, exercisesSnapshot] = await Promise.all([
+        getDocs(query(collection(db, 'workouts'), where('uid', '==', user.uid))),
+        getDocs(query(collection(db, 'exercises'), where('uid', '==', user.uid))),
+      ]);
 
-      const matchingWorkouts = snapshot.docs
-        .map((docSnap) => {
-          const data = docSnap.data();
-          return { id: docSnap.id, ...data };
-        })
-        .filter((item: any) => normalizeText(getExerciseNameFromDoc(item)) === normalizedTarget)
-        .sort((a: any, b: any) => {
-          const aTime =
-            parseDateSafe(a.updatedAt)?.getTime() ||
-            parseDateSafe(a.createdAt)?.getTime() ||
-            parseDateSafe(a.date)?.getTime() ||
-            0;
+      const allWorkouts = workoutsSnapshot.docs.map((docSnap) => ({
+        id: docSnap.id,
+        ...(docSnap.data() || {}),
+      }));
 
-          const bTime =
-            parseDateSafe(b.updatedAt)?.getTime() ||
-            parseDateSafe(b.createdAt)?.getTime() ||
-            parseDateSafe(b.date)?.getTime() ||
-            0;
+      const exactWorkoutMatches = allWorkouts.filter((item: any) =>
+        isSameExerciseName(getExerciseNameFromDoc(item), normalizedTarget)
+      );
 
-          return bTime - aTime;
-        });
+      const workoutMatches = exactWorkoutMatches.length > 0
+        ? exactWorkoutMatches
+        : allWorkouts.filter((item: any) =>
+            isSameExerciseName(getExerciseNameFromDoc(item), normalizedTarget, true)
+          );
 
-      if (matchingWorkouts.length === 0) {
-        setLastExerciseData((prev) => ({
-          ...prev,
-          [exerciseName]: [],
-        }));
-        return [];
-      }
+      const sortedWorkoutMatches = workoutMatches.sort((a: any, b: any) => {
+        const aTime =
+          parseDateSafe(a.clientUpdatedAt)?.getTime() ||
+          parseDateSafe(a.updatedAt)?.getTime() ||
+          parseDateSafe(a.createdAt)?.getTime() ||
+          parseDateSafe(a.date)?.getTime() ||
+          0;
 
-      const latestWorkout: any = matchingWorkouts[0];
-      let rows: LastExerciseRow[] = [];
+        const bTime =
+          parseDateSafe(b.clientUpdatedAt)?.getTime() ||
+          parseDateSafe(b.updatedAt)?.getTime() ||
+          parseDateSafe(b.createdAt)?.getTime() ||
+          parseDateSafe(b.date)?.getTime() ||
+          0;
 
-      if (latestWorkout?.repsPerSet && typeof latestWorkout.repsPerSet === 'object') {
-        rows = Object.keys(latestWorkout.repsPerSet)
-          .sort((a, b) => Number(a) - Number(b))
-          .map((key) => ({
-            sets: Number(key) + 1,
-            reps: String(latestWorkout.repsPerSet[key]?.reps ?? ''),
-            weight: String(latestWorkout.repsPerSet[key]?.weight ?? ''),
+        return bTime - aTime;
+      });
+
+      for (const latestWorkout of sortedWorkoutMatches) {
+        const rows = buildLastRowsFromRepsPerSet((latestWorkout as any)?.repsPerSet);
+        if (rows.length > 0) {
+          setLastExerciseData((prev) => ({
+            ...prev,
+            [trimmedExerciseName]: rows,
           }));
+          return rows;
+        }
       }
+
+      // גיבוי חשוב: באימונים ישנים לפעמים הסטים נשמרו רק בקולקציית exercises ולא בתוך repsPerSet ב־workouts.
+      const allExerciseRows = exercisesSnapshot.docs.map((docSnap) => ({
+        id: docSnap.id,
+        ...(docSnap.data() || {}),
+      }));
+
+      const exactExerciseRows = allExerciseRows.filter((item: any) =>
+        isSameExerciseName(getExerciseNameFromDoc(item), normalizedTarget)
+      );
+
+      const matchedExerciseRows = exactExerciseRows.length > 0
+        ? exactExerciseRows
+        : allExerciseRows.filter((item: any) =>
+            isSameExerciseName(getExerciseNameFromDoc(item), normalizedTarget, true)
+          );
+
+      const groupedRows = matchedExerciseRows.reduce<Record<string, any[]>>((acc, row: any) => {
+        const groupKey = String(
+          row.workoutId ||
+          row.clientEntryOrder ||
+          row.exerciseOrder ||
+          row.dateKey ||
+          row.date ||
+          row.createdAt ||
+          row.id
+        );
+
+        if (!acc[groupKey]) acc[groupKey] = [];
+        acc[groupKey].push(row);
+        return acc;
+      }, {});
+
+      const latestGroup = Object.values(groupedRows)
+        .sort((a: any[], b: any[]) => {
+          const getGroupTime = (rows: any[]) => Math.max(
+            ...rows.map((row) =>
+              parseDateSafe(row.clientUpdatedAt)?.getTime() ||
+              parseDateSafe(row.updatedAt)?.getTime() ||
+              parseDateSafe(row.createdAt)?.getTime() ||
+              parseDateSafe(row.date)?.getTime() ||
+              0
+            )
+          );
+
+          return getGroupTime(b) - getGroupTime(a);
+        })[0] || [];
+
+      const rowsFromExercises = latestGroup
+        .sort((a: any, b: any) => Number(a.setOrder || a.sets || a.order || 0) - Number(b.setOrder || b.sets || b.order || 0))
+        .map((row: any, index: number) => ({
+          sets: Number(row.setOrder || row.sets || row.order || index + 1),
+          reps: String(row.reps ?? ''),
+          weight: String(row.weight ?? ''),
+        }))
+        .filter((row: LastExerciseRow) => row.reps.trim() || row.weight.trim());
 
       setLastExerciseData((prev) => ({
         ...prev,
-        [exerciseName]: rows,
+        [trimmedExerciseName]: rowsFromExercises,
       }));
 
-      return rows;
+      return rowsFromExercises;
     } catch (error) {
       console.error('שגיאה בשליפת האימון האחרון:', error);
+      setLastExerciseData((prev) => ({
+        ...prev,
+        [trimmedExerciseName]: [],
+      }));
       return [];
     } finally {
       setIsLoadingLastExercise(false);
+      setLoadingLastExerciseName(null);
     }
+  };
+
+  const openLastExerciseModal = async (exerciseName: string) => {
+    const trimmedName = String(exerciseName || '').trim();
+
+    if (!trimmedName || isLoadingLastExercise) return;
+
+    await fetchLastExercise(trimmedName);
+    setSelectedExerciseForModal(trimmedName);
   };
 
   const openDatePicker = () => {
@@ -1893,14 +1994,10 @@ export default function Home() {
                           { minHeight: dynamic.inputHeight },
                           isVerySmall && styles.fullWidthButtonOnSmall,
                         ]}
-                        onPress={async () => {
-                          const trimmedName = exercise.name.trim();
-                          await fetchLastExercise(trimmedName);
-                          setSelectedExerciseForModal(trimmedName);
-                        }}
+                        onPress={() => openLastExerciseModal(exercise.name)}
                         disabled={isLoadingLastExercise}
                       >
-                        {isLoadingLastExercise ? (
+                        {isLoadingLastExercise && loadingLastExerciseName === exercise.name.trim() ? (
                           <ActivityIndicator color="#FFFFFF" />
                         ) : (
                           <DumbbellIcon size={26} color="#FFFFFF" />
@@ -2111,54 +2208,6 @@ export default function Home() {
             </View>
           </Modal>
         )}
-
-        <Modal
-          visible={!!selectedExerciseForModal}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setSelectedExerciseForModal(null)}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={[styles.modalCard, { width: Math.min(width * 0.9, 420) }]}>
-              <Pressable
-                style={styles.modalClose}
-                onPress={() => setSelectedExerciseForModal(null)}
-              >
-                <CloseIcon size={24} color="#222222" />
-              </Pressable>
-
-              {selectedLastExercise && selectedLastExercise.length > 0 ? (
-                <>
-                  <Text style={styles.modalTitle}>
-                    הביצוע האחרון של{'\n'}
-                    {selectedExerciseForModal}
-                  </Text>
-
-                  <View style={styles.modalDivider} />
-
-                  {selectedLastExercise.map((item, index) => (
-                    <View key={`${item.sets}-${index}`} style={styles.modalRow}>
-                      <Text style={styles.modalText}>סט {item.sets}</Text>
-                      <Text style={styles.modalText}>{item.reps} חזרות</Text>
-                      <Text style={styles.modalText}>{item.weight} ק״ג</Text>
-                    </View>
-                  ))}
-                </>
-              ) : (
-                <>
-                  <Text style={styles.modalTitle}>
-                    הביצוע האחרון של{'\n'}
-                    {selectedExerciseForModal}
-                  </Text>
-                  <View style={styles.modalDivider} />
-                  <Text style={styles.modalText}>אין מידע זמין</Text>
-                </>
-              )}
-            </View>
-          </View>
-        </Modal>
-
-
 
         <Modal
           visible={showSideMenu}
@@ -2420,6 +2469,25 @@ export default function Home() {
                                   <Text style={styles.programExerciseName}>
                                     {exerciseName || 'ללא שם תרגיל'}
                                   </Text>
+
+                                  {!!exerciseName && (
+                                    <Pressable
+                                      accessibilityLabel={`צפייה בביצוע האחרון של ${exerciseName}`}
+                                      style={[
+                                        styles.programLastExerciseButton,
+                                        isLoadingLastExercise && loadingLastExerciseName === exerciseName && styles.disabledButton,
+                                      ]}
+                                      onPress={() => openLastExerciseModal(exerciseName)}
+                                      disabled={isLoadingLastExercise}
+                                      hitSlop={8}
+                                    >
+                                      {isLoadingLastExercise && loadingLastExerciseName === exerciseName ? (
+                                        <ActivityIndicator color="#FFFFFF" size="small" />
+                                      ) : (
+                                        <DumbbellIcon size={20} color="#FFFFFF" />
+                                      )}
+                                    </Pressable>
+                                  )}
                                 </View>
 
                                 {(sets || reps) && (
@@ -2621,6 +2689,54 @@ export default function Home() {
             </View>
           </View>
         </Modal>
+        <Modal
+          visible={!!selectedExerciseForModal}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setSelectedExerciseForModal(null)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalCard, { width: Math.min(width * 0.9, 420) }]}>
+              <Pressable
+                style={styles.modalClose}
+                onPress={() => setSelectedExerciseForModal(null)}
+              >
+                <CloseIcon size={24} color="#222222" />
+              </Pressable>
+
+              {selectedLastExercise && selectedLastExercise.length > 0 ? (
+                <>
+                  <Text style={styles.modalTitle}>
+                    הביצוע האחרון של{'\n'}
+                    {selectedExerciseForModal}
+                  </Text>
+
+                  <View style={styles.modalDivider} />
+
+                  {selectedLastExercise.map((item, index) => (
+                    <View key={`${item.sets}-${index}`} style={styles.modalRow}>
+                      <Text style={styles.modalText}>סט {item.sets}</Text>
+                      <Text style={styles.modalText}>{item.reps} חזרות</Text>
+                      <Text style={styles.modalText}>{item.weight} ק״ג</Text>
+                    </View>
+                  ))}
+                </>
+              ) : (
+                <>
+                  <Text style={styles.modalTitle}>
+                    הביצוע האחרון של{'\n'}
+                    {selectedExerciseForModal}
+                  </Text>
+                  <View style={styles.modalDivider} />
+                  <Text style={styles.modalText}>אין מידע זמין</Text>
+                </>
+              )}
+            </View>
+          </View>
+        </Modal>
+
+
+
       </View>
     </SafeAreaView>
   );
@@ -3202,6 +3318,16 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     textAlign: 'right',
     writingDirection: 'rtl',
+  },
+
+  programLastExerciseButton: {
+    width: 42,
+    height: 42,
+    minWidth: 42,
+    borderRadius: 14,
+    backgroundColor: '#0F172A',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
 
