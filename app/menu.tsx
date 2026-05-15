@@ -2400,6 +2400,48 @@ export default function Menu() {
     return uniqueClientsByUid([selfAsClientItem, ...withoutSelfDuplicate]);
   }, [clients, currentUserData, currentUserDocId, isManager, isOwner]);
 
+  const deleteClientTargets = useMemo(() => {
+    if (!isManager || !currentUserData) return [] as ClientItem[];
+
+    const selfUidCandidates = buildUidCandidates(
+      auth.currentUser?.uid,
+      currentUserDocId,
+      currentUserData.uid,
+      currentUserData.authUid
+    );
+
+    if (selfUidCandidates.length === 0) return [] as ClientItem[];
+
+    return uniqueClientsByUid(
+      clients.filter((client) => {
+        const clientOwnerLinks = buildUidCandidates(
+          client.createdByUid,
+          client.contactOwnerUid
+        );
+
+        const isDirectlyLinkedToMe = clientOwnerLinks.some((value) =>
+          selfUidCandidates.includes(value)
+        );
+
+        if (isDirectlyLinkedToMe) return true;
+
+        // גיבוי ללקוחות שנוצרו ישירות על ידי בעלת המערכת ונשמרו רק תחת createdByOwnerUid
+        // בלי createdByUid/contactOwnerUid. כך בעלת המערכת לא תראה לקוחות של מאמנים משניים,
+        // אלא רק לקוחות שאין להם מאמן משני מוגדר.
+        if (isOwner) {
+          const createdByOwnerLinks = buildUidCandidates(client.createdByOwnerUid);
+          const hasSpecificCoach = clientOwnerLinks.length > 0;
+
+          return !hasSpecificCoach && createdByOwnerLinks.some((value) =>
+            selfUidCandidates.includes(value)
+          );
+        }
+
+        return false;
+      })
+    );
+  }, [clients, currentUserData, currentUserDocId, isManager, isOwner]);
+
   if (!fontsLoaded) {
     return <View style={{ flex: 1, backgroundColor: APP_BG }} />;
   }
@@ -2588,7 +2630,14 @@ export default function Menu() {
 
     try {
       const matchedClient =
-        clients.find((c) => getClientResolvedUid(c) === targetUid) || null;
+        deleteClientTargets.find((c) => getClientResolvedUid(c) === targetUid) || null;
+
+      if (!matchedClient) {
+        Platform.OS === "web"
+          ? window.alert("אין לך הרשאה למחוק לקוח שלא מקושר אלייך")
+          : Alert.alert("אין הרשאה", "ניתן למחוק רק לקוחות שמקושרים אלייך");
+        return;
+      }
 
       const possibleUserDocIds = Array.from(
         new Set([matchedClient?.id, matchedClient?.uid, matchedClient?.authUid].filter(Boolean))
@@ -3143,12 +3192,12 @@ export default function Menu() {
 
                             {deleteClientsOpen && (
                               <View style={styles.subActionContent}>
-                                {clients.length === 0 ? (
+                                {deleteClientTargets.length === 0 ? (
                                   <View style={styles.emptyClientsBox}>
-                                    <Text style={styles.emptyClientsText}>אין לקוחות להצגה</Text>
+                                    <Text style={styles.emptyClientsText}>אין לקוחות שמקושרים אלייך למחיקה</Text>
                                   </View>
                                 ) : (
-                                  clients.map((client) => {
+                                  deleteClientTargets.map((client) => {
                                     const targetUid = getClientResolvedUid(client);
 
                                     return (

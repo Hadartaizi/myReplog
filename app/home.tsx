@@ -201,6 +201,8 @@ type RunningManipulationType =
   | 'recovery'
   | 'hills';
 type ProgramViewType = 'strength' | 'running';
+type StrengthProgramDisplayMode = 'all' | 'ordered';
+type TimerModeType = 'choice' | 'rest' | 'workout';
 
 type RunningWeek = {
   id?: string;
@@ -245,6 +247,8 @@ type TrainingProgramDoc = {
   runningProgramStartedAt?: string;
   runningProgramCompletedAt?: string;
   runningProgramHistory?: RunningProgramSnapshot[];
+  strengthOrderedDayIndex?: number;
+  strengthOrderedCompletedKeys?: string[];
 };
 
 const getPaceTypeLabel = (value?: RunningPaceType) => {
@@ -429,10 +433,13 @@ export default function Home() {
   const [isExerciseNameFocused, setIsExerciseNameFocused] = useState(false);
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [showTimerModal, setShowTimerModal] = useState(false);
+  const [timerMode, setTimerMode] = useState<TimerModeType>('choice');
   const [timerMinutes, setTimerMinutes] = useState('1');
   const [timerSeconds, setTimerSeconds] = useState('30');
   const [timerRemaining, setTimerRemaining] = useState(0);
   const [isTimerRunning, setIsTimerRunning] = useState(false);
+  const [workoutTimerElapsed, setWorkoutTimerElapsed] = useState(0);
+  const [isWorkoutTimerRunning, setIsWorkoutTimerRunning] = useState(false);
   const [exerciseSucceeded, setExerciseSucceeded] = useState<boolean | null>(null);
   const [exerciseClientNotes, setExerciseClientNotes] = useState('');
   const [savingRunningWeekId, setSavingRunningWeekId] = useState<string | null>(null);
@@ -443,6 +450,10 @@ export default function Home() {
   const [isLoadingTrainingProgram, setIsLoadingTrainingProgram] = useState(true);
   const [showTrainingProgramModal, setShowTrainingProgramModal] = useState(false);
   const [selectedProgramView, setSelectedProgramView] = useState<ProgramViewType | null>(null);
+  const [strengthDisplayMode, setStrengthDisplayMode] = useState<StrengthProgramDisplayMode>('all');
+  const [orderedStrengthDayIndex, setOrderedStrengthDayIndex] = useState(0);
+  const [showStrengthDisplayControls, setShowStrengthDisplayControls] = useState(true);
+  const [expandedProgramExerciseKeys, setExpandedProgramExerciseKeys] = useState<Record<string, boolean>>({});
   const [exercise, setExercise] = useState<ExerciseType>({
     name: '',
     numSets: '',
@@ -520,6 +531,7 @@ export default function Home() {
       setSelectedProgramView(null);
     }
 
+    setExpandedProgramExerciseKeys({});
     setShowTrainingProgramModal(true);
   }, [hasRunningProgramContent, hasStrengthProgramContent]);
 
@@ -587,6 +599,9 @@ export default function Home() {
 
       const data = programSnap.data() as TrainingProgramDoc;
       setTrainingProgram(data || null);
+      setOrderedStrengthDayIndex(
+        Math.max(0, Number(data?.strengthOrderedDayIndex || 0) || 0)
+      );
     } catch (error) {
       console.error('שגיאה בטעינת תוכנית אימון:', error);
       setTrainingProgram(null);
@@ -1207,6 +1222,16 @@ export default function Home() {
     return () => clearInterval(intervalId);
   }, [isTimerRunning, timerRemaining]);
 
+  useEffect(() => {
+    if (!isWorkoutTimerRunning) return;
+
+    const intervalId = setInterval(() => {
+      setWorkoutTimerElapsed((prev) => prev + 1);
+    }, 1000);
+
+    return () => clearInterval(intervalId);
+  }, [isWorkoutTimerRunning]);
+
   const formatTimer = (totalSeconds: number) => {
     const safeSeconds = Math.max(0, totalSeconds);
     const minutes = Math.floor(safeSeconds / 60);
@@ -1214,8 +1239,22 @@ export default function Home() {
     return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
   };
 
+  const formatWorkoutTimer = (totalSeconds: number) => {
+    const safeSeconds = Math.max(0, totalSeconds);
+    const hours = Math.floor(safeSeconds / 3600);
+    const minutes = Math.floor((safeSeconds % 3600) / 60);
+    const seconds = safeSeconds % 60;
+
+    if (hours > 0) {
+      return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    }
+
+    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  };
+
   const openTimerFromMenu = () => {
     setShowSideMenu(false);
+    setTimerMode('choice');
     setShowTimerModal(true);
   };
 
@@ -1242,6 +1281,20 @@ export default function Home() {
   const resetTimer = () => {
     setIsTimerRunning(false);
     setTimerRemaining(0);
+  };
+
+  const startWorkoutTimer = () => {
+    setIsWorkoutTimerRunning(true);
+  };
+
+  const pauseOrResumeWorkoutTimer = () => {
+    if (workoutTimerElapsed <= 0) return;
+    setIsWorkoutTimerRunning((prev) => !prev);
+  };
+
+  const resetWorkoutTimer = () => {
+    setIsWorkoutTimerRunning(false);
+    setWorkoutTimerElapsed(0);
   };
 
 
@@ -1502,7 +1555,8 @@ export default function Home() {
   const saveProgramStrengthExercise = async (
     key: string,
     item?: TrainingProgramExercise | null,
-    sectionTitle?: string
+    sectionTitle?: string,
+    sectionIndexForOrderedMode?: number
   ) => {
     if (isSaving || savingProgramStrengthExerciseKey) return;
 
@@ -1706,8 +1760,48 @@ export default function Home() {
         },
       }));
 
+      setExpandedProgramExerciseKeys((prev) => ({
+        ...prev,
+        [key]: false,
+      }));
+
       await fetchUserData();
-      showToast(isSavedForCurrentDate ? 'הביצוע עודכן בהצלחה' : 'התרגיל מתוך התוכנית נשמר להיום בהצלחה');
+
+      const shouldTryAdvanceOrderedDay =
+        strengthDisplayMode === 'ordered' &&
+        isSplitStrengthProgram &&
+        typeof sectionIndexForOrderedMode === 'number' &&
+        sectionIndexForOrderedMode === safeOrderedStrengthDayIndex;
+
+      if (shouldTryAdvanceOrderedDay) {
+        const currentSection = trainingSections[sectionIndexForOrderedMode];
+        const currentSectionExercises = Array.isArray(currentSection?.exercises)
+          ? currentSection.exercises
+          : [];
+
+        const sectionExerciseKeys = currentSectionExercises
+          .map((sectionExercise, index) =>
+            getProgramStrengthExerciseKey(sectionIndexForOrderedMode, index, sectionExercise)
+          )
+          .filter(Boolean);
+
+        const allSectionExercisesSaved =
+          sectionExerciseKeys.length > 0 &&
+          sectionExerciseKeys.every((sectionExerciseKey) => {
+            if (sectionExerciseKey === key) return true;
+            const localEntry = programStrengthEntries[sectionExerciseKey];
+            return !!localEntry?.saved && !localEntry?.isEditing;
+          });
+
+        if (allSectionExercisesSaved) {
+          await advanceOrderedStrengthDay();
+          showToast('היום הסתיים. בפעם הבאה יוצג היום הבא בתוכנית.');
+        } else {
+          showToast(isSavedForCurrentDate ? 'הביצוע עודכן בהצלחה' : 'התרגיל מתוך התוכנית נשמר להיום בהצלחה');
+        }
+      } else {
+        showToast(isSavedForCurrentDate ? 'הביצוע עודכן בהצלחה' : 'התרגיל מתוך התוכנית נשמר להיום בהצלחה');
+      }
     } catch (error) {
       console.error('שגיאה בשמירת תרגיל מתוך תוכנית כוח:', error);
       showToast('לא ניתן לשמור את התרגיל מתוך התוכנית');
@@ -1774,6 +1868,13 @@ export default function Home() {
     }
   };
 
+  const toggleProgramExerciseOpen = (exerciseKey: string) => {
+    setExpandedProgramExerciseKeys((prev) => ({
+      ...prev,
+      [exerciseKey]: !prev[exerciseKey],
+    }));
+  };
+
   if (!fontsLoaded) {
     return <View style={{ flex: 1, backgroundColor: APP_BG }} />;
   }
@@ -1788,6 +1889,59 @@ export default function Home() {
 
   const trainingSections = Array.isArray(trainingProgram?.sections) ? trainingProgram.sections : [];
   const runningWeeks = buildNormalizedRunningWeeks(trainingProgram);
+
+  const strengthDayLabels = ['A', 'B', 'C', 'D'];
+  const isSplitStrengthProgram =
+    trainingSections.length >= 2 &&
+    trainingSections.length <= 4 &&
+    trainingSections.every((section) => {
+      const exercises = Array.isArray(section?.exercises) ? section.exercises : [];
+      return exercises.some((item) =>
+        String(item?.name || '').trim() ||
+        String(item?.sets || '').trim() ||
+        String(item?.reps || '').trim() ||
+        String(item?.notes || '').trim()
+      );
+    });
+
+  const safeOrderedStrengthDayIndex =
+    trainingSections.length > 0
+      ? Math.max(0, Math.min(orderedStrengthDayIndex, trainingSections.length - 1))
+      : 0;
+
+  const visibleStrengthSections =
+    selectedProgramView === 'strength' && isSplitStrengthProgram && strengthDisplayMode === 'ordered'
+      ? trainingSections.slice(safeOrderedStrengthDayIndex, safeOrderedStrengthDayIndex + 1)
+      : trainingSections;
+
+  const visibleStrengthStartIndex =
+    selectedProgramView === 'strength' && isSplitStrengthProgram && strengthDisplayMode === 'ordered'
+      ? safeOrderedStrengthDayIndex
+      : 0;
+
+  const advanceOrderedStrengthDay = async () => {
+    if (!isSplitStrengthProgram || trainingSections.length === 0) return;
+
+    const user = auth.currentUser;
+    const nextIndex = (safeOrderedStrengthDayIndex + 1) % trainingSections.length;
+
+    setOrderedStrengthDayIndex(nextIndex);
+
+    if (user) {
+      try {
+        await setDoc(
+          doc(db, 'clientTrainingPrograms', user.uid),
+          {
+            strengthOrderedDayIndex: nextIndex,
+            strengthOrderedUpdatedAt: new Date().toISOString(),
+          },
+          { merge: true }
+        );
+      } catch (error) {
+        console.error('שגיאה בעדכון יום כוח לפי סדר:', error);
+      }
+    }
+  };
 
   const isActiveRunningProgramCompleted =
     runningWeeks.length > 0 &&
@@ -1837,10 +1991,32 @@ export default function Home() {
                   <MenuIcon size={26} color="#0F172A" />
                 </Pressable>
 
-                {timerRemaining > 0 && (
-                  <Pressable style={styles.activeTimerChip} onPress={() => setShowTimerModal(true)}>
-                    <Text style={styles.activeTimerText}>מנוחה: {formatTimer(timerRemaining)}</Text>
-                  </Pressable>
+                {(timerRemaining > 0 || workoutTimerElapsed > 0) && (
+                  <View style={styles.activeTimersWrap}>
+                    {timerRemaining > 0 && (
+                      <Pressable
+                        style={styles.activeTimerChip}
+                        onPress={() => {
+                          setTimerMode('rest');
+                          setShowTimerModal(true);
+                        }}
+                      >
+                        <Text style={styles.activeTimerText}>מנוחה: {formatTimer(timerRemaining)}</Text>
+                      </Pressable>
+                    )}
+
+                    {workoutTimerElapsed > 0 && (
+                      <Pressable
+                        style={styles.activeTimerChip}
+                        onPress={() => {
+                          setTimerMode('workout');
+                          setShowTimerModal(true);
+                        }}
+                      >
+                        <Text style={styles.activeTimerText}>אימון: {formatWorkoutTimer(workoutTimerElapsed)}</Text>
+                      </Pressable>
+                    )}
+                  </View>
                 )}
 
                 <View style={styles.header}>
@@ -1916,7 +2092,7 @@ export default function Home() {
                         <Text style={[styles.dateValue, { fontSize: dynamic.textSize }]}>
                           {date.toLocaleDateString('he-IL')}
                         </Text>
-                        <Text style={styles.dateHint}>לחצי כדי לשנות תאריך</Text>
+                        <Text style={styles.dateHint}>לחץ כדי לשנות תאריך</Text>
                       </View>
 
                       <CalendarIcon size={22} color="#556070" />
@@ -1969,9 +2145,10 @@ export default function Home() {
                           styles.exerciseNameTextInput,
                           {
                             fontSize: dynamic.textSize,
+                            paddingRight: Math.max(16, dynamic.inputHeight * 0.28),
                             paddingLeft: exercise.name.trim()
-                              ? Math.max(44, dynamic.inputHeight * 0.95)
-                              : 10,
+                              ? Math.max(48, dynamic.inputHeight)
+                              : Math.max(12, dynamic.inputHeight * 0.22),
                           },
                         ]}
                         placeholder="שם תרגיל"
@@ -1984,6 +2161,8 @@ export default function Home() {
                         onBlur={() => setIsExerciseNameFocused(false)}
                         autoCapitalize="none"
                         autoCorrect={false}
+                        numberOfLines={1}
+                        multiline={false}
                       />
                     </View>
 
@@ -2243,7 +2422,7 @@ export default function Home() {
 
               <Pressable style={styles.timerMenuButton} onPress={openTimerFromMenu}>
                 <TimerIcon size={22} color="#FFFFFF" />
-                <Text style={styles.timerMenuButtonText}>טיימר מנוחה</Text>
+                <Text style={styles.timerMenuButtonText}>טיימרים</Text>
               </Pressable>
             </Pressable>
           </Pressable>
@@ -2261,60 +2440,121 @@ export default function Home() {
                 <Pressable style={styles.modalClose} onPress={() => setShowTimerModal(false)}>
                   <CloseIcon size={24} color="#222222" />
                 </Pressable>
-                <Text style={styles.timerModalTitle}>טיימר מנוחה</Text>
+                <Text style={styles.timerModalTitle}>
+                  {timerMode === 'rest'
+                    ? 'טיימר מנוחה'
+                    : timerMode === 'workout'
+                      ? 'זמן אימון'
+                      : 'בחירת טיימר'}
+                </Text>
               </View>
 
-              <Text style={styles.timerDisplay}>{formatTimer(timerRemaining)}</Text>
-              <Text style={styles.timerHint}>הגדיר זמן מנוחה ידני בין תרגיל לתרגיל</Text>
+              {timerMode === 'choice' ? (
+                <View style={styles.timerChoiceBox}>
+                  <Text style={styles.timerHint}>בחרי איזה טיימר להפעיל</Text>
 
-              <View style={styles.timerInputsRow}>
-                <View style={styles.timerInputBlock}>
-                  <Text style={styles.miniLabel}>דקות</Text>
-                  <TextInput
-                    style={[styles.inputBox, styles.textInput, styles.timerInput]}
-                    keyboardType={INTEGER_KEYBOARD}
-                    inputMode="numeric"
-                    value={timerMinutes}
-                    onChangeText={(text) => setTimerMinutes(text.replace(/[^0-9]/g, ''))}
-                    placeholder="0"
-                    placeholderTextColor="#8A94A6"
-                    textAlign="center"
-                  />
-                </View>
-
-                <View style={styles.timerInputBlock}>
-                  <Text style={styles.miniLabel}>שניות</Text>
-                  <TextInput
-                    style={[styles.inputBox, styles.textInput, styles.timerInput]}
-                    keyboardType={INTEGER_KEYBOARD}
-                    inputMode="numeric"
-                    value={timerSeconds}
-                    onChangeText={(text) => {
-                      const cleaned = text.replace(/[^0-9]/g, '');
-                      const limited = cleaned ? String(Math.min(59, parseInt(cleaned, 10))) : '';
-                      setTimerSeconds(limited);
-                    }}
-                    placeholder="0"
-                    placeholderTextColor="#8A94A6"
-                    textAlign="center"
-                  />
-                </View>
-              </View>
-
-              <Pressable style={styles.startTimerButton} onPress={startRestTimer}>
-                <Text style={styles.startTimerButtonText}>הפעל טיימר</Text>
-              </Pressable>
-
-              {timerRemaining > 0 && (
-                <View style={styles.timerActionsRow}>
-                  <Pressable style={styles.secondaryTimerButton} onPress={pauseOrResumeTimer}>
-                    <Text style={styles.secondaryTimerButtonText}>{isTimerRunning ? 'השהה' : 'המשך'}</Text>
+                  <Pressable style={styles.timerChoiceButton} onPress={() => setTimerMode('rest')}>
+                    <TimerIcon size={22} color="#FFFFFF" />
+                    <View style={styles.timerChoiceTextBlock}>
+                      <Text style={styles.timerChoiceButtonText}>טיימר מנוחה</Text>
+                      <Text style={styles.timerChoiceButtonSubText}>ספירה לאחור בין סטים או תרגילים</Text>
+                    </View>
                   </Pressable>
 
-                  <Pressable style={styles.secondaryTimerButton} onPress={resetTimer}>
-                    <Text style={styles.secondaryTimerButtonText}>איפוס</Text>
+                  <Pressable style={styles.timerChoiceSecondaryButton} onPress={() => setTimerMode('workout')}>
+                    <TimerIcon size={22} color="#0F172A" />
+                    <View style={styles.timerChoiceTextBlock}>
+                      <Text style={styles.timerChoiceSecondaryButtonText}>טיימר זמן אימון</Text>
+                      <Text style={styles.timerChoiceSecondaryButtonSubText}>ספירה קדימה של כל האימון</Text>
+                    </View>
                   </Pressable>
                 </View>
+              ) : timerMode === 'rest' ? (
+                <>
+                  <Text style={styles.timerDisplay}>{formatTimer(timerRemaining)}</Text>
+                  <Text style={styles.timerHint}>הגדירי זמן מנוחה ידני בין תרגיל לתרגיל</Text>
+
+                  <View style={styles.timerInputsRow}>
+                    <View style={styles.timerInputBlock}>
+                      <Text style={styles.miniLabel}>דקות</Text>
+                      <TextInput
+                        style={[styles.inputBox, styles.textInput, styles.timerInput]}
+                        keyboardType={INTEGER_KEYBOARD}
+                        inputMode="numeric"
+                        value={timerMinutes}
+                        onChangeText={(text) => setTimerMinutes(text.replace(/[^0-9]/g, ''))}
+                        placeholder="0"
+                        placeholderTextColor="#8A94A6"
+                        textAlign="center"
+                      />
+                    </View>
+
+                    <View style={styles.timerInputBlock}>
+                      <Text style={styles.miniLabel}>שניות</Text>
+                      <TextInput
+                        style={[styles.inputBox, styles.textInput, styles.timerInput]}
+                        keyboardType={INTEGER_KEYBOARD}
+                        inputMode="numeric"
+                        value={timerSeconds}
+                        onChangeText={(text) => {
+                          const cleaned = text.replace(/[^0-9]/g, '');
+                          const limited = cleaned ? String(Math.min(59, parseInt(cleaned, 10))) : '';
+                          setTimerSeconds(limited);
+                        }}
+                        placeholder="0"
+                        placeholderTextColor="#8A94A6"
+                        textAlign="center"
+                      />
+                    </View>
+                  </View>
+
+                  <Pressable style={styles.startTimerButton} onPress={startRestTimer}>
+                    <Text style={styles.startTimerButtonText}>הפעל טיימר מנוחה</Text>
+                  </Pressable>
+
+                  {timerRemaining > 0 && (
+                    <View style={styles.timerActionsRow}>
+                      <Pressable style={styles.secondaryTimerButton} onPress={pauseOrResumeTimer}>
+                        <Text style={styles.secondaryTimerButtonText}>{isTimerRunning ? 'השהה' : 'המשך'}</Text>
+                      </Pressable>
+
+                      <Pressable style={styles.secondaryTimerButton} onPress={resetTimer}>
+                        <Text style={styles.secondaryTimerButtonText}>איפוס</Text>
+                      </Pressable>
+                    </View>
+                  )}
+
+                  <Pressable style={styles.backToTimerChoiceButton} onPress={() => setTimerMode('choice')}>
+                    <Text style={styles.backToTimerChoiceButtonText}>חזרה לבחירת טיימר</Text>
+                  </Pressable>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.timerDisplay}>{formatWorkoutTimer(workoutTimerElapsed)}</Text>
+                  <Text style={styles.timerHint}>טיימר שסופר כמה זמן כל האימון לקח</Text>
+
+                  <Pressable style={styles.startTimerButton} onPress={startWorkoutTimer}>
+                    <Text style={styles.startTimerButtonText}>
+                      {workoutTimerElapsed > 0 ? 'המשך ספירת זמן אימון' : 'התחל אימון'}
+                    </Text>
+                  </Pressable>
+
+                  {workoutTimerElapsed > 0 && (
+                    <View style={styles.timerActionsRow}>
+                      <Pressable style={styles.secondaryTimerButton} onPress={pauseOrResumeWorkoutTimer}>
+                        <Text style={styles.secondaryTimerButtonText}>{isWorkoutTimerRunning ? 'השהה' : 'המשך'}</Text>
+                      </Pressable>
+
+                      <Pressable style={styles.secondaryTimerButton} onPress={resetWorkoutTimer}>
+                        <Text style={styles.secondaryTimerButtonText}>איפוס</Text>
+                      </Pressable>
+                    </View>
+                  )}
+
+                  <Pressable style={styles.backToTimerChoiceButton} onPress={() => setTimerMode('choice')}>
+                    <Text style={styles.backToTimerChoiceButtonText}>חזרה לבחירת טיימר</Text>
+                  </Pressable>
+                </>
               )}
             </View>
           </View>
@@ -2346,6 +2586,73 @@ export default function Home() {
               </View>
 
               <View style={styles.modalDivider} />
+
+              {selectedProgramView === 'strength' && isSplitStrengthProgram && (
+                showStrengthDisplayControls ? (
+                  <View style={styles.strengthDisplayModeTopBox}>
+                    <View style={styles.strengthDisplayModeHeaderRow}>
+                      <Pressable
+                        style={styles.strengthDisplayModeCloseButton}
+                        onPress={() => setShowStrengthDisplayControls(false)}
+                        hitSlop={8}
+                      >
+                        <Text style={styles.strengthDisplayModeCloseButtonText}>×</Text>
+                      </Pressable>
+
+                      <Text style={styles.strengthDisplayModeTitle}>איך להציג את תוכנית הכוח?</Text>
+                    </View>
+
+                    <View style={styles.strengthDisplayModeButtonsRow}>
+                      <Pressable
+                        style={[
+                          styles.strengthDisplayModeButton,
+                          strengthDisplayMode === 'all' && styles.strengthDisplayModeButtonActive,
+                        ]}
+                        onPress={() => setStrengthDisplayMode('all')}
+                      >
+                        <Text
+                          style={[
+                            styles.strengthDisplayModeButtonText,
+                            strengthDisplayMode === 'all' && styles.strengthDisplayModeButtonTextActive,
+                          ]}
+                        >
+                          הצג את כל התוכנית
+                        </Text>
+                      </Pressable>
+
+                      <Pressable
+                        style={[
+                          styles.strengthDisplayModeButton,
+                          strengthDisplayMode === 'ordered' && styles.strengthDisplayModeButtonActive,
+                        ]}
+                        onPress={() => setStrengthDisplayMode('ordered')}
+                      >
+                        <Text
+                          style={[
+                            styles.strengthDisplayModeButtonText,
+                            strengthDisplayMode === 'ordered' && styles.strengthDisplayModeButtonTextActive,
+                          ]}
+                        >
+                          הצג לפי ימים
+                        </Text>
+                      </Pressable>
+                    </View>
+
+                    {strengthDisplayMode === 'ordered' && (
+                      <Text style={styles.strengthDisplayModeHint}>
+                        כרגע מוצג יום {String(trainingSections[safeOrderedStrengthDayIndex]?.title || strengthDayLabels[safeOrderedStrengthDayIndex] || safeOrderedStrengthDayIndex + 1)}. בסיום היום לחץ על “סיימתי את היום” כדי לעבור ליום הבא.
+                      </Text>
+                    )}
+                  </View>
+                ) : (
+                  <Pressable
+                    style={styles.openStrengthDisplayControlsButton}
+                    onPress={() => setShowStrengthDisplayControls(true)}
+                  >
+                    <Text style={styles.openStrengthDisplayControlsButtonText}>תצוגת אימון</Text>
+                  </Pressable>
+                )
+              )}
 
               {!selectedProgramView && hasStrengthProgramContent && hasRunningProgramContent ? (
                 <View style={styles.programChoiceBox}>
@@ -2432,8 +2739,10 @@ export default function Home() {
                     ) : (
                       <Text style={styles.emptyProgramText}>לא נמצאה תוכנית ריצה</Text>
                     )
-                  ) : trainingSections.length > 0 ? (
-                    trainingSections.map((section, sectionIndex) => {
+                  ) : visibleStrengthSections.length > 0 ? (
+                    <>
+                      {visibleStrengthSections.map((section, visibleSectionIndex) => {
+                      const sectionIndex = visibleStrengthStartIndex + visibleSectionIndex;
                       const sectionTitle = String(section?.title || '').trim();
                       const exercises = Array.isArray(section?.exercises) ? section.exercises : [];
 
@@ -2459,38 +2768,57 @@ export default function Home() {
                             const exerciseKey = getProgramStrengthExerciseKey(sectionIndex, exerciseIndex, item);
                             const inlineEntry = getProgramStrengthEntry(exerciseKey, item);
                             const isSavingThisExercise = savingProgramStrengthExerciseKey === exerciseKey;
+                            const isProgramExerciseOpen = !!expandedProgramExerciseKeys[exerciseKey];
+                            const isProgramExerciseDone = !!inlineEntry.saved && !inlineEntry.isEditing;
 
                             return (
                               <View
                                 key={exerciseKey}
-                                style={styles.programExerciseCard}
+                                style={[styles.programExerciseCard, isProgramExerciseDone && styles.programExerciseCardDone]}
                               >
-                                <View style={styles.programExerciseHeader}>
-                                  <Text style={styles.programExerciseName}>
-                                    {exerciseName || 'ללא שם תרגיל'}
-                                  </Text>
+                                <Pressable
+                                  style={styles.programExerciseHeader}
+                                  onPress={() => toggleProgramExerciseOpen(exerciseKey)}
+                                  hitSlop={8}
+                                >
+                                  <View style={styles.programExerciseTitleBlock}>
+                                    <Text style={styles.programExerciseChevron}>{isProgramExerciseOpen ? '⌃' : '⌄'}</Text>
+                                    <Text style={styles.programExerciseName}>
+                                      {exerciseName || 'ללא שם תרגיל'}
+                                    </Text>
+                                  </View>
 
-                                  {!!exerciseName && (
-                                    <Pressable
-                                      accessibilityLabel={`צפייה בביצוע האחרון של ${exerciseName}`}
-                                      style={[
-                                        styles.programLastExerciseButton,
-                                        isLoadingLastExercise && loadingLastExerciseName === exerciseName && styles.disabledButton,
-                                      ]}
-                                      onPress={() => openLastExerciseModal(exerciseName)}
-                                      disabled={isLoadingLastExercise}
-                                      hitSlop={8}
-                                    >
-                                      {isLoadingLastExercise && loadingLastExerciseName === exerciseName ? (
-                                        <ActivityIndicator color="#FFFFFF" size="small" />
-                                      ) : (
-                                        <DumbbellIcon size={20} color="#FFFFFF" />
-                                      )}
-                                    </Pressable>
-                                  )}
-                                </View>
+                                  <View style={styles.programExerciseHeaderActions}>
+                                    {isProgramExerciseDone && (
+                                      <View style={styles.programExerciseDoneBadge}>
+                                        <Text style={styles.programExerciseDoneBadgeText}>בוצע</Text>
+                                      </View>
+                                    )}
 
-                                {(sets || reps) && (
+                                    {!!exerciseName && (
+                                      <Pressable
+                                        accessibilityLabel={`צפייה בביצוע האחרון של ${exerciseName}`}
+                                        style={[
+                                          styles.programLastExerciseButton,
+                                          isLoadingLastExercise && loadingLastExerciseName === exerciseName && styles.disabledButton,
+                                        ]}
+                                        onPress={() => openLastExerciseModal(exerciseName)}
+                                        disabled={isLoadingLastExercise}
+                                        hitSlop={8}
+                                      >
+                                        {isLoadingLastExercise && loadingLastExerciseName === exerciseName ? (
+                                          <ActivityIndicator color="#FFFFFF" size="small" />
+                                        ) : (
+                                          <DumbbellIcon size={20} color="#FFFFFF" />
+                                        )}
+                                      </Pressable>
+                                    )}
+                                  </View>
+                                </Pressable>
+
+                                {isProgramExerciseOpen && (
+                                  <>
+                                    {(sets || reps) && (
                                   <View style={styles.programMetaRow}>
                                     {!!sets && (
                                       <View style={styles.programMetaChip}>
@@ -2510,9 +2838,9 @@ export default function Home() {
                                   <Text style={styles.programExerciseNotes}>{notes}</Text>
                                 )}
 
-                                {!!exerciseName && (() => {
-                                  const isEntryLocked = inlineEntry.saved && !inlineEntry.isEditing;
-                                  return (
+                                    {!!exerciseName && (() => {
+                                      const isEntryLocked = inlineEntry.saved && !inlineEntry.isEditing;
+                                      return (
                                     <View style={styles.programInlineEntryBox}>
                                       <View style={styles.programInlineEntryHeaderRow}>
                                         <Text style={styles.programInlineEntryTitle}>הזנת ביצוע לתרגיל הזה</Text>
@@ -2648,7 +2976,7 @@ export default function Home() {
                                       ) : (
                                         <Pressable
                                           style={[styles.saveProgramExerciseButton, isSavingThisExercise && styles.disabledButton]}
-                                          onPress={() => saveProgramStrengthExercise(exerciseKey, item, sectionTitle)}
+                                          onPress={() => saveProgramStrengthExercise(exerciseKey, item, sectionTitle, sectionIndex)}
                                           disabled={isSavingThisExercise}
                                         >
                                           {isSavingThisExercise ? (
@@ -2660,13 +2988,22 @@ export default function Home() {
                                       )}
                                     </View>
                                   );
-                                })()}
+                                    })()}
+                                  </>
+                                )}
                               </View>
                             );
                           })}
                         </View>
                       );
-                    })
+                    })}
+
+                      {isSplitStrengthProgram && strengthDisplayMode === 'ordered' && (
+                        <Pressable style={styles.advanceStrengthDayButton} onPress={advanceOrderedStrengthDay}>
+                          <Text style={styles.advanceStrengthDayButtonText}>סיימתי את היום - עבור ליום הבא</Text>
+                        </Pressable>
+                      )}
+                    </>
                   ) : (
                     <Text style={styles.emptyProgramText}>לא נמצאה תוכנית כוח</Text>
                   )}
@@ -2865,9 +3202,12 @@ const styles = StyleSheet.create({
   exerciseNameInputWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
+    paddingHorizontal: 0,
+    paddingRight: 2,
+    paddingLeft: 2,
     overflow: 'hidden',
     position: 'relative',
+    minWidth: 0,
   },
 
   exerciseNameInputWrapFocused: {
@@ -2881,19 +3221,26 @@ const styles = StyleSheet.create({
 
   exerciseNameTextInput: {
     flex: 1,
+    minWidth: 0,
+    width: '100%',
     minHeight: '100%',
-    paddingHorizontal: 8,
     paddingVertical: 0,
     color: '#111827',
     backgroundColor: 'transparent',
     borderWidth: 0,
     textAlign: 'right',
+    textAlignVertical: 'center',
     writingDirection: 'rtl',
-    includeFontPadding: false,
+    includeFontPadding: true,
+    overflow: 'hidden',
     ...(Platform.OS === 'web'
       ? ({
           outlineWidth: 0,
           outlineStyle: 'none',
+          direction: 'rtl',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
         } as any)
       : null),
   },
@@ -2982,6 +3329,7 @@ const styles = StyleSheet.create({
 
   flexInput: {
     flex: 1,
+    minWidth: 0,
   },
 
   fullWidthOnSmall: {
@@ -3022,6 +3370,7 @@ const styles = StyleSheet.create({
     color: '#0F172A',
     textAlign: 'right',
     writingDirection: 'rtl',
+    flexShrink: 1,
   },
 
   errorText: {
@@ -3302,6 +3651,12 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
 
+  programExerciseCardDone: {
+    borderColor: '#22C55E',
+    borderWidth: 2,
+    backgroundColor: '#F0FDF4',
+  },
+
   programExerciseHeader: {
     width: '100%',
     flexDirection: 'row-reverse',
@@ -3309,6 +3664,44 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 10,
     marginBottom: 8,
+  },
+
+  programExerciseTitleBlock: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 8,
+  },
+
+  programExerciseChevron: {
+    color: '#0F172A',
+    fontSize: 18,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+
+  programExerciseHeaderActions: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 8,
+  },
+
+  programExerciseDoneBadge: {
+    borderRadius: 999,
+    backgroundColor: '#DCFCE7',
+    borderWidth: 1,
+    borderColor: '#22C55E',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+  },
+
+  programExerciseDoneBadgeText: {
+    color: '#166534',
+    fontSize: 11,
+    fontWeight: '900',
+    textAlign: 'center',
+    writingDirection: 'rtl',
   },
 
   programExerciseName: {
@@ -3576,10 +3969,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  activeTimerChip: {
-    alignSelf: 'center',
+  activeTimersWrap: {
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
     marginTop: 4,
     marginBottom: 12,
+  },
+
+  activeTimerChip: {
+    alignSelf: 'center',
     paddingVertical: 8,
     paddingHorizontal: 14,
     borderRadius: 999,
@@ -3702,6 +4102,99 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '800',
+    textAlign: 'center',
+    writingDirection: 'rtl',
+  },
+
+  timerChoiceBox: {
+    width: '100%',
+    gap: 12,
+    marginTop: 14,
+  },
+
+  timerChoiceButton: {
+    width: '100%',
+    minHeight: 62,
+    borderRadius: 18,
+    backgroundColor: '#0F172A',
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+
+  timerChoiceSecondaryButton: {
+    width: '100%',
+    minHeight: 62,
+    borderRadius: 18,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+
+  timerChoiceTextBlock: {
+    flex: 1,
+    alignItems: 'flex-end',
+  },
+
+  timerChoiceButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '900',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+
+  timerChoiceButtonSubText: {
+    marginTop: 2,
+    color: '#CBD5E1',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+
+  timerChoiceSecondaryButtonText: {
+    color: '#0F172A',
+    fontSize: 15,
+    fontWeight: '900',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+
+  timerChoiceSecondaryButtonSubText: {
+    marginTop: 2,
+    color: '#64748B',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+
+  backToTimerChoiceButton: {
+    width: '100%',
+    minHeight: 42,
+    borderRadius: 14,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+  },
+
+  backToTimerChoiceButtonText: {
+    color: '#334155',
+    fontSize: 13,
+    fontWeight: '900',
     textAlign: 'center',
     writingDirection: 'rtl',
   },
@@ -3835,6 +4328,146 @@ const styles = StyleSheet.create({
   programNotesToggleButtonHasText: {
     backgroundColor: '#EFF6FF',
     borderColor: '#93C5FD',
+  },
+
+  strengthDisplayModeTopBox: {
+    width: '100%',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 18,
+    padding: 12,
+    marginBottom: 12,
+    gap: 10,
+  },
+
+  strengthDisplayModeHeaderRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+
+  strengthDisplayModeCloseButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  strengthDisplayModeCloseButtonText: {
+    color: '#0F172A',
+    fontSize: 18,
+    fontWeight: '900',
+    lineHeight: 20,
+    textAlign: 'center',
+  },
+
+  openStrengthDisplayControlsButton: {
+    width: '100%',
+    minHeight: 44,
+    borderRadius: 14,
+    backgroundColor: '#E0F2FE',
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+    paddingHorizontal: 14,
+  },
+
+  openStrengthDisplayControlsButtonText: {
+    color: '#0C4A6E',
+    fontSize: 14,
+    fontWeight: '900',
+    textAlign: 'center',
+    writingDirection: 'rtl',
+  },
+
+  strengthDisplayModeBox: {
+    width: '100%',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 18,
+    padding: 12,
+    marginBottom: 12,
+    gap: 10,
+  },
+
+  strengthDisplayModeTitle: {
+    color: '#0F172A',
+    fontSize: 15,
+    fontWeight: '900',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+
+  strengthDisplayModeButtonsRow: {
+    width: '100%',
+    flexDirection: 'row-reverse',
+    gap: 8,
+  },
+
+  strengthDisplayModeButton: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+  },
+
+  strengthDisplayModeButtonActive: {
+    backgroundColor: '#0F172A',
+    borderColor: '#0F172A',
+  },
+
+  strengthDisplayModeButtonText: {
+    color: '#334155',
+    fontSize: 13,
+    fontWeight: '900',
+    textAlign: 'center',
+    writingDirection: 'rtl',
+  },
+
+  strengthDisplayModeButtonTextActive: {
+    color: '#FFFFFF',
+  },
+
+  strengthDisplayModeHint: {
+    color: '#64748B',
+    fontSize: 13,
+    lineHeight: 20,
+    fontWeight: '700',
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+
+  advanceStrengthDayButton: {
+    width: '100%',
+    minHeight: 48,
+    borderRadius: 16,
+    backgroundColor: '#2563EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+    marginBottom: 8,
+    paddingHorizontal: 14,
+  },
+
+  advanceStrengthDayButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '900',
+    textAlign: 'center',
+    writingDirection: 'rtl',
   },
 
   clientWorkoutFeedbackBox: { width: '100%', backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 18, padding: 12, marginBottom: 14, gap: 10 },
