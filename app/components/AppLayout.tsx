@@ -15,7 +15,22 @@ import { router } from 'expo-router';
 import { useFonts } from 'expo-font';
 import useAccessGuard from './admin/useAccessGuard';
 
-const APP_BG = '#F4F7FB';
+const COLORS = {
+  background: '#0B0B0D',
+  topBar: '#101014',
+  bottomBar: '#101014',
+  card: '#17171C',
+  cardSecondary: '#222229',
+  primary: '#FF7A00',
+  primaryDark: '#E56700',
+  primaryLight: '#FF9A3D',
+  text: '#FFFFFF',
+  textSecondary: '#B3B3B3',
+  border: '#2B2B31',
+  shadow: '#FF7A00',
+};
+
+const APP_BG = COLORS.background;
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { width } = useWindowDimensions();
@@ -60,12 +75,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     return (
       <>
         <StatusBar
-          backgroundColor="#AEC6CF"
-          barStyle="dark-content"
+          backgroundColor={COLORS.topBar}
+          barStyle="light-content"
           translucent={false}
         />
         <View style={styles.loadingScreen}>
-          <ActivityIndicator size="large" color="#0F172A" />
+          <ActivityIndicator size="large" color={COLORS.primary} />
           <Text style={styles.loadingText}>טוען נתונים...</Text>
         </View>
       </>
@@ -75,8 +90,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
       <StatusBar
-        backgroundColor="#AEC6CF"
-        barStyle="dark-content"
+        backgroundColor={COLORS.topBar}
+        barStyle="light-content"
         translucent={false}
       />
 
@@ -103,16 +118,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 REPLOG
               </Text>
 
-              <Image
-                style={[
-                  styles.logo,
-                  {
-                    width: dynamic.logoWidth,
-                    height: dynamic.logoHeight,
-                  },
-                ]}
-                source={require('../../assets/images/myAppImg/logoBarbells.png')}
-              />
+              {/* <View style={styles.logoGlowBox}>
+                <Image
+                  style={[
+                    styles.logo,
+                    {
+                      width: dynamic.logoWidth,
+                      height: dynamic.logoHeight,
+                    },
+                  ]}
+                  source={require('../../assets/images/myAppImg/logoBarbells.png')}
+                />
+              </View> */}
             </View>
           </View>
         </SafeAreaView>
@@ -136,17 +153,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               style={styles.navButton}
               activeOpacity={0.8}
             >
-              <Image
-                source={require('../../assets/images/myAppImg/home.png')}
-                style={[
-                  styles.icon,
-                  {
-                    width: dynamic.iconSize,
-                    height: dynamic.iconSize,
-                    transform: [{ scale: dynamic.iconScale }],
-                  },
-                ]}
-              />
+              <View style={styles.navIconCircle}>
+                <Image
+                  source={require('../../assets/images/myAppImg/home.png')}
+                  style={[
+                    styles.icon,
+                    {
+                      width: dynamic.iconSize,
+                      height: dynamic.iconSize,
+                      transform: [{ scale: dynamic.iconScale }],
+                    },
+                  ]}
+                />
+              </View>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -154,17 +173,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               style={styles.navButton}
               activeOpacity={0.8}
             >
-              <Image
-                source={require('../../assets/images/myAppImg/graph.png')}
-                style={[
-                  styles.icon,
-                  {
-                    width: dynamic.iconSize,
-                    height: dynamic.iconSize,
-                    transform: [{ scale: dynamic.iconScale }],
-                  },
-                ]}
-              />
+              <View style={styles.navIconCircle}>
+                <Image
+                  source={require('../../assets/images/myAppImg/graph.png')}
+                  style={[
+                    styles.icon,
+                    {
+                      width: dynamic.iconSize,
+                      height: dynamic.iconSize,
+                      transform: [{ scale: dynamic.iconScale }],
+                    },
+                  ]}
+                />
+              </View>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -172,17 +193,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               style={styles.navButton}
               activeOpacity={0.8}
             >
-              <Image
-                source={require('../../assets/images/myAppImg/steps.png')}
-                style={[
-                  styles.icon,
-                  {
-                    width: dynamic.iconSize,
-                    height: dynamic.iconSize,
-                    transform: [{ scale: dynamic.iconScale }],
-                  },
-                ]}
-              />
+              <View style={styles.navIconCircle}>
+                <Image
+                  source={require('../../assets/images/myAppImg/steps.png')}
+                  style={[
+                    styles.icon,
+                    {
+                      width: dynamic.iconSize,
+                      height: dynamic.iconSize,
+                      transform: [{ scale: dynamic.iconScale }],
+                    },
+                  ]}
+                />
+              </View>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -190,17 +213,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               style={styles.navButton}
               activeOpacity={0.8}
             >
-              <Image
-                source={require('../../assets/images/myAppImg/menu.png')}
-                style={[
-                  styles.icon,
-                  {
-                    width: dynamic.iconSize,
-                    height: dynamic.iconSize,
-                    transform: [{ scale: dynamic.iconScale }],
-                  },
-                ]}
-              />
+              <View style={styles.navIconCircle}>
+                <Image
+                  source={require('../../assets/images/myAppImg/menu.png')}
+                  style={[
+                    styles.icon,
+                    {
+                      width: dynamic.iconSize,
+                      height: dynamic.iconSize,
+                      transform: [{ scale: dynamic.iconScale }],
+                    },
+                  ]}
+                />
+              </View>
             </TouchableOpacity>
           </View>
         </SafeAreaView>
@@ -220,7 +245,7 @@ const styles = StyleSheet.create({
 
   loadingText: {
     marginTop: 12,
-    color: '#64748B',
+    color: COLORS.textSecondary,
     fontSize: 15,
     textAlign: 'center',
   },
@@ -231,8 +256,15 @@ const styles = StyleSheet.create({
   },
 
   topBar: {
-    backgroundColor: '#AEC6CF',
+    backgroundColor: COLORS.topBar,
     justifyContent: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    shadowColor: COLORS.shadow,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.22,
+    shadowRadius: 14,
+    elevation: 8,
   },
 
   topBarInner: {
@@ -248,17 +280,30 @@ const styles = StyleSheet.create({
   },
 
   title: {
-    color: '#333',
+    color: COLORS.primary,
     fontFamily: 'Bilbo',
     includeFontPadding: false,
     textAlign: 'center',
     lineHeight: 30,
     marginBottom: 0,
+    textShadowColor: 'rgba(255, 122, 0, 0.35)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 8,
+  },
+
+  logoGlowBox: {
+    marginTop: -2,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255, 122, 0, 0.06)',
+    shadowColor: COLORS.shadow,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.22,
+    shadowRadius: 12,
+    elevation: 4,
   },
 
   logo: {
     resizeMode: 'contain',
-    marginTop: -2,
   },
 
   middleArea: {
@@ -269,10 +314,18 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     width: '100%',
+    backgroundColor: APP_BG,
   },
 
   bottomBar: {
-    backgroundColor: '#AEC6CF',
+    backgroundColor: COLORS.bottomBar,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    shadowColor: COLORS.shadow,
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.2,
+    // shadowRadius: 12,
+    elevation: 8,
   },
 
   bottomBarContent: {
@@ -289,7 +342,19 @@ const styles = StyleSheet.create({
     paddingVertical: Platform.OS === 'android' ? 8 : 7,
   },
 
+  navIconCircle: {
+    minWidth: 52,
+    minHeight: 52,
+    borderRadius: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.cardSecondary,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+
   icon: {
     resizeMode: 'contain',
+    tintColor: COLORS.primary,
   },
 });

@@ -1119,14 +1119,14 @@ export default function ClientProgressTracker({ clients: initialClients = [] }: 
   }, [feedbackDrafts, getClientUidCandidates, programData, programDocId, runningWeeks, selectedClient]);
 
   if (loadingClients) {
-    return <View style={styles.loadingBox}><ActivityIndicator size="large" color="#0F172A" /><Text style={styles.loadingText}>טוען רשימת לקוחות...</Text></View>;
+    return <View style={styles.loadingBox}><ActivityIndicator size="large" color="#FFFFFF" /><Text style={styles.loadingText}>טוען רשימת לקוחות...</Text></View>;
   }
 
   return (
     <View style={styles.container}>
       <View style={styles.topHeader}>
         <View style={styles.headerTitleRow}>
-          <UsersIcon size={18} color="#0F172A" />
+          <UsersIcon size={18} color="#FFFFFF" />
           <Text style={[styles.headerTitle, { fontSize: dynamic.titleSize }]}>מעקב אימון לקוח</Text>
         </View>
         <Text style={[styles.headerSubtitle, { fontSize: dynamic.subTextSize }]}>המעקב מחולק לאימוני כוח ואימוני ריצה. כאן מוצגים ביצועי הלקוח, תגובתו והמשוב של המאמן.</Text>
@@ -1134,8 +1134,8 @@ export default function ClientProgressTracker({ clients: initialClients = [] }: 
 
       <View style={styles.searchCard}>
         <View style={styles.searchInputWrap}>
-          <SearchIcon size={18} color="#64748B" />
-          <TextInput value={searchText} onChangeText={setSearchText} placeholder="חיפוש לפי שם לקוח" placeholderTextColor="#94A3B8" style={styles.searchInput} textAlign="right" />
+          <SearchIcon size={18} color="#FF7A00" />
+          <TextInput value={searchText} onChangeText={setSearchText} placeholder="חיפוש לפי שם לקוח" placeholderTextColor="#8F8F96" style={styles.searchInput} textAlign="right" />
         </View>
       </View>
 
@@ -1163,7 +1163,7 @@ export default function ClientProgressTracker({ clients: initialClients = [] }: 
             </View>
             <View style={styles.trackerSwitchBox}>
               <Text style={styles.trackerSwitchText}>{savingTrackerFlag ? "שומר..." : selectedClient.showInTracker ? "במעקב" : "לא במעקב"}</Text>
-              <Switch value={!!selectedClient.showInTracker} onValueChange={toggleClientTrackerFlag} disabled={savingTrackerFlag} trackColor={{ false: "#CBD5E1", true: "#0F172A" }} thumbColor="#FFFFFF" />
+              <Switch value={!!selectedClient.showInTracker} onValueChange={toggleClientTrackerFlag} disabled={savingTrackerFlag} trackColor={{ false: "#2B2B31", true: "#FF7A00" }} thumbColor="#FFFFFF" />
             </View>
           </View>
           <Text style={styles.selectedClientStatusText}>{selectedClient.showInTracker ? "הלקוח מסומן למעקב וכל האימונים שלו מוצגים." : "הלקוח לא מסומן למעקב כרגע."}</Text>
@@ -1173,7 +1173,7 @@ export default function ClientProgressTracker({ clients: initialClients = [] }: 
       {selectedClient && !selectedClient.showInTracker ? (
         <View style={styles.emptyBox}><Text style={styles.emptyText}>הלקוח הזה לא מסומן למעקב. הפעילי מעקב כדי לראות אימוני כוח וריצה.</Text></View>
       ) : loadingData ? (
-        <View style={styles.loadingBox}><ActivityIndicator size="large" color="#0F172A" /><Text style={styles.loadingText}>טוען נתוני לקוח...</Text></View>
+        <View style={styles.loadingBox}><ActivityIndicator size="large" color="#FFFFFF" /><Text style={styles.loadingText}>טוען נתוני לקוח...</Text></View>
       ) : selectedClient ? (
         <>
           <View style={styles.summaryGrid}>
@@ -1200,7 +1200,7 @@ export default function ClientProgressTracker({ clients: initialClients = [] }: 
 
           {selectedTrainingView === "strength" && (
             <View style={styles.section}>
-              <View style={styles.sectionHeader}><WorkoutIcon size={18} color="#0F172A" /><Text style={styles.sectionTitle}>אימוני כוח - ביצוע, תגובת לקוח ומשוב מאמן</Text></View>
+              <View style={styles.sectionHeader}><WorkoutIcon size={18} color="#FFFFFF" /><Text style={styles.sectionTitle}>אימוני כוח - ביצוע, תגובת לקוח ומשוב מאמן</Text></View>
               {dayGroups.length === 0 ? <View style={styles.emptyBox}><Text style={styles.emptyText}>אין אימוני כוח להצגה</Text></View> : dayGroups.map((group) => {
                 const isOpen = !!openDayIds[group.dayKey];
                 const groupedExercises = groupExercisesInsideDay(group.exercises, group.dayKey);
@@ -1263,7 +1263,7 @@ export default function ClientProgressTracker({ clients: initialClients = [] }: 
                         })}
                         <View style={styles.feedbackBox}>
                           <Text style={styles.feedbackTitle}>משוב מאמן ללקוח</Text>
-                          <TextInput value={getDraftValue(feedbackKey, existingFeedback)} onChangeText={(value) => updateFeedbackDraft(feedbackKey, value)} placeholder="כתבי משוב שיוצג ללקוח ליד האימון" placeholderTextColor="#94A3B8" style={styles.feedbackInput} multiline textAlign="right" />
+                          <TextInput value={getDraftValue(feedbackKey, existingFeedback)} onChangeText={(value) => updateFeedbackDraft(feedbackKey, value)} placeholder="כתבי משוב שיוצג ללקוח ליד האימון" placeholderTextColor="#8F8F96" style={styles.feedbackInput} multiline textAlign="right" />
                           {!!firstWorkout?.coachFeedbackUpdatedAt && <Text style={styles.feedbackUpdatedText}>עודכן: {formatDateTimeIL(firstWorkout.coachFeedbackUpdatedAt)}</Text>}
                           <Pressable onPress={() => saveStrengthFeedback(group)} disabled={savingFeedbackKey === feedbackKey} style={[styles.saveFeedbackButton, savingFeedbackKey === feedbackKey && styles.disabledButton]}>{savingFeedbackKey === feedbackKey ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.saveFeedbackButtonText}>שמור משוב</Text>}</Pressable>
                         </View>
@@ -1277,7 +1277,7 @@ export default function ClientProgressTracker({ clients: initialClients = [] }: 
 
           {selectedTrainingView === "running" && (
             <View style={styles.section}>
-              <View style={styles.sectionHeader}><WorkoutIcon size={18} color="#0F172A" /><Text style={styles.sectionTitle}>אימוני ריצה - ביצוע, תגובת לקוח ומשוב מאמן</Text></View>
+              <View style={styles.sectionHeader}><WorkoutIcon size={18} color="#FFFFFF" /><Text style={styles.sectionTitle}>אימוני ריצה - ביצוע, תגובת לקוח ומשוב מאמן</Text></View>
               {runningWeeks.length === 0 ? <View style={styles.emptyBox}><Text style={styles.emptyText}>אין אימוני ריצה להצגה</Text></View> : runningWeeks.map((week, index) => {
                 const weekId = week.id || `running-week-${index}`;
                 const feedbackKey = `running-${weekId}`;
@@ -1313,7 +1313,7 @@ export default function ClientProgressTracker({ clients: initialClients = [] }: 
 
                         <View style={styles.feedbackBox}>
                           <Text style={styles.feedbackTitle}>משוב מאמן ללקוח</Text>
-                          <TextInput value={getDraftValue(feedbackKey, week.coachFeedback)} onChangeText={(value) => updateFeedbackDraft(feedbackKey, value)} placeholder="כתבי משוב שיוצג ללקוח ליד שבוע הריצה" placeholderTextColor="#94A3B8" style={styles.feedbackInput} multiline textAlign="right" />
+                          <TextInput value={getDraftValue(feedbackKey, week.coachFeedback)} onChangeText={(value) => updateFeedbackDraft(feedbackKey, value)} placeholder="כתבי משוב שיוצג ללקוח ליד שבוע הריצה" placeholderTextColor="#8F8F96" style={styles.feedbackInput} multiline textAlign="right" />
                           {!!week.coachFeedbackUpdatedAt && <Text style={styles.feedbackUpdatedText}>עודכן: {formatDateTimeIL(week.coachFeedbackUpdatedAt)}</Text>}
                           <Pressable onPress={() => saveRunningFeedback(weekId)} disabled={savingFeedbackKey === feedbackKey} style={[styles.saveFeedbackButton, savingFeedbackKey === feedbackKey && styles.disabledButton]}>{savingFeedbackKey === feedbackKey ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.saveFeedbackButtonText}>שמור משוב</Text>}</Pressable>
                         </View>
@@ -1334,79 +1334,79 @@ export default function ClientProgressTracker({ clients: initialClients = [] }: 
 
 const styles = StyleSheet.create({
   container: { width: "100%", gap: 14 },
-  topHeader: { backgroundColor: "#FFFFFF", borderRadius: 20, borderWidth: 1, borderColor: "#E2E8F0", padding: 16, gap: 6 },
+  topHeader: { backgroundColor: "#17171C", borderRadius: 20, borderWidth: 1, borderColor: "#2B2B31", padding: 16, gap: 6 },
   headerTitleRow: { flexDirection: "row-reverse", alignItems: "center", gap: 8, justifyContent: "flex-start" },
-  headerTitle: { color: "#0F172A", fontWeight: "900", textAlign: "right" },
-  headerSubtitle: { color: "#64748B", lineHeight: 20, textAlign: "right" },
-  searchCard: { backgroundColor: "#FFFFFF", borderRadius: 18, borderWidth: 1, borderColor: "#E2E8F0", padding: 12 },
-  searchInputWrap: { flexDirection: "row-reverse", alignItems: "center", gap: 8, backgroundColor: "#F8FAFC", borderRadius: 14, borderWidth: 1, borderColor: "#CBD5E1", paddingHorizontal: 12 },
-  searchInput: { flex: 1, minHeight: 48, color: "#0F172A", fontSize: 14, writingDirection: "rtl" },
+  headerTitle: { color: "#FFFFFF", fontWeight: "900", textAlign: "right" },
+  headerSubtitle: { color: "#B3B3B3", lineHeight: 20, textAlign: "right" },
+  searchCard: { backgroundColor: "#17171C", borderRadius: 18, borderWidth: 1, borderColor: "#2B2B31", padding: 12 },
+  searchInputWrap: { flexDirection: "row-reverse", alignItems: "center", gap: 8, backgroundColor: "#222229", borderRadius: 14, borderWidth: 1, borderColor: "#2B2B31", paddingHorizontal: 12 },
+  searchInput: { flex: 1, minHeight: 48, color: "#FFFFFF", fontSize: 14, writingDirection: "rtl" },
   clientsScrollContent: { gap: 10, paddingVertical: 2 },
-  clientPill: { minWidth: 130, maxWidth: 210, borderRadius: 999, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#CBD5E1", alignItems: "center", justifyContent: "center", paddingHorizontal: 14 },
-  clientPillActive: { backgroundColor: "#0F172A", borderColor: "#0F172A" },
-  clientPillText: { color: "#0F172A", fontSize: 14, fontWeight: "800", textAlign: "center" },
+  clientPill: { minWidth: 130, maxWidth: 210, borderRadius: 999, backgroundColor: "#17171C", borderWidth: 1, borderColor: "#2B2B31", alignItems: "center", justifyContent: "center", paddingHorizontal: 14 },
+  clientPillActive: { backgroundColor: "#FF7A00", borderColor: "#FF7A00" },
+  clientPillText: { color: "#FFFFFF", fontSize: 14, fontWeight: "800", textAlign: "center" },
   clientPillTextActive: { color: "#FFFFFF" },
-  selectedClientCard: { backgroundColor: "#FFFFFF", borderRadius: 20, borderWidth: 1, borderColor: "#E2E8F0", padding: 14, gap: 10 },
+  selectedClientCard: { backgroundColor: "#17171C", borderRadius: 20, borderWidth: 1, borderColor: "#2B2B31", padding: 14, gap: 10 },
   selectedClientHeader: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", gap: 12 },
   selectedClientInfo: { flex: 1, alignItems: "flex-end" },
-  selectedClientName: { color: "#0F172A", fontSize: 16, fontWeight: "900", textAlign: "right" },
-  selectedClientEmail: { color: "#64748B", fontSize: 13, textAlign: "right", marginTop: 3 },
+  selectedClientName: { color: "#FFFFFF", fontSize: 16, fontWeight: "900", textAlign: "right" },
+  selectedClientEmail: { color: "#B3B3B3", fontSize: 13, textAlign: "right", marginTop: 3 },
   trackerSwitchBox: { flexDirection: "row-reverse", alignItems: "center", gap: 8 },
-  trackerSwitchText: { color: "#334155", fontSize: 13, fontWeight: "800", textAlign: "right" },
-  selectedClientStatusText: { color: "#64748B", fontSize: 13, textAlign: "right", lineHeight: 20 },
+  trackerSwitchText: { color: "#EDEDED", fontSize: 13, fontWeight: "800", textAlign: "right" },
+  selectedClientStatusText: { color: "#B3B3B3", fontSize: 13, textAlign: "right", lineHeight: 20 },
   summaryGrid: { flexDirection: "row-reverse", flexWrap: "wrap", gap: 10 },
-  summaryCard: { flexGrow: 1, flexBasis: "45%", backgroundColor: "#FFFFFF", borderRadius: 18, borderWidth: 1, borderColor: "#E2E8F0", alignItems: "center", justifyContent: "center", minHeight: 88 },
-  summaryValue: { color: "#0F172A", fontSize: 20, fontWeight: "900", textAlign: "center" },
-  summaryLabel: { color: "#64748B", fontSize: 12, fontWeight: "700", textAlign: "center", marginTop: 6 },
-  choiceCard: { backgroundColor: "#FFFFFF", borderRadius: 20, borderWidth: 1, borderColor: "#E2E8F0", padding: 16, gap: 12 },
-  choiceTitle: { color: "#0F172A", fontSize: 16, fontWeight: "900", textAlign: "center" },
-  choiceButton: { minHeight: 50, borderRadius: 16, backgroundColor: "#EFF6FF", borderWidth: 1, borderColor: "#BFDBFE", alignItems: "center", justifyContent: "center" },
-  choiceButtonText: { color: "#1D4ED8", fontSize: 14, fontWeight: "900", textAlign: "center" },
+  summaryCard: { flexGrow: 1, flexBasis: "45%", backgroundColor: "#17171C", borderRadius: 18, borderWidth: 1, borderColor: "#2B2B31", alignItems: "center", justifyContent: "center", minHeight: 88 },
+  summaryValue: { color: "#FFFFFF", fontSize: 20, fontWeight: "900", textAlign: "center" },
+  summaryLabel: { color: "#B3B3B3", fontSize: 12, fontWeight: "700", textAlign: "center", marginTop: 6 },
+  choiceCard: { backgroundColor: "#17171C", borderRadius: 20, borderWidth: 1, borderColor: "#2B2B31", padding: 16, gap: 12 },
+  choiceTitle: { color: "#FFFFFF", fontSize: 16, fontWeight: "900", textAlign: "center" },
+  choiceButton: { minHeight: 50, borderRadius: 16, backgroundColor: "#2A1A10", borderWidth: 1, borderColor: "#FF7A00", alignItems: "center", justifyContent: "center" },
+  choiceButtonText: { color: "#FF9A3D", fontSize: 14, fontWeight: "900", textAlign: "center" },
   viewTabsRow: { flexDirection: "row-reverse", gap: 10 },
-  viewTab: { flex: 1, minHeight: 46, borderRadius: 999, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#CBD5E1", alignItems: "center", justifyContent: "center" },
-  viewTabActive: { backgroundColor: "#0F172A", borderColor: "#0F172A" },
-  viewTabText: { color: "#334155", fontSize: 14, fontWeight: "900", textAlign: "center" },
+  viewTab: { flex: 1, minHeight: 46, borderRadius: 999, backgroundColor: "#17171C", borderWidth: 1, borderColor: "#2B2B31", alignItems: "center", justifyContent: "center" },
+  viewTabActive: { backgroundColor: "#FF7A00", borderColor: "#FF7A00" },
+  viewTabText: { color: "#EDEDED", fontSize: 14, fontWeight: "900", textAlign: "center" },
   viewTabTextActive: { color: "#FFFFFF" },
   section: { gap: 12 },
   sectionHeader: { flexDirection: "row-reverse", alignItems: "center", gap: 8, justifyContent: "flex-start" },
-  sectionTitle: { color: "#0F172A", fontSize: 16, fontWeight: "900", textAlign: "right", flex: 1 },
-  dayCard: { backgroundColor: "#FFFFFF", borderRadius: 20, borderWidth: 1, borderColor: "#E2E8F0", overflow: "hidden" },
+  sectionTitle: { color: "#FFFFFF", fontSize: 16, fontWeight: "900", textAlign: "right", flex: 1 },
+  dayCard: { backgroundColor: "#17171C", borderRadius: 20, borderWidth: 1, borderColor: "#2B2B31", overflow: "hidden" },
   dayHeader: { flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between", padding: 14, gap: 12 },
   dayTitleWrap: { flex: 1, alignItems: "flex-end" },
-  dayTitle: { color: "#0F172A", fontSize: 16, fontWeight: "900", textAlign: "right" },
-  daySubtitle: { color: "#64748B", fontSize: 12, fontWeight: "600", textAlign: "right", marginTop: 4 },
-  dayBody: { borderTopWidth: 1, borderTopColor: "#E2E8F0", padding: 12, gap: 12 },
-  clientResponseBox: { backgroundColor: "#F8FAFC", borderRadius: 16, borderWidth: 1, borderColor: "#E2E8F0", padding: 12, gap: 6 },
-  responseTitle: { color: "#0F172A", fontSize: 14, fontWeight: "900", textAlign: "right" },
-  responseText: { color: "#334155", fontSize: 13, lineHeight: 20, textAlign: "right", writingDirection: "rtl" },
-  responseMuted: { color: "#64748B", fontSize: 12, lineHeight: 18, textAlign: "right" },
-  exerciseGroupCard: { backgroundColor: "#F8FAFC", borderRadius: 16, borderWidth: 1, borderColor: "#E2E8F0", overflow: "hidden" },
+  dayTitle: { color: "#FFFFFF", fontSize: 16, fontWeight: "900", textAlign: "right" },
+  daySubtitle: { color: "#B3B3B3", fontSize: 12, fontWeight: "600", textAlign: "right", marginTop: 4 },
+  dayBody: { borderTopWidth: 1, borderTopColor: "#2B2B31", padding: 12, gap: 12 },
+  clientResponseBox: { backgroundColor: "#222229", borderRadius: 16, borderWidth: 1, borderColor: "#2B2B31", padding: 12, gap: 6 },
+  responseTitle: { color: "#FFFFFF", fontSize: 14, fontWeight: "900", textAlign: "right" },
+  responseText: { color: "#EDEDED", fontSize: 13, lineHeight: 20, textAlign: "right", writingDirection: "rtl" },
+  responseMuted: { color: "#B3B3B3", fontSize: 12, lineHeight: 18, textAlign: "right" },
+  exerciseGroupCard: { backgroundColor: "#222229", borderRadius: 16, borderWidth: 1, borderColor: "#2B2B31", overflow: "hidden" },
   exerciseHeader: { flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between", padding: 12 },
-  exerciseTitle: { flex: 1, color: "#0F172A", fontSize: 14, fontWeight: "900", textAlign: "right" },
-  setsTable: { borderTopWidth: 1, borderTopColor: "#E2E8F0", padding: 8, gap: 6 },
-  setRow: { flexDirection: "row-reverse", gap: 8, backgroundColor: "#FFFFFF", borderRadius: 12, paddingVertical: 8, paddingHorizontal: 10 },
-  setCell: { flex: 1, color: "#334155", fontSize: 12, fontWeight: "700", textAlign: "right" },
-  feedbackBox: { backgroundColor: "#FFFBEB", borderRadius: 16, borderWidth: 1, borderColor: "#FDE68A", padding: 12, gap: 8 },
-  feedbackTitle: { color: "#92400E", fontSize: 14, fontWeight: "900", textAlign: "right" },
-  feedbackInput: { minHeight: 86, backgroundColor: "#FFFFFF", borderRadius: 14, borderWidth: 1, borderColor: "#FDE68A", color: "#0F172A", fontSize: 14, paddingHorizontal: 12, paddingVertical: 10, textAlignVertical: "top", writingDirection: "rtl" },
-  feedbackUpdatedText: { color: "#92400E", fontSize: 12, fontWeight: "700", textAlign: "right" },
-  saveFeedbackButton: { minHeight: 46, borderRadius: 14, backgroundColor: "#0F172A", alignItems: "center", justifyContent: "center" },
+  exerciseTitle: { flex: 1, color: "#FFFFFF", fontSize: 14, fontWeight: "900", textAlign: "right" },
+  setsTable: { borderTopWidth: 1, borderTopColor: "#2B2B31", padding: 8, gap: 6 },
+  setRow: { flexDirection: "row-reverse", gap: 8, backgroundColor: "#17171C", borderRadius: 12, paddingVertical: 8, paddingHorizontal: 10 },
+  setCell: { flex: 1, color: "#EDEDED", fontSize: 12, fontWeight: "700", textAlign: "right" },
+  feedbackBox: { backgroundColor: "#2A1A10", borderRadius: 16, borderWidth: 1, borderColor: "#FF7A00", padding: 12, gap: 8 },
+  feedbackTitle: { color: "#FF9A3D", fontSize: 14, fontWeight: "900", textAlign: "right" },
+  feedbackInput: { minHeight: 86, backgroundColor: "#17171C", borderRadius: 14, borderWidth: 1, borderColor: "#FF7A00", color: "#FFFFFF", fontSize: 14, paddingHorizontal: 12, paddingVertical: 10, textAlignVertical: "top", writingDirection: "rtl" },
+  feedbackUpdatedText: { color: "#FF9A3D", fontSize: 12, fontWeight: "700", textAlign: "right" },
+  saveFeedbackButton: { minHeight: 46, borderRadius: 14, backgroundColor: "#FF7A00", alignItems: "center", justifyContent: "center" },
   saveFeedbackButtonText: { color: "#FFFFFF", fontSize: 14, fontWeight: "900", textAlign: "center" },
-  runningWeekCard: { backgroundColor: "#FFFFFF", borderRadius: 20, borderWidth: 1, borderColor: "#E2E8F0", padding: 14, gap: 12 },
-  runningWeekHeaderPressable: { width: "100%", borderRadius: 16, backgroundColor: "#F8FAFC", borderWidth: 1, borderColor: "#E2E8F0", paddingVertical: 12, paddingHorizontal: 12 },
+  runningWeekCard: { backgroundColor: "#17171C", borderRadius: 20, borderWidth: 1, borderColor: "#2B2B31", padding: 14, gap: 12 },
+  runningWeekHeaderPressable: { width: "100%", borderRadius: 16, backgroundColor: "#222229", borderWidth: 1, borderColor: "#2B2B31", paddingVertical: 12, paddingHorizontal: 12 },
   runningWeekHeaderRow: { flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between", gap: 10 },
   runningWeekHeaderTextWrap: { flex: 1, alignItems: "flex-end", gap: 3 },
-  runningWeekToggleText: { color: "#2563EB", fontSize: 12, fontWeight: "900", textAlign: "left" },
-  runningWeekStatusLine: { color: "#64748B", fontSize: 12, fontWeight: "700", textAlign: "right", writingDirection: "rtl" },
-  runningWeekTitle: { color: "#0F172A", fontSize: 16, fontWeight: "900", textAlign: "right" },
+  runningWeekToggleText: { color: "#FF9A3D", fontSize: 12, fontWeight: "900", textAlign: "left" },
+  runningWeekStatusLine: { color: "#B3B3B3", fontSize: 12, fontWeight: "700", textAlign: "right", writingDirection: "rtl" },
+  runningWeekTitle: { color: "#FFFFFF", fontSize: 16, fontWeight: "900", textAlign: "right" },
   runningMetaRow: { flexDirection: "row-reverse", flexWrap: "wrap", gap: 8 },
-  metaChip: { backgroundColor: "#E2E8F0", borderRadius: 999, paddingVertical: 6, paddingHorizontal: 10 },
-  metaChipText: { color: "#334155", fontSize: 12, fontWeight: "800", textAlign: "center" },
-  runningNotes: { color: "#475569", fontSize: 13, lineHeight: 20, textAlign: "right", writingDirection: "rtl" },
-  loadingBox: { backgroundColor: "#FFFFFF", borderRadius: 18, borderWidth: 1, borderColor: "#E2E8F0", paddingVertical: 24, paddingHorizontal: 16, alignItems: "center", justifyContent: "center", gap: 10 },
-  loadingText: { color: "#64748B", fontSize: 14, fontWeight: "700", textAlign: "center" },
-  emptyBox: { backgroundColor: "#FFFFFF", borderRadius: 18, borderWidth: 1, borderColor: "#E2E8F0", paddingVertical: 22, paddingHorizontal: 14, alignItems: "center" },
-  emptyText: { color: "#64748B", fontSize: 14, fontWeight: "700", textAlign: "center", lineHeight: 20 },
+  metaChip: { backgroundColor: "#2B2B31", borderRadius: 999, paddingVertical: 6, paddingHorizontal: 10 },
+  metaChipText: { color: "#EDEDED", fontSize: 12, fontWeight: "800", textAlign: "center" },
+  runningNotes: { color: "#B3B3B3", fontSize: 13, lineHeight: 20, textAlign: "right", writingDirection: "rtl" },
+  loadingBox: { backgroundColor: "#17171C", borderRadius: 18, borderWidth: 1, borderColor: "#2B2B31", paddingVertical: 24, paddingHorizontal: 16, alignItems: "center", justifyContent: "center", gap: 10 },
+  loadingText: { color: "#B3B3B3", fontSize: 14, fontWeight: "700", textAlign: "center" },
+  emptyBox: { backgroundColor: "#17171C", borderRadius: 18, borderWidth: 1, borderColor: "#2B2B31", paddingVertical: 22, paddingHorizontal: 14, alignItems: "center" },
+  emptyText: { color: "#B3B3B3", fontSize: 14, fontWeight: "700", textAlign: "center", lineHeight: 20 },
   pressed: { opacity: 0.82 },
   disabledButton: { opacity: 0.55 },
 });

@@ -580,7 +580,7 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
 
         {loadingClients ? (
           <View style={styles.emptyBox}>
-            <ActivityIndicator size="small" color="#0F172A" />
+            <ActivityIndicator size="small" color="#FFFFFF" />
             <Text style={styles.emptyText}>טוען לקוחות...</Text>
           </View>
         ) : pendingClients.length === 0 ? (
@@ -612,7 +612,7 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
                     disabled={isSaving}
                   >
                     {isSaving ? (
-                      <ActivityIndicator color="#B91C1C" />
+                      <ActivityIndicator color="#FF4D4D" />
                     ) : (
                       <Text style={styles.pendingDeleteButtonText}>מחק בקשה</Text>
                     )}
@@ -628,7 +628,7 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
                     disabled={isSaving}
                   >
                     {isSaving ? (
-                      <ActivityIndicator color="#FFFFFF" />
+                      <ActivityIndicator color="#141414" />
                     ) : (
                       <Text style={styles.approvePendingButtonText}>אשר לקוח</Text>
                     )}
@@ -643,7 +643,7 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
       <View style={styles.clientsList}>
         {loadingClients ? (
           <View style={styles.emptyBox}>
-            <ActivityIndicator size="small" color="#0F172A" />
+            <ActivityIndicator size="small" color="#FFFFFF" />
             <Text style={styles.emptyText}>טוען לקוחות...</Text>
           </View>
         ) : clients.length === 0 ? (
@@ -754,7 +754,7 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
               onChangeText={setDaysInput}
               keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'number-pad'}
               placeholder="למשל 30"
-              placeholderTextColor="#94A3B8"
+              placeholderTextColor="#7A7A7A"
               style={styles.input}
               textAlign="right"
             />
@@ -778,7 +778,7 @@ export default function ClientAccessManager({ onAfterUpdate }: Props) {
           }
         >
           {savingId === selectedClient?.id ? (
-            <ActivityIndicator color="#FFFFFF" />
+            <ActivityIndicator color="#141414" />
           ) : (
             <Text style={styles.mainActionButtonText}>{selectedActionLabel}</Text>
           )}
@@ -796,28 +796,28 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontWeight: '800',
-    color: '#0F172A',
+    color: '#FFFFFF',
     textAlign: 'right',
   },
   pendingBox: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#141414',
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#2A2A2A',
     padding: 14,
     gap: 10,
   },
   pendingTitle: {
     fontSize: 15,
     fontWeight: '800',
-    color: '#0F172A',
+    color: '#FFFFFF',
     textAlign: 'right',
   },
   pendingClientCard: {
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#1C1C1C',
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#2A2A2A',
     padding: 14,
     gap: 12,
   },
@@ -827,7 +827,7 @@ const styles = StyleSheet.create({
   pendingStatusText: {
     marginTop: 6,
     fontSize: 13,
-    color: '#B45309',
+    color: '#FF7A00',
     fontWeight: '700',
     textAlign: 'right',
   },
@@ -839,13 +839,13 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 46,
     borderRadius: 14,
-    backgroundColor: '#0F172A',
+    backgroundColor: "#FF6A00",
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 14,
   },
   approvePendingButtonText: {
-    color: '#FFFFFF',
+    color: '#141414',
     fontWeight: '800',
     fontSize: 15,
   },
@@ -853,15 +853,15 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 46,
     borderRadius: 14,
-    backgroundColor: '#FEF2F2',
+    backgroundColor: '#2A1212',
     borderWidth: 1,
-    borderColor: '#FECACA',
+    borderColor: '#7F1D1D',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 14,
   },
   pendingDeleteButtonText: {
-    color: '#B91C1C',
+    color: '#FF4D4D',
     fontWeight: '800',
     fontSize: 15,
   },
@@ -869,93 +869,93 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   emptyBox: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#141414',
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#2A2A2A',
     padding: 16,
     alignItems: 'center',
     gap: 8,
   },
   emptyText: {
-    color: '#64748B',
+    color: '#B8B8B8',
     fontSize: 14,
     fontWeight: '600',
     textAlign: 'center',
   },
   clientItem: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#141414',
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#2A2A2A',
     padding: 14,
   },
   clientItemSelected: {
-    borderColor: '#2563EB',
-    backgroundColor: '#EFF6FF',
+    borderColor: '#FF7A00',
+    backgroundColor: '#251A12',
   },
   clientName: {
     fontSize: 15,
     fontWeight: '800',
-    color: '#0F172A',
+    color: '#FFFFFF',
     textAlign: 'right',
   },
   clientEmail: {
     marginTop: 4,
     fontSize: 13,
-    color: '#64748B',
+    color: '#B8B8B8',
     textAlign: 'right',
   },
   clientMeta: {
     marginTop: 6,
     fontSize: 13,
-    color: '#334155',
+    color: '#F3F4F6',
     textAlign: 'right',
   },
   actionsBox: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#141414',
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#2A2A2A',
     padding: 14,
     gap: 12,
   },
   actionsTitle: {
     fontSize: 15,
     fontWeight: '800',
-    color: '#0F172A',
+    color: '#FFFFFF',
     textAlign: 'right',
   },
   selectedClientBox: {
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#1C1C1C',
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#2A2A2A',
     padding: 14,
     alignItems: 'flex-end',
   },
   selectedClientName: {
     fontSize: 16,
-    color: '#0F172A',
+    color: '#FFFFFF',
     fontWeight: '800',
     textAlign: 'right',
   },
   selectedClientMeta: {
     marginTop: 4,
     fontSize: 13,
-    color: '#64748B',
+    color: '#B8B8B8',
     textAlign: 'right',
   },
   pendingHintText: {
     marginTop: 8,
     fontSize: 13,
-    color: '#B45309',
+    color: '#FF7A00',
     fontWeight: '700',
     textAlign: 'right',
   },
   selectedClientPlaceholder: {
     fontSize: 14,
-    color: '#64748B',
+    color: '#B8B8B8',
     fontWeight: '600',
     textAlign: 'center',
     width: '100%',
@@ -966,20 +966,20 @@ const styles = StyleSheet.create({
   pickerLabel: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#334155',
+    color: '#F3F4F6',
     textAlign: 'right',
   },
   pickerWrapper: {
     borderWidth: 1,
-    borderColor: '#CBD5E1',
+    borderColor: '#3A3A3A',
     borderRadius: 14,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#1C1C1C',
     overflow: 'hidden',
   },
   picker: {
     width: '100%',
-    color: '#0F172A',
-    backgroundColor: '#F8FAFC',
+    color: '#FFFFFF',
+    backgroundColor: '#1C1C1C',
     fontSize: 18,
     textAlign: 'right',
     writingDirection: 'rtl',
@@ -989,16 +989,16 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
   controlBox: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#141414',
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#2A2A2A',
     padding: 14,
   },
   label: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#334155',
+    color: '#F3F4F6',
     textAlign: 'right',
     marginBottom: 8,
   },
@@ -1006,23 +1006,23 @@ const styles = StyleSheet.create({
     minHeight: 50,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#CBD5E1',
+    borderColor: '#3A3A3A',
     paddingHorizontal: 16,
     fontSize: 16,
-    color: '#0F172A',
-    backgroundColor: '#F8FAFC',
+    color: '#FFFFFF',
+    backgroundColor: '#1C1C1C',
     textAlign: 'right',
   },
   mainActionButton: {
     minHeight: 52,
     borderRadius: 14,
-    backgroundColor: '#0F172A',
+    backgroundColor: "#FF6A00",
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 14,
   },
   mainActionButtonText: {
-    color: '#FFFFFF',
+    color: '#141414',
     fontWeight: '800',
     fontSize: 15,
   },

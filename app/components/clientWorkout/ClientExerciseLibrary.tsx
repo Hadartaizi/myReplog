@@ -381,7 +381,7 @@ export default function ClientExerciseLibrary() {
   if (loading) {
     return (
       <View style={styles.loadingBox}>
-        <ActivityIndicator size="small" color="#0F172A" />
+        <ActivityIndicator size="small" color="#FFFFFF" />
         <Text style={styles.loadingText}>טוען מאגר תרגילים...</Text>
       </View>
     );
@@ -428,7 +428,7 @@ export default function ClientExerciseLibrary() {
               value={searchText}
               onChangeText={setSearchText}
               placeholder="הקלידי שם תרגיל לחיפוש"
-              placeholderTextColor="#94A3B8"
+              placeholderTextColor="#8F8F96"
               style={styles.inputWithClearField}
               textAlign="right"
               autoCapitalize="none"
@@ -494,7 +494,7 @@ export default function ClientExerciseLibrary() {
                         value={editingName}
                         onChangeText={setEditingName}
                         placeholder="הקלידי שם תרגיל"
-                        placeholderTextColor="#94A3B8"
+                        placeholderTextColor="#8F8F96"
                         style={styles.inputWithClearField}
                         textAlign="right"
                         autoCapitalize="none"
@@ -583,10 +583,10 @@ const styles = StyleSheet.create({
   },
   headerCard: {
     width: "100%",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#17171C",
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#2B2B31",
     padding: 14,
     gap: 12,
   },
@@ -596,28 +596,28 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   title: {
-    color: "#0F172A",
+    color: "#FFFFFF",
     fontSize: 17,
     fontWeight: "800",
     textAlign: "right",
   },
   subtitle: {
-    color: "#64748B",
+    color: "#B3B3B3",
     fontSize: 13,
     lineHeight: 20,
     textAlign: "right",
   },
   countBadge: {
     alignSelf: "flex-end",
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#222229",
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#2B2B31",
     paddingVertical: 7,
     paddingHorizontal: 12,
   },
   countBadgeText: {
-    color: "#475569",
+    color: "#B3B3B3",
     fontSize: 12,
     fontWeight: "800",
     textAlign: "center",
@@ -627,7 +627,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   searchLabel: {
-    color: "#334155",
+    color: "#EDEDED",
     fontSize: 13,
     fontWeight: "700",
     textAlign: "right",
@@ -635,17 +635,17 @@ const styles = StyleSheet.create({
   inputWithClearWrap: {
     width: "100%",
     minHeight: 48,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#17171C",
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#CBD5E1",
+    borderColor: "#2B2B31",
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 10,
     overflow: "hidden",
   },
   inputWithClearWrapFocused: {
-    borderColor: "#2563EB",
+    borderColor: "#FF7A00",
     shadowColor: "#2563EB",
     shadowOpacity: 0.08,
     shadowRadius: 6,
@@ -656,7 +656,7 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 46,
     fontSize: 14,
-    color: "#0F172A",
+    color: "#FFFFFF",
     textAlign: "right",
     writingDirection: "rtl",
     paddingHorizontal: 8,
@@ -677,7 +677,7 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#F1F5F9",
+    backgroundColor: "#222229",
     marginLeft: 4,
     ...(Platform.OS === "web"
       ? ({
@@ -688,7 +688,7 @@ const styles = StyleSheet.create({
       : null),
   },
   clearInsideButtonText: {
-    color: "#475569",
+    color: "#B3B3B3",
     fontSize: 14,
     fontWeight: "800",
     lineHeight: 16,
@@ -700,17 +700,17 @@ const styles = StyleSheet.create({
       : null),
   },
   searchResultText: {
-    color: "#64748B",
+    color: "#B3B3B3",
     fontSize: 12,
     fontWeight: "700",
     textAlign: "right",
   },
   loadingBox: {
     width: "100%",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#17171C",
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#2B2B31",
     paddingVertical: 22,
     paddingHorizontal: 14,
     alignItems: "center",
@@ -718,24 +718,24 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   loadingText: {
-    color: "#64748B",
+    color: "#B3B3B3",
     fontSize: 14,
     fontWeight: "600",
     textAlign: "center",
   },
   emptyBox: {
     width: "100%",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#17171C",
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#2B2B31",
     paddingVertical: 22,
     paddingHorizontal: 14,
     alignItems: "center",
     justifyContent: "center",
   },
   emptyText: {
-    color: "#64748B",
+    color: "#B3B3B3",
     fontSize: 14,
     fontWeight: "600",
     textAlign: "center",
@@ -745,10 +745,10 @@ const styles = StyleSheet.create({
   },
   exerciseCard: {
     width: "100%",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#17171C",
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#2B2B31",
     padding: 14,
     gap: 12,
   },
@@ -763,7 +763,7 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
   },
   exerciseName: {
-    color: "#0F172A",
+    color: "#FFFFFF",
     fontSize: 15,
     fontWeight: "800",
     textAlign: "right",
@@ -775,27 +775,27 @@ const styles = StyleSheet.create({
   },
   editButton: {
     minWidth: 74,
-    backgroundColor: "#EFF6FF",
+    backgroundColor: "#2A1A10",
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#BFDBFE",
+    borderColor: "#FF7A00",
     paddingVertical: 8,
     paddingHorizontal: 14,
     alignItems: "center",
     justifyContent: "center",
   },
   editButtonText: {
-    color: "#1D4ED8",
+    color: "#FF9A3D",
     fontSize: 13,
     fontWeight: "800",
     textAlign: "center",
   },
   deleteButton: {
     minWidth: 74,
-    backgroundColor: "#FEF2F2",
+    backgroundColor: "#2A1111",
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#FECACA",
+    borderColor: "#7F1D1D",
     paddingVertical: 8,
     paddingHorizontal: 14,
     alignItems: "center",
@@ -808,7 +808,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   inputLabel: {
-    color: "#334155",
+    color: "#EDEDED",
     fontSize: 13,
     fontWeight: "700",
     textAlign: "right",
@@ -835,14 +835,14 @@ const styles = StyleSheet.create({
   cancelButton: {
     flex: 1,
     minHeight: 46,
-    backgroundColor: "#E2E8F0",
+    backgroundColor: "#2B2B31",
     borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 14,
   },
   cancelButtonText: {
-    color: "#1E293B",
+    color: "#FFFFFF",
     fontSize: 14,
     fontWeight: "800",
     textAlign: "center",

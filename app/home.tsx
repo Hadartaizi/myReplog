@@ -33,7 +33,7 @@ import Svg, { Line, Path, Rect } from 'react-native-svg';
 import { auth, db } from '../database/firebase';
 import AppLayout from './components/AppLayout';
 
-const APP_BG = '#F4F7FB';
+const APP_BG = '#0B0B0D';
 const DECIMAL_KEYBOARD = Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'decimal-pad';
 const INTEGER_KEYBOARD = Platform.OS === 'ios' ? 'number-pad' : 'numeric';
 
@@ -326,7 +326,7 @@ function DumbbellIcon({ size = 20, color = '#FFFFFF' }) {
   );
 }
 
-function CalendarIcon({ size = 22, color = '#556070' }) {
+function CalendarIcon({ size = 22, color = '#FF7A00' }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
       <Rect x="3" y="5" width="18" height="16" rx="3" stroke={color} strokeWidth={2} fill="none" />
@@ -337,7 +337,7 @@ function CalendarIcon({ size = 22, color = '#556070' }) {
   );
 }
 
-function CloseIcon({ size = 24, color = '#222222' }) {
+function CloseIcon({ size = 24, color = '#FFFFFF' }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
       <Line x1="6" y1="6" x2="18" y2="18" stroke={color} strokeWidth={2.4} strokeLinecap="round" />
@@ -346,7 +346,7 @@ function CloseIcon({ size = 24, color = '#222222' }) {
   );
 }
 
-function MenuIcon({ size = 26, color = '#0F172A' }) {
+function MenuIcon({ size = 26, color = '#FFFFFF' }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
       <Line x1="4" y1="7" x2="20" y2="7" stroke={color} strokeWidth={2.4} strokeLinecap="round" />
@@ -367,7 +367,7 @@ function TimerIcon({ size = 22, color = '#FFFFFF' }) {
   );
 }
 
-function WriteIcon({ size = 18, color = '#0C4A6E' }) {
+function WriteIcon({ size = 18, color = '#FF7A00' }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
       <Path
@@ -1988,7 +1988,7 @@ export default function Home() {
                   onPress={() => setShowSideMenu(true)}
                   hitSlop={10}
                 >
-                  <MenuIcon size={26} color="#0F172A" />
+                  <MenuIcon size={26} color="#FFFFFF" />
                 </Pressable>
 
                 {(timerRemaining > 0 || workoutTimerElapsed > 0) && (
@@ -2073,7 +2073,7 @@ export default function Home() {
                           outline: 'none',
                           background: 'transparent',
                           fontSize: dynamic.textSize,
-                          color: '#111827',
+                          color: '#FFFFFF',
                           direction: 'rtl',
                           textAlign: 'right',
                         }}
@@ -2152,7 +2152,7 @@ export default function Home() {
                           },
                         ]}
                         placeholder="שם תרגיל"
-                        placeholderTextColor="#8A94A6"
+                        placeholderTextColor="#8F8F96"
                         value={exercise.name}
                         onChangeText={(text) => handleExerciseChange('name', text)}
                         textAlign="right"
@@ -2221,7 +2221,7 @@ export default function Home() {
                       { minHeight: dynamic.inputHeight, fontSize: dynamic.textSize },
                     ]}
                     placeholder="הזיני מספר סטים"
-                    placeholderTextColor="#8A94A6"
+                    placeholderTextColor="#8F8F96"
                     keyboardType={INTEGER_KEYBOARD}
                     inputMode="numeric"
                     value={exercise.numSets}
@@ -2260,7 +2260,7 @@ export default function Home() {
                               { minHeight: dynamic.inputHeight, fontSize: dynamic.textSize },
                             ]}
                             placeholder="לדוגמה 12"
-                            placeholderTextColor="#8A94A6"
+                            placeholderTextColor="#8F8F96"
                             keyboardType={DECIMAL_KEYBOARD}
                             inputMode="decimal"
                             value={exercise.repsPerSet[setKey]?.reps || ''}
@@ -2280,7 +2280,7 @@ export default function Home() {
                               { minHeight: dynamic.inputHeight, fontSize: dynamic.textSize },
                             ]}
                             placeholder="לדוגמה 20"
-                            placeholderTextColor="#8A94A6"
+                            placeholderTextColor="#8F8F96"
                             keyboardType={DECIMAL_KEYBOARD}
                             inputMode="decimal"
                             value={exercise.repsPerSet[setKey]?.weight || ''}
@@ -2398,7 +2398,7 @@ export default function Home() {
             <Pressable style={[styles.sideMenuCard, { width: Math.min(width * 0.78, 300) }]}>
               <View style={styles.sideMenuHeader}>
                 <Pressable onPress={() => setShowSideMenu(false)} style={styles.sideMenuClose}>
-                  <CloseIcon size={22} color="#0F172A" />
+                  <CloseIcon size={22} color="#FFFFFF" />
                 </Pressable>
                 <Text style={styles.sideMenuTitle}>תפריט</Text>
               </View>
@@ -2438,7 +2438,7 @@ export default function Home() {
             <View style={[styles.timerModalCard, { width: Math.min(width * 0.9, 420) }]}>
               <View style={styles.timerModalHeader}>
                 <Pressable style={styles.modalClose} onPress={() => setShowTimerModal(false)}>
-                  <CloseIcon size={24} color="#222222" />
+                  <CloseIcon size={24} color="#FFFFFF" />
                 </Pressable>
                 <Text style={styles.timerModalTitle}>
                   {timerMode === 'rest'
@@ -2462,7 +2462,7 @@ export default function Home() {
                   </Pressable>
 
                   <Pressable style={styles.timerChoiceSecondaryButton} onPress={() => setTimerMode('workout')}>
-                    <TimerIcon size={22} color="#0F172A" />
+                    <TimerIcon size={22} color="#FF7A00" />
                     <View style={styles.timerChoiceTextBlock}>
                       <Text style={styles.timerChoiceSecondaryButtonText}>טיימר זמן אימון</Text>
                       <Text style={styles.timerChoiceSecondaryButtonSubText}>ספירה קדימה של כל האימון</Text>
@@ -2484,7 +2484,7 @@ export default function Home() {
                         value={timerMinutes}
                         onChangeText={(text) => setTimerMinutes(text.replace(/[^0-9]/g, ''))}
                         placeholder="0"
-                        placeholderTextColor="#8A94A6"
+                        placeholderTextColor="#8F8F96"
                         textAlign="center"
                       />
                     </View>
@@ -2502,7 +2502,7 @@ export default function Home() {
                           setTimerSeconds(limited);
                         }}
                         placeholder="0"
-                        placeholderTextColor="#8A94A6"
+                        placeholderTextColor="#8F8F96"
                         textAlign="center"
                       />
                     </View>
@@ -2573,7 +2573,7 @@ export default function Home() {
                   style={styles.modalClose}
                   onPress={() => setShowTrainingProgramModal(false)}
                 >
-                  <CloseIcon size={24} color="#222222" />
+                  <CloseIcon size={24} color="#FFFFFF" />
                 </Pressable>
 
                 <Text style={styles.programModalTitle}>
@@ -2728,7 +2728,7 @@ export default function Home() {
                                   <Text style={[styles.clientWorkoutFeedbackText, week.clientSucceeded === false && styles.clientWorkoutFeedbackTextActive]}>לא הצלחתי</Text>
                                 </Pressable>
                               </View>
-                              <TextInput style={[styles.inputBox, styles.textInput, styles.clientWorkoutNotesInput]} placeholder="פירוט למאמן" placeholderTextColor="#8A94A6" value={String(week.clientNotes || '')} onChangeText={(value) => updateLocalRunningWeek(week.id, { clientNotes: value })} textAlign="right" multiline />
+                              <TextInput style={[styles.inputBox, styles.textInput, styles.clientWorkoutNotesInput]} placeholder="פירוט למאמן" placeholderTextColor="#8F8F96" value={String(week.clientNotes || '')} onChangeText={(value) => updateLocalRunningWeek(week.id, { clientNotes: value })} textAlign="right" multiline />
                               <Pressable style={[styles.saveRunningFeedbackButton, savingRunningWeekId === week.id && styles.disabledButton]} onPress={() => saveRunningWeekFeedback(week.id)} disabled={savingRunningWeekId === week.id}>
                                 {savingRunningWeekId === week.id ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.saveRunningFeedbackButtonText}>שמירת עדכון שבוע</Text>}
                               </Pressable>
@@ -2860,7 +2860,7 @@ export default function Home() {
                                           value={inlineEntry.setsCount}
                                           onChangeText={(value) => updateProgramStrengthSetsCount(exerciseKey, value, item)}
                                           placeholder={sets || '1'}
-                                          placeholderTextColor="#8A94A6"
+                                          placeholderTextColor="#8F8F96"
                                           textAlign="center"
                                           editable={!isSavingThisExercise && !isEntryLocked}
                                         />
@@ -2880,7 +2880,7 @@ export default function Home() {
                                                   value={setEntry.reps}
                                                   onChangeText={(value) => updateProgramStrengthSetField(exerciseKey, setIndex, 'reps', value, item)}
                                                   placeholder={reps || '0'}
-                                                  placeholderTextColor="#8A94A6"
+                                                  placeholderTextColor="#8F8F96"
                                                   textAlign="center"
                                                   editable={!isSavingThisExercise && !isEntryLocked}
                                                 />
@@ -2895,7 +2895,7 @@ export default function Home() {
                                                   value={setEntry.weight}
                                                   onChangeText={(value) => updateProgramStrengthSetField(exerciseKey, setIndex, 'weight', value, item)}
                                                   placeholder="אופציונלי"
-                                                  placeholderTextColor="#8A94A6"
+                                                  placeholderTextColor="#8F8F96"
                                                   textAlign="center"
                                                   editable={!isSavingThisExercise && !isEntryLocked}
                                                 />
@@ -2950,7 +2950,7 @@ export default function Home() {
                                         <TextInput
                                           style={[styles.inputBox, styles.textInput, styles.clientWorkoutNotesInput]}
                                           placeholder="פירוט למאמן על התרגיל"
-                                          placeholderTextColor="#8A94A6"
+                                          placeholderTextColor="#8F8F96"
                                           value={inlineEntry.clientNotes}
                                           onChangeText={(value) =>
                                             updateProgramStrengthEntry(
@@ -3038,7 +3038,7 @@ export default function Home() {
                 style={styles.modalClose}
                 onPress={() => setSelectedExerciseForModal(null)}
               >
-                <CloseIcon size={24} color="#222222" />
+                <CloseIcon size={24} color="#FFFFFF" />
               </Pressable>
 
               {selectedLastExercise && selectedLastExercise.length > 0 ? (
@@ -3097,7 +3097,7 @@ const styles = StyleSheet.create({
 
   card: {
     position: 'relative',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#17171C',
     borderRadius: 24,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 6 },
@@ -3121,7 +3121,7 @@ const styles = StyleSheet.create({
   title: {
     width: '100%',
     fontWeight: '800',
-    color: '#1E293B',
+    color: '#FFFFFF',
     textAlign: 'center',
     paddingHorizontal: 4,
   },
@@ -3138,7 +3138,7 @@ const styles = StyleSheet.create({
 
   subtitle: {
     marginTop: 10,
-    color: '#64748B',
+    color: '#B3B3B3',
     textAlign: 'center',
     writingDirection: 'rtl',
   },
@@ -3153,9 +3153,9 @@ const styles = StyleSheet.create({
 
   trainingProgramButton: {
     width: '100%',
-    backgroundColor: '#E0F2FE',
+    backgroundColor: '#2A1A10',
     borderWidth: 1,
-    borderColor: '#BAE6FD',
+    borderColor: '#FF7A00',
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
@@ -3164,7 +3164,7 @@ const styles = StyleSheet.create({
   },
 
   trainingProgramButtonText: {
-    color: '#0C4A6E',
+    color: '#FF9A3D',
     fontWeight: '800',
     textAlign: 'center',
     writingDirection: 'rtl',
@@ -3176,7 +3176,7 @@ const styles = StyleSheet.create({
   },
 
   label: {
-    color: '#334155',
+    color: '#EDEDED',
     fontWeight: '700',
     textAlign: 'right',
     marginBottom: 8,
@@ -3185,16 +3185,16 @@ const styles = StyleSheet.create({
 
   inputBox: {
     width: '100%',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#222229',
     borderWidth: 1,
-    borderColor: '#CBD5E1',
+    borderColor: '#2B2B31',
     borderRadius: 16,
     paddingHorizontal: 14,
     justifyContent: 'center',
   },
 
   textInput: {
-    color: '#0F172A',
+    color: '#FFFFFF',
     textAlign: 'right',
     writingDirection: 'rtl',
   },
@@ -3225,7 +3225,7 @@ const styles = StyleSheet.create({
     width: '100%',
     minHeight: '100%',
     paddingVertical: 0,
-    color: '#111827',
+    color: '#FFFFFF',
     backgroundColor: 'transparent',
     borderWidth: 0,
     textAlign: 'right',
@@ -3252,7 +3252,7 @@ const styles = StyleSheet.create({
     zIndex: 2,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#222229',
     marginLeft: 4,
     ...(Platform.OS === 'web'
       ? ({
@@ -3264,7 +3264,7 @@ const styles = StyleSheet.create({
   },
 
   clearInsideButtonText: {
-    color: '#475569',
+    color: '#B3B3B3',
     fontSize: 14,
     fontWeight: '800',
     lineHeight: 16,
@@ -3282,9 +3282,9 @@ const styles = StyleSheet.create({
 
   dateField: {
     width: '100%',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#222229',
     borderWidth: 1,
-    borderColor: '#CBD5E1',
+    borderColor: '#2B2B31',
     borderRadius: 16,
     paddingHorizontal: 14,
     flexDirection: 'row-reverse',
@@ -3303,14 +3303,14 @@ const styles = StyleSheet.create({
   },
 
   dateValue: {
-    color: '#0F172A',
+    color: '#FFFFFF',
     fontWeight: '700',
     textAlign: 'right',
   },
 
   dateHint: {
     marginTop: 2,
-    color: '#64748B',
+    color: '#B3B3B3',
     fontSize: 12,
     textAlign: 'right',
     writingDirection: 'rtl',
@@ -3339,7 +3339,7 @@ const styles = StyleSheet.create({
   iconButton: {
     width: 58,
     borderRadius: 16,
-    backgroundColor: '#0F172A',
+    backgroundColor: '#FF7A00',
     alignItems: 'center',
     justifyContent: 'center',
     alignSelf: 'stretch',
@@ -3354,8 +3354,8 @@ const styles = StyleSheet.create({
     maxHeight: 180,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    backgroundColor: '#FFFFFF',
+    borderColor: '#2B2B31',
+    backgroundColor: '#17171C',
     overflow: 'hidden',
   },
 
@@ -3367,7 +3367,7 @@ const styles = StyleSheet.create({
   },
 
   suggestionText: {
-    color: '#0F172A',
+    color: '#FFFFFF',
     textAlign: 'right',
     writingDirection: 'rtl',
     flexShrink: 1,
@@ -3383,16 +3383,16 @@ const styles = StyleSheet.create({
 
   setCard: {
     width: '100%',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#222229',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#2B2B31',
     borderRadius: 18,
     padding: 12,
     marginBottom: 14,
   },
 
   setTitle: {
-    color: '#0F172A',
+    color: '#FFFFFF',
     fontWeight: '800',
     textAlign: 'right',
     marginBottom: 10,
@@ -3414,7 +3414,7 @@ const styles = StyleSheet.create({
   },
 
   miniLabel: {
-    color: '#64748B',
+    color: '#B3B3B3',
     fontSize: 12,
     fontWeight: '700',
     textAlign: 'right',
@@ -3429,7 +3429,7 @@ const styles = StyleSheet.create({
   saveButton: {
     width: '100%',
     borderRadius: 18,
-    backgroundColor: '#0F172A',
+    backgroundColor: '#FF7A00',
     flexDirection: 'row-reverse',
     alignItems: 'center',
     justifyContent: 'center',
@@ -3450,7 +3450,7 @@ const styles = StyleSheet.create({
 
   dateModalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.28)',
+    backgroundColor: 'rgba(0, 0, 0, 0.82)',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 20,
@@ -3459,14 +3459,14 @@ const styles = StyleSheet.create({
   dateModalCard: {
     width: '100%',
     maxWidth: 360,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#17171C',
     borderRadius: 22,
     padding: 18,
     alignItems: 'center',
   },
 
   dateModalTitle: {
-    color: '#0F172A',
+    color: '#FFFFFF',
     fontSize: 18,
     fontWeight: '800',
     marginBottom: 12,
@@ -3479,7 +3479,7 @@ const styles = StyleSheet.create({
     minHeight: 44,
     paddingHorizontal: 18,
     borderRadius: 14,
-    backgroundColor: '#0F172A',
+    backgroundColor: '#FF7A00',
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 12,
@@ -3506,26 +3506,45 @@ const styles = StyleSheet.create({
 
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.35)',
+    backgroundColor: 'rgba(0, 0, 0, 0.88)',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 18,
   },
 
   modalCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#17171C',
     borderRadius: 24,
+    borderWidth: 1.5,
+    borderColor: '#2B2B31',
     padding: 20,
     position: 'relative',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.45,
+    shadowRadius: 24,
+    elevation: 12,
   },
 
   modalClose: {
     alignSelf: 'flex-start',
-    padding: 4,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FF7A00',
+    borderWidth: 1,
+    borderColor: '#FF9A3D',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#FF7A00',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 5,
   },
 
   modalTitle: {
-    color: '#0F172A',
+    color: '#FFFFFF',
     fontSize: 20,
     fontWeight: '800',
     textAlign: 'center',
@@ -3536,7 +3555,7 @@ const styles = StyleSheet.create({
   modalDivider: {
     width: '100%',
     height: 1,
-    backgroundColor: '#E2E8F0',
+    backgroundColor: '#2B2B31',
     marginVertical: 14,
   },
 
@@ -3552,7 +3571,7 @@ const styles = StyleSheet.create({
   },
 
   modalText: {
-    color: '#334155',
+    color: '#EDEDED',
     fontSize: 14,
     fontWeight: '600',
     textAlign: 'right',
@@ -3560,10 +3579,17 @@ const styles = StyleSheet.create({
   },
 
   programModalCard: {
-    maxHeight: '85%',
-    backgroundColor: '#FFFFFF',
+    maxHeight: '88%',
+    backgroundColor: '#17171C',
     borderRadius: 24,
+    borderWidth: 1.5,
+    borderColor: '#2B2B31',
     padding: 18,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.48,
+    shadowRadius: 24,
+    elevation: 12,
   },
 
   programHeaderRow: {
@@ -3571,7 +3597,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row-reverse',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 10,
+    gap: 12,
   },
 
   programChoiceBox: {
@@ -3581,7 +3607,7 @@ const styles = StyleSheet.create({
   },
 
   programChoiceTitle: {
-    color: '#0F172A',
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '800',
     textAlign: 'center',
@@ -3593,16 +3619,16 @@ const styles = StyleSheet.create({
     width: '100%',
     minHeight: 52,
     borderRadius: 16,
-    backgroundColor: '#E0F2FE',
+    backgroundColor: '#2A1A10',
     borderWidth: 1,
-    borderColor: '#BAE6FD',
+    borderColor: '#FF7A00',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 14,
   },
 
   programChoiceButtonText: {
-    color: '#0C4A6E',
+    color: '#FF9A3D',
     fontSize: 15,
     fontWeight: '900',
     textAlign: 'center',
@@ -3611,7 +3637,7 @@ const styles = StyleSheet.create({
 
   programModalTitle: {
     flex: 1,
-    color: '#0F172A',
+    color: '#FFFFFF',
     fontSize: 20,
     fontWeight: '800',
     textAlign: 'right',
@@ -3624,16 +3650,16 @@ const styles = StyleSheet.create({
 
   programSectionCard: {
     width: '100%',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#222229',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#2B2B31',
     borderRadius: 18,
     padding: 12,
     marginBottom: 12,
   },
 
   programSectionTitle: {
-    color: '#0F172A',
+    color: '#FFFFFF',
     fontSize: 17,
     fontWeight: '800',
     textAlign: 'right',
@@ -3643,9 +3669,9 @@ const styles = StyleSheet.create({
 
   programExerciseCard: {
     width: '100%',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#17171C',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#2B2B31',
     borderRadius: 16,
     padding: 12,
     marginBottom: 10,
@@ -3675,7 +3701,7 @@ const styles = StyleSheet.create({
   },
 
   programExerciseChevron: {
-    color: '#0F172A',
+    color: '#FFFFFF',
     fontSize: 18,
     fontWeight: '900',
     textAlign: 'center',
@@ -3706,7 +3732,7 @@ const styles = StyleSheet.create({
 
   programExerciseName: {
     flex: 1,
-    color: '#0F172A',
+    color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '800',
     textAlign: 'right',
@@ -3718,7 +3744,7 @@ const styles = StyleSheet.create({
     height: 42,
     minWidth: 42,
     borderRadius: 14,
-    backgroundColor: '#0F172A',
+    backgroundColor: '#FF7A00',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -3736,14 +3762,14 @@ const styles = StyleSheet.create({
   },
 
   programMetaChip: {
-    backgroundColor: '#E2E8F0',
+    backgroundColor: '#2B2B31',
     borderRadius: 999,
     paddingVertical: 6,
     paddingHorizontal: 10,
   },
 
   programMetaChipText: {
-    color: '#334155',
+    color: '#EDEDED',
     fontSize: 12,
     fontWeight: '700',
     textAlign: 'center',
@@ -3751,7 +3777,7 @@ const styles = StyleSheet.create({
   },
 
   programExerciseNotes: {
-    color: '#475569',
+    color: '#B3B3B3',
     fontSize: 13,
     lineHeight: 20,
     textAlign: 'right',
@@ -3761,9 +3787,9 @@ const styles = StyleSheet.create({
 
   programInlineEntryBox: {
     width: '100%',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#222229',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#2B2B31',
     borderRadius: 16,
     padding: 12,
     marginTop: 10,
@@ -3771,7 +3797,7 @@ const styles = StyleSheet.create({
   },
 
   programInlineEntryTitle: {
-    color: '#0F172A',
+    color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '900',
     textAlign: 'right',
@@ -3822,16 +3848,16 @@ const styles = StyleSheet.create({
 
   programInlineSetCard: {
     width: '100%',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#17171C',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#2B2B31',
     borderRadius: 14,
     padding: 10,
     gap: 8,
   },
 
   programInlineSetTitle: {
-    color: '#0F172A',
+    color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '900',
     textAlign: 'right',
@@ -3860,7 +3886,7 @@ const styles = StyleSheet.create({
     width: '100%',
     minHeight: 44,
     borderRadius: 14,
-    backgroundColor: '#0F172A',
+    backgroundColor: '#FF7A00',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -3877,15 +3903,15 @@ const styles = StyleSheet.create({
     width: '100%',
     minHeight: 44,
     borderRadius: 14,
-    backgroundColor: '#E0F2FE',
+    backgroundColor: '#2A1A10',
     borderWidth: 1,
-    borderColor: '#BAE6FD',
+    borderColor: '#FF7A00',
     alignItems: 'center',
     justifyContent: 'center',
   },
 
   editProgramExerciseButtonText: {
-    color: '#0C4A6E',
+    color: '#FF9A3D',
     fontSize: 14,
     fontWeight: '900',
     textAlign: 'center',
@@ -3915,10 +3941,10 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     writingDirection: 'rtl',
   },
-  activeWeekHint: { color: '#64748B', fontSize: 13, lineHeight: 20, textAlign: 'right', writingDirection: 'rtl', marginBottom: 8 },
+  activeWeekHint: { color: '#B3B3B3', fontSize: 13, lineHeight: 20, textAlign: 'right', writingDirection: 'rtl', marginBottom: 8 },
 
   emptyProgramText: {
-    color: '#64748B',
+    color: '#B3B3B3',
     fontSize: 14,
     fontWeight: '600',
     textAlign: 'center',
@@ -3962,9 +3988,9 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#222229',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#2B2B31',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -3983,13 +4009,13 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 14,
     borderRadius: 999,
-    backgroundColor: '#EEF2FF',
+    backgroundColor: '#2A1A10',
     borderWidth: 1,
-    borderColor: '#C7D2FE',
+    borderColor: '#FF7A00',
   },
 
   activeTimerText: {
-    color: '#3730A3',
+    color: '#FF9A3D',
     fontSize: 13,
     fontWeight: '800',
     textAlign: 'center',
@@ -3998,14 +4024,14 @@ const styles = StyleSheet.create({
 
   sideMenuOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.25)',
+    backgroundColor: 'rgba(0, 0, 0, 0.72)',
     alignItems: 'flex-end',
     justifyContent: 'flex-start',
   },
 
   sideMenuCard: {
     height: '100%',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#17171C',
     paddingTop: 54,
     paddingHorizontal: 18,
     borderTopLeftRadius: 24,
@@ -4029,14 +4055,16 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#FF7A00',
+    borderWidth: 1,
+    borderColor: '#FF9A3D',
     alignItems: 'center',
     justifyContent: 'center',
   },
 
   sideMenuTitle: {
     flex: 1,
-    color: '#0F172A',
+    color: '#FFFFFF',
     fontSize: 20,
     fontWeight: '900',
     textAlign: 'right',
@@ -4047,9 +4075,9 @@ const styles = StyleSheet.create({
     width: '100%',
     minHeight: 52,
     borderRadius: 16,
-    backgroundColor: '#E0F2FE',
+    backgroundColor: '#2A1A10',
     borderWidth: 1,
-    borderColor: '#BAE6FD',
+    borderColor: '#FF7A00',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 14,
@@ -4057,7 +4085,7 @@ const styles = StyleSheet.create({
   },
 
   trainingProgramMenuButtonText: {
-    color: '#0C4A6E',
+    color: '#FF9A3D',
     fontSize: 15,
     fontWeight: '900',
     textAlign: 'center',
@@ -4068,9 +4096,9 @@ const styles = StyleSheet.create({
     width: '100%',
     minHeight: 52,
     borderRadius: 16,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#222229',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#2B2B31',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 14,
@@ -4079,7 +4107,7 @@ const styles = StyleSheet.create({
   },
 
   sideMenuLoaderText: {
-    color: '#475569',
+    color: '#B3B3B3',
     fontSize: 12,
     fontWeight: '700',
     textAlign: 'center',
@@ -4090,7 +4118,7 @@ const styles = StyleSheet.create({
     width: '100%',
     minHeight: 52,
     borderRadius: 16,
-    backgroundColor: '#0F172A',
+    backgroundColor: '#FF7A00',
     flexDirection: 'row-reverse',
     alignItems: 'center',
     justifyContent: 'center',
@@ -4116,7 +4144,7 @@ const styles = StyleSheet.create({
     width: '100%',
     minHeight: 62,
     borderRadius: 18,
-    backgroundColor: '#0F172A',
+    backgroundColor: '#FF7A00',
     flexDirection: 'row-reverse',
     alignItems: 'center',
     justifyContent: 'center',
@@ -4129,9 +4157,9 @@ const styles = StyleSheet.create({
     width: '100%',
     minHeight: 62,
     borderRadius: 18,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#222229',
     borderWidth: 1,
-    borderColor: '#CBD5E1',
+    borderColor: '#2B2B31',
     flexDirection: 'row-reverse',
     alignItems: 'center',
     justifyContent: 'center',
@@ -4163,7 +4191,7 @@ const styles = StyleSheet.create({
   },
 
   timerChoiceSecondaryButtonText: {
-    color: '#0F172A',
+    color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '900',
     textAlign: 'right',
@@ -4172,7 +4200,7 @@ const styles = StyleSheet.create({
 
   timerChoiceSecondaryButtonSubText: {
     marginTop: 2,
-    color: '#64748B',
+    color: '#B3B3B3',
     fontSize: 12,
     fontWeight: '700',
     textAlign: 'right',
@@ -4183,16 +4211,16 @@ const styles = StyleSheet.create({
     width: '100%',
     minHeight: 42,
     borderRadius: 14,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#222229',
     borderWidth: 1,
-    borderColor: '#CBD5E1',
+    borderColor: '#2B2B31',
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 10,
   },
 
   backToTimerChoiceButtonText: {
-    color: '#334155',
+    color: '#EDEDED',
     fontSize: 13,
     fontWeight: '900',
     textAlign: 'center',
@@ -4200,9 +4228,16 @@ const styles = StyleSheet.create({
   },
 
   timerModalCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#17171C',
     borderRadius: 24,
+    borderWidth: 1.5,
+    borderColor: '#2B2B31',
     padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.48,
+    shadowRadius: 24,
+    elevation: 12,
   },
 
   timerModalHeader: {
@@ -4210,12 +4245,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row-reverse',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 10,
+    gap: 12,
   },
 
   timerModalTitle: {
     flex: 1,
-    color: '#0F172A',
+    color: '#FFFFFF',
     fontSize: 20,
     fontWeight: '900',
     textAlign: 'right',
@@ -4224,7 +4259,7 @@ const styles = StyleSheet.create({
 
   timerDisplay: {
     marginTop: 18,
-    color: '#0F172A',
+    color: '#FFFFFF',
     fontSize: 42,
     fontWeight: '900',
     textAlign: 'center',
@@ -4233,7 +4268,7 @@ const styles = StyleSheet.create({
   timerHint: {
     marginTop: 6,
     marginBottom: 18,
-    color: '#64748B',
+    color: '#B3B3B3',
     fontSize: 13,
     fontWeight: '600',
     textAlign: 'center',
@@ -4261,7 +4296,7 @@ const styles = StyleSheet.create({
     width: '100%',
     minHeight: 52,
     borderRadius: 16,
-    backgroundColor: '#0F172A',
+    backgroundColor: '#FF7A00',
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 16,
@@ -4286,15 +4321,15 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 46,
     borderRadius: 14,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#222229',
     borderWidth: 1,
-    borderColor: '#CBD5E1',
+    borderColor: '#2B2B31',
     alignItems: 'center',
     justifyContent: 'center',
   },
 
   secondaryTimerButtonText: {
-    color: '#0F172A',
+    color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '800',
     textAlign: 'center',
@@ -4311,9 +4346,9 @@ const styles = StyleSheet.create({
     height: 38,
     minHeight: 38,
     borderRadius: 10,
-    backgroundColor: '#E0F2FE',
+    backgroundColor: '#2A1A10',
     borderWidth: 1,
-    borderColor: '#BAE6FD',
+    borderColor: '#FF7A00',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 0,
@@ -4321,20 +4356,20 @@ const styles = StyleSheet.create({
   },
 
   programNotesToggleButtonActive: {
-    backgroundColor: '#0C4A6E',
+    backgroundColor: '#FF7A00',
     borderColor: '#0C4A6E',
   },
 
   programNotesToggleButtonHasText: {
-    backgroundColor: '#EFF6FF',
-    borderColor: '#93C5FD',
+    backgroundColor: '#2A1A10',
+    borderColor: '#FF7A00',
   },
 
   strengthDisplayModeTopBox: {
     width: '100%',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#222229',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#2B2B31',
     borderRadius: 18,
     padding: 12,
     marginBottom: 12,
@@ -4353,13 +4388,13 @@ const styles = StyleSheet.create({
     width: 30,
     height: 30,
     borderRadius: 15,
-    backgroundColor: '#E2E8F0',
+    backgroundColor: '#2B2B31',
     alignItems: 'center',
     justifyContent: 'center',
   },
 
   strengthDisplayModeCloseButtonText: {
-    color: '#0F172A',
+    color: '#FFFFFF',
     fontSize: 18,
     fontWeight: '900',
     lineHeight: 20,
@@ -4370,9 +4405,9 @@ const styles = StyleSheet.create({
     width: '100%',
     minHeight: 44,
     borderRadius: 14,
-    backgroundColor: '#E0F2FE',
+    backgroundColor: '#2A1A10',
     borderWidth: 1,
-    borderColor: '#BAE6FD',
+    borderColor: '#FF7A00',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 12,
@@ -4380,7 +4415,7 @@ const styles = StyleSheet.create({
   },
 
   openStrengthDisplayControlsButtonText: {
-    color: '#0C4A6E',
+    color: '#FF9A3D',
     fontSize: 14,
     fontWeight: '900',
     textAlign: 'center',
@@ -4389,9 +4424,9 @@ const styles = StyleSheet.create({
 
   strengthDisplayModeBox: {
     width: '100%',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#222229',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#2B2B31',
     borderRadius: 18,
     padding: 12,
     marginBottom: 12,
@@ -4399,7 +4434,7 @@ const styles = StyleSheet.create({
   },
 
   strengthDisplayModeTitle: {
-    color: '#0F172A',
+    color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '900',
     textAlign: 'right',
@@ -4417,20 +4452,20 @@ const styles = StyleSheet.create({
     minHeight: 44,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#CBD5E1',
-    backgroundColor: '#FFFFFF',
+    borderColor: '#2B2B31',
+    backgroundColor: '#17171C',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 10,
   },
 
   strengthDisplayModeButtonActive: {
-    backgroundColor: '#0F172A',
+    backgroundColor: '#FF7A00',
     borderColor: '#0F172A',
   },
 
   strengthDisplayModeButtonText: {
-    color: '#334155',
+    color: '#EDEDED',
     fontSize: 13,
     fontWeight: '900',
     textAlign: 'center',
@@ -4442,7 +4477,7 @@ const styles = StyleSheet.create({
   },
 
   strengthDisplayModeHint: {
-    color: '#64748B',
+    color: '#B3B3B3',
     fontSize: 13,
     lineHeight: 20,
     fontWeight: '700',
@@ -4454,7 +4489,7 @@ const styles = StyleSheet.create({
     width: '100%',
     minHeight: 48,
     borderRadius: 16,
-    backgroundColor: '#2563EB',
+    backgroundColor: '#FF7A00',
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 2,
@@ -4470,17 +4505,17 @@ const styles = StyleSheet.create({
     writingDirection: 'rtl',
   },
 
-  clientWorkoutFeedbackBox: { width: '100%', backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 18, padding: 12, marginBottom: 14, gap: 10 },
+  clientWorkoutFeedbackBox: { width: '100%', backgroundColor: '#222229', borderWidth: 1, borderColor: '#2B2B31', borderRadius: 18, padding: 12, marginBottom: 14, gap: 10 },
   clientWorkoutFeedbackRow: { width: '100%', flexDirection: 'row-reverse', gap: 8 },
-  clientWorkoutFeedbackButton: { flex: 1, minHeight: 44, borderRadius: 14, borderWidth: 1, borderColor: '#CBD5E1', backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
+  clientWorkoutFeedbackButton: { flex: 1, minHeight: 44, borderRadius: 14, borderWidth: 1, borderColor: '#2B2B31', backgroundColor: '#17171C', alignItems: 'center', justifyContent: 'center' },
   clientWorkoutFeedbackSuccess: { backgroundColor: '#16A34A', borderColor: '#16A34A' },
   clientWorkoutFeedbackFail: { backgroundColor: '#DC2626', borderColor: '#DC2626' },
-  clientWorkoutFeedbackText: { color: '#334155', fontSize: 13, fontWeight: '800', textAlign: 'center', writingDirection: 'rtl' },
+  clientWorkoutFeedbackText: { color: '#EDEDED', fontSize: 13, fontWeight: '800', textAlign: 'center', writingDirection: 'rtl' },
   clientWorkoutFeedbackTextActive: { color: '#FFFFFF' },
   clientWorkoutNotesInput: { minHeight: 86, paddingVertical: 12, textAlignVertical: 'top' },
-  runningClientFeedbackBox: { backgroundColor: '#FFFFFF', borderRadius: 16, borderWidth: 1, borderColor: '#E2E8F0', padding: 12, marginTop: 10, gap: 9 },
-  runningClientFeedbackTitle: { color: '#0F172A', fontSize: 14, fontWeight: '900', textAlign: 'right', writingDirection: 'rtl' },
-  saveRunningFeedbackButton: { minHeight: 44, borderRadius: 14, backgroundColor: '#2563EB', alignItems: 'center', justifyContent: 'center' },
+  runningClientFeedbackBox: { backgroundColor: '#17171C', borderRadius: 16, borderWidth: 1, borderColor: '#2B2B31', padding: 12, marginTop: 10, gap: 9 },
+  runningClientFeedbackTitle: { color: '#FFFFFF', fontSize: 14, fontWeight: '900', textAlign: 'right', writingDirection: 'rtl' },
+  saveRunningFeedbackButton: { minHeight: 44, borderRadius: 14, backgroundColor: '#FF7A00', alignItems: 'center', justifyContent: 'center' },
   saveRunningFeedbackButtonText: { color: '#FFFFFF', fontSize: 14, fontWeight: '900', textAlign: 'center', writingDirection: 'rtl' },
   coachFeedbackCard: { backgroundColor: '#FFFBEB', borderRadius: 14, borderWidth: 1, borderColor: '#FDE68A', padding: 10, marginTop: 8 },
   coachFeedbackTitle: { color: '#92400E', fontSize: 13, fontWeight: '900', textAlign: 'right', writingDirection: 'rtl', marginBottom: 4 },

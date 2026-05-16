@@ -14,6 +14,28 @@ import {
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { auth, db } from "../../../database/firebase";
 
+const COLORS = {
+  bg: '#0B0B0B',
+  card: '#121212',
+  cardSoft: '#1A1A1A',
+  cardRaised: '#1E1E1E',
+  border: '#2A2A2A',
+  borderSoft: '#343434',
+  primary: '#FF7A00',
+  primaryDark: '#E56700',
+  primarySoft: '#2A1708',
+  primaryMuted: '#3A210D',
+  text: '#FFFFFF',
+  textMuted: '#B0B0B0',
+  textSubtle: '#9CA3AF',
+  danger: '#FF5C5C',
+  dangerBg: '#2A1313',
+  dangerBorder: '#5A1E1E',
+  success: '#22C55E',
+  successBg: '#102A1A',
+  successBorder: '#1F6B3A',
+};
+
 type UserRole = "owner" | "admin" | "client";
 
 type ClientItem = {
@@ -394,6 +416,7 @@ function createStrengthProgramSnapshot(params: {
   id?: string;
   sections: ProgramSection[];
   notes?: string;
+  runningNotes?: string;
   createdAt?: string;
   archivedAt?: string;
 }): StrengthProgramSnapshot {
@@ -411,6 +434,12 @@ function createStrengthProgramSnapshot(params: {
   };
   if (completed) snapshot.completedAt = new Date().toISOString();
   return snapshot;
+}
+
+
+function areAllRunningWeeksCompleted(weeks: RunningWeek[]) {
+  const cleanedWeeks = normalizeRunningWeeksForSave(weeks);
+  return cleanedWeeks.length > 0 && cleanedWeeks.every(hasRunningFeedback);
 }
 
 function createRunningProgramSnapshot(params: {
@@ -431,6 +460,7 @@ function createRunningProgramSnapshot(params: {
     runningWeeksCount: cleanedWeeks.length,
     runningWeeks: cleanedWeeks,
     notes: String(params.notes || "").trim(),
+    runningNotes: String(params.runningNotes || params.notes || "").trim(),
   };
   if (completed) snapshot.completedAt = new Date().toISOString();
   return snapshot;
@@ -1176,7 +1206,7 @@ export default function ClientTrainingProgramManager({
                 onChangeText={handleClientSearchChange}
                 onFocus={() => setIsClientMenuOpen(true)}
                 placeholder="הקלידי שם, אימייל או מזהה לקוח"
-                placeholderTextColor="#94A3B8"
+                placeholderTextColor={COLORS.textSubtle}
                 style={styles.clientSearchInput}
                 textAlign="right"
                 autoCapitalize="none"
@@ -1270,7 +1300,7 @@ export default function ClientTrainingProgramManager({
 
               {loadingProgram ? (
                 <View style={styles.loaderWrap}>
-                  <ActivityIndicator size="small" color="#0F172A" />
+                  <ActivityIndicator size="small" color={COLORS.text} />
                   <Text style={styles.loaderText}>טוען תוכנית קיימת...</Text>
                 </View>
               ) : (
@@ -1309,7 +1339,7 @@ export default function ClientTrainingProgramManager({
                               updateSectionTitle(section.id, value)
                             }
                             placeholder="כותרת לדוגמה: פול באדי / אימון A"
-                            placeholderTextColor="#94A3B8"
+                            placeholderTextColor={COLORS.textSubtle}
                             style={styles.sectionTitleInput}
                             textAlign="right"
                           />
@@ -1342,7 +1372,7 @@ export default function ClientTrainingProgramManager({
                                   )
                                 }
                                 placeholder="שם תרגיל"
-                                placeholderTextColor="#94A3B8"
+                                placeholderTextColor={COLORS.textSubtle}
                                 style={styles.input}
                                 textAlign="right"
                               />
@@ -1370,7 +1400,7 @@ export default function ClientTrainingProgramManager({
                                       )
                                     }
                                     placeholder="סטים"
-                                    placeholderTextColor="#94A3B8"
+                                    placeholderTextColor={COLORS.textSubtle}
                                     style={[
                                       styles.halfInput,
                                       styles.fieldInput,
@@ -1391,7 +1421,7 @@ export default function ClientTrainingProgramManager({
                                       )
                                     }
                                     placeholder="חזרות"
-                                    placeholderTextColor="#94A3B8"
+                                    placeholderTextColor={COLORS.textSubtle}
                                     style={[
                                       styles.halfInput,
                                       styles.fieldInput,
@@ -1412,7 +1442,7 @@ export default function ClientTrainingProgramManager({
                                   )
                                 }
                                 placeholder="הערות לתרגיל"
-                                placeholderTextColor="#94A3B8"
+                                placeholderTextColor={COLORS.textSubtle}
                                 style={styles.input}
                                 textAlign="right"
                               />
@@ -1449,7 +1479,7 @@ export default function ClientTrainingProgramManager({
                           value={runningWeeksCount}
                           onChangeText={updateRunningWeeksCount}
                           placeholder="לדוגמה: 8"
-                          placeholderTextColor="#94A3B8"
+                          placeholderTextColor={COLORS.textSubtle}
                           style={styles.input}
                           textAlign="right"
                           keyboardType="numeric"
@@ -1478,7 +1508,7 @@ export default function ClientTrainingProgramManager({
                                   )
                                 }
                                 placeholder="5"
-                                placeholderTextColor="#94A3B8"
+                                placeholderTextColor={COLORS.textSubtle}
                                 style={[styles.halfInput, styles.fieldInput]}
                                 textAlign="right"
                                 keyboardType={
@@ -1536,7 +1566,7 @@ export default function ClientTrainingProgramManager({
                               updateRunningWeek(week.id, "notes", value)
                             }
                             placeholder="הערות לשבוע הזה"
-                            placeholderTextColor="#94A3B8"
+                            placeholderTextColor={COLORS.textSubtle}
                             style={[styles.input, styles.multilineInput]}
                             textAlign="right"
                             multiline
@@ -1553,7 +1583,7 @@ export default function ClientTrainingProgramManager({
                     value={programType === "running" ? runningNotes : strengthNotes}
                     onChangeText={programType === "running" ? setRunningNotes : setStrengthNotes}
                     placeholder={programType === "running" ? "הערות כלליות לתוכנית הריצה" : "הערות כלליות לתוכנית הכוח"}
-                    placeholderTextColor="#94A3B8"
+                    placeholderTextColor={COLORS.textSubtle}
                     style={[styles.input, styles.multilineInput]}
                     textAlign="right"
                     multiline
@@ -1735,7 +1765,7 @@ export default function ClientTrainingProgramManager({
               value={historySearch}
               onChangeText={setHistorySearch}
               placeholder="חיפוש תרגיל"
-              placeholderTextColor="#94A3B8"
+              placeholderTextColor={COLORS.textSubtle}
               style={styles.input}
               textAlign="right"
             />
@@ -1775,56 +1805,56 @@ export default function ClientTrainingProgramManager({
 const styles = StyleSheet.create({
   container: { width: "100%", gap: 12 },
   headerBox: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: COLORS.card,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: COLORS.border,
     padding: 14,
     alignItems: "flex-end",
     gap: 4,
   },
   title: {
-    color: "#0F172A",
+    color: COLORS.text,
     fontSize: 18,
     fontWeight: "800",
     textAlign: "right",
   },
   subtitle: {
-    color: "#64748B",
+    color: COLORS.textSubtle,
     fontSize: 13,
     lineHeight: 20,
     textAlign: "right",
   },
   emptyBox: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: COLORS.card,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: COLORS.border,
     padding: 18,
     alignItems: "center",
   },
   emptyText: {
-    color: "#64748B",
+    color: COLORS.textSubtle,
     fontSize: 14,
     textAlign: "center",
     lineHeight: 22,
   },
   clientPickerBox: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: COLORS.card,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: COLORS.border,
     padding: 14,
     gap: 10,
   },
   label: {
-    color: "#334155",
+    color: COLORS.textMuted,
     fontSize: 13,
     fontWeight: "800",
     textAlign: "right",
   },
   smallLabel: {
-    color: "#64748B",
+    color: COLORS.textSubtle,
     fontSize: 12,
     fontWeight: "700",
     textAlign: "right",
@@ -1834,14 +1864,14 @@ const styles = StyleSheet.create({
   clientSearchInput: {
     width: "100%",
     minHeight: 50,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: COLORS.cardSoft,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#CBD5E1",
+    borderColor: COLORS.borderSoft,
     paddingHorizontal: 42,
     paddingVertical: 12,
     fontSize: 14,
-    color: "#0F172A",
+    color: COLORS.text,
     writingDirection: "rtl",
   },
   clientSearchClearButton: {
@@ -1851,106 +1881,106 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: "#E2E8F0",
+    backgroundColor: COLORS.border,
     alignItems: "center",
     justifyContent: "center",
   },
   clientSearchClearText: {
-    color: "#334155",
+    color: COLORS.textMuted,
     fontSize: 22,
     fontWeight: "800",
     lineHeight: 24,
   },
   clientMenuToggleButton: {
     minHeight: 44,
-    backgroundColor: "#EEF2FF",
+    backgroundColor: COLORS.primarySoft,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#C7D2FE",
+    borderColor: COLORS.primaryDark,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 12,
   },
   clientMenuToggleText: {
-    color: "#4338CA",
+    color: COLORS.primary,
     fontSize: 13,
     fontWeight: "800",
     textAlign: "center",
   },
   clientDropdown: {
-    backgroundColor: "#F8FAFC",
+    backgroundColor: COLORS.cardSoft,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: COLORS.border,
     padding: 8,
   },
   clientDropdownScroll: { maxHeight: 240 },
   clientDropdownContent: { gap: 8 },
   clientDropdownEmptyBox: { padding: 14, alignItems: "center" },
   clientDropdownEmptyText: {
-    color: "#64748B",
+    color: COLORS.textSubtle,
     fontSize: 13,
     textAlign: "center",
   },
   clientDropdownItem: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: COLORS.card,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: COLORS.border,
     paddingVertical: 11,
     paddingHorizontal: 12,
     alignItems: "flex-end",
     gap: 3,
   },
   clientDropdownItemSelected: {
-    backgroundColor: "#E0E7FF",
-    borderColor: "#A5B4FC",
+    backgroundColor: COLORS.primaryMuted,
+    borderColor: COLORS.primary,
   },
   clientDropdownName: {
-    color: "#0F172A",
+    color: COLORS.text,
     fontSize: 14,
     fontWeight: "800",
     textAlign: "right",
   },
-  clientDropdownNameSelected: { color: "#3730A3" },
-  clientDropdownMeta: { color: "#64748B", fontSize: 12, textAlign: "right" },
+  clientDropdownNameSelected: { color: COLORS.primary },
+  clientDropdownMeta: { color: COLORS.textSubtle, fontSize: 12, textAlign: "right" },
   editorCard: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: COLORS.card,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: COLORS.border,
     padding: 14,
     gap: 12,
   },
   selectedClientBox: {
-    backgroundColor: "#EFF6FF",
+    backgroundColor: COLORS.primarySoft,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#BFDBFE",
+    borderColor: COLORS.primaryDark,
     padding: 12,
     alignItems: "flex-end",
     gap: 3,
   },
   selectedClientLabel: {
-    color: "#1D4ED8",
+    color: COLORS.primary,
     fontSize: 12,
     fontWeight: "800",
     textAlign: "right",
   },
   selectedClientName: {
-    color: "#0F172A",
+    color: COLORS.text,
     fontSize: 16,
     fontWeight: "800",
     textAlign: "right",
   },
-  selectedClientEmail: { color: "#475569", fontSize: 13, textAlign: "right" },
+  selectedClientEmail: { color: COLORS.textMuted, fontSize: 13, textAlign: "right" },
   loaderWrap: {
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 22,
     gap: 8,
   },
-  loaderText: { color: "#64748B", fontSize: 13, textAlign: "center" },
+  loaderText: { color: COLORS.textSubtle, fontSize: 13, textAlign: "center" },
   splitBox: { gap: 8 },
   splitButtonsWrap: { gap: 8 },
   splitButtonsRow: { flexDirection: "row-reverse", gap: 8 },
@@ -1958,78 +1988,78 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 46,
     borderRadius: 14,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: COLORS.cardSoft,
     borderWidth: 1,
-    borderColor: "#CBD5E1",
+    borderColor: COLORS.borderSoft,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 8,
   },
-  splitButtonActive: { backgroundColor: "#0F172A", borderColor: "#0F172A" },
+  splitButtonActive: { backgroundColor: COLORS.text, borderColor: COLORS.text },
   splitButtonText: {
-    color: "#334155",
+    color: COLORS.textMuted,
     fontSize: 13,
     fontWeight: "800",
     textAlign: "center",
   },
-  splitButtonTextActive: { color: "#FFFFFF" },
+  splitButtonTextActive: { color: COLORS.card },
   optionButtonsWrap: { flexDirection: "row-reverse", flexWrap: "wrap", gap: 8 },
   optionButton: {
     minHeight: 42,
     borderRadius: 999,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: COLORS.cardSoft,
     borderWidth: 1,
-    borderColor: "#CBD5E1",
+    borderColor: COLORS.borderSoft,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
-  optionButtonActive: { backgroundColor: "#0F172A", borderColor: "#0F172A" },
+  optionButtonActive: { backgroundColor: COLORS.text, borderColor: COLORS.text },
   optionButtonText: {
-    color: "#334155",
+    color: COLORS.textMuted,
     fontSize: 12,
     fontWeight: "800",
     textAlign: "center",
   },
-  optionButtonTextActive: { color: "#FFFFFF" },
+  optionButtonTextActive: { color: COLORS.card },
   sectionCard: {
-    backgroundColor: "#F8FAFC",
+    backgroundColor: COLORS.cardSoft,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: COLORS.border,
     padding: 12,
     gap: 10,
   },
   removeButton: {
     alignSelf: "flex-start",
-    backgroundColor: "#FEF2F2",
+    backgroundColor: COLORS.dangerBg,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#FECACA",
+    borderColor: COLORS.dangerBorder,
     paddingVertical: 7,
     paddingHorizontal: 10,
   },
-  removeButtonText: { color: "#DC2626", fontSize: 12, fontWeight: "800" },
+  removeButtonText: { color: COLORS.danger, fontSize: 12, fontWeight: "800" },
   sectionTitleInput: {
     width: "100%",
     minHeight: 50,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: COLORS.card,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#CBD5E1",
+    borderColor: COLORS.borderSoft,
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 15,
-    color: "#0F172A",
+    color: COLORS.text,
     fontWeight: "800",
     writingDirection: "rtl",
   },
   exerciseCard: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: COLORS.card,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: COLORS.border,
     padding: 10,
     gap: 9,
   },
@@ -2039,44 +2069,44 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   exerciseIndex: {
-    color: "#0F172A",
+    color: COLORS.text,
     fontSize: 13,
     fontWeight: "800",
     textAlign: "right",
   },
   removeSmallButton: {
-    backgroundColor: "#FEF2F2",
+    backgroundColor: COLORS.dangerBg,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: "#FECACA",
+    borderColor: COLORS.dangerBorder,
     paddingVertical: 6,
     paddingHorizontal: 9,
   },
-  removeSmallButtonText: { color: "#DC2626", fontSize: 11, fontWeight: "800" },
+  removeSmallButtonText: { color: COLORS.danger, fontSize: 11, fontWeight: "800" },
   input: {
     width: "100%",
     minHeight: 48,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: COLORS.card,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#CBD5E1",
+    borderColor: COLORS.borderSoft,
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 14,
-    color: "#0F172A",
+    color: COLORS.text,
     writingDirection: "rtl",
   },
   multilineInput: { minHeight: 92, textAlignVertical: "top" },
   historyButton: {
     minHeight: 42,
-    backgroundColor: "#EEF2FF",
+    backgroundColor: COLORS.primarySoft,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#C7D2FE",
+    borderColor: COLORS.primaryDark,
     alignItems: "center",
     justifyContent: "center",
   },
-  historyButtonText: { color: "#4338CA", fontSize: 12, fontWeight: "800" },
+  historyButtonText: { color: COLORS.primary, fontSize: 12, fontWeight: "800" },
   rowInputs: {
     width: "100%",
     flexDirection: "row-reverse",
@@ -2086,14 +2116,14 @@ const styles = StyleSheet.create({
   },
   halfInput: {
     minHeight: 48,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: COLORS.card,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#CBD5E1",
+    borderColor: COLORS.borderSoft,
     paddingHorizontal: 12,
     paddingVertical: 12,
     fontSize: 14,
-    color: "#0F172A",
+    color: COLORS.text,
     writingDirection: "rtl",
   },
   fieldInput: { width: "100%", minWidth: 0 },
@@ -2105,40 +2135,40 @@ const styles = StyleSheet.create({
   },
   secondaryActionButton: {
     minHeight: 44,
-    backgroundColor: "#EEF2FF",
+    backgroundColor: COLORS.primarySoft,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#C7D2FE",
+    borderColor: COLORS.primaryDark,
     alignItems: "center",
     justifyContent: "center",
   },
   secondaryActionButtonText: {
-    color: "#4338CA",
+    color: COLORS.primary,
     fontSize: 13,
     fontWeight: "800",
   },
   addSectionButton: {
     minHeight: 48,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: COLORS.cardSoft,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#CBD5E1",
+    borderColor: COLORS.borderSoft,
     alignItems: "center",
     justifyContent: "center",
   },
-  addSectionButtonText: { color: "#334155", fontSize: 13, fontWeight: "800" },
+  addSectionButtonText: { color: COLORS.textMuted, fontSize: 13, fontWeight: "800" },
   runningBox: { gap: 12 },
   inputGroup: { gap: 7 },
   runningWeekCard: {
-    backgroundColor: "#F8FAFC",
+    backgroundColor: COLORS.cardSoft,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: COLORS.border,
     padding: 12,
     gap: 10,
   },
   runningWeekTitle: {
-    color: "#0F172A",
+    color: COLORS.text,
     fontSize: 16,
     fontWeight: "800",
     textAlign: "right",
@@ -2151,23 +2181,23 @@ const styles = StyleSheet.create({
   },
   deleteWeekButton: {
     borderRadius: 12,
-    backgroundColor: "#FEF2F2",
+    backgroundColor: COLORS.dangerBg,
     borderWidth: 1,
-    borderColor: "#FECACA",
+    borderColor: COLORS.dangerBorder,
     paddingVertical: 8,
     paddingHorizontal: 10,
   },
   deleteWeekButtonText: {
-    color: "#DC2626",
+    color: COLORS.danger,
     fontSize: 12,
     fontWeight: "800",
     textAlign: "center",
   },
   addWeekButton: {
     borderRadius: 16,
-    backgroundColor: "#EEF2FF",
+    backgroundColor: COLORS.primarySoft,
     borderWidth: 1,
-    borderColor: "#C7D2FE",
+    borderColor: COLORS.primaryDark,
     minHeight: 48,
     alignItems: "center",
     justifyContent: "center",
@@ -2175,16 +2205,16 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   addWeekButtonText: {
-    color: "#4338CA",
+    color: COLORS.primary,
     fontSize: 14,
     fontWeight: "800",
     textAlign: "center",
   },
   newRunningProgramButton: {
     borderRadius: 16,
-    backgroundColor: "#EFF6FF",
+    backgroundColor: COLORS.primarySoft,
     borderWidth: 1,
-    borderColor: "#BFDBFE",
+    borderColor: COLORS.primaryDark,
     minHeight: 52,
     alignItems: "center",
     justifyContent: "center",
@@ -2192,18 +2222,22 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   newRunningProgramButtonText: {
-    color: "#1D4ED8",
+    color: COLORS.primary,
     fontSize: 14,
     fontWeight: "800",
     textAlign: "center",
   },
   saveButton: {
     minHeight: 52,
-    backgroundColor: "#2563EB",
+    backgroundColor: COLORS.primary,
     borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 16,
+    shadowColor: COLORS.primary,
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 6,
   },
   saveButtonText: {
     color: "#FFFFFF",
@@ -2214,7 +2248,7 @@ const styles = StyleSheet.create({
   disabledButton: { opacity: 0.6 },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(15,23,42,0.45)",
+    backgroundColor: "rgba(0,0,0,0.82)",
     justifyContent: "center",
     alignItems: "center",
     padding: 18,
@@ -2223,44 +2257,44 @@ const styles = StyleSheet.create({
     width: "100%",
     maxWidth: 420,
     maxHeight: "82%",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: COLORS.card,
     borderRadius: 22,
     padding: 16,
     gap: 12,
   },
   historyModalTitle: {
-    color: "#0F172A",
+    color: COLORS.text,
     fontSize: 17,
     fontWeight: "800",
     textAlign: "center",
   },
   historyList: { maxHeight: 360 },
   historyItem: {
-    backgroundColor: "#F8FAFC",
+    backgroundColor: COLORS.cardSoft,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: COLORS.border,
     padding: 12,
     marginBottom: 8,
     alignItems: "flex-end",
   },
   historyItemText: {
-    color: "#0F172A",
+    color: COLORS.text,
     fontSize: 14,
     fontWeight: "700",
     textAlign: "right",
   },
   closeModalButton: {
     minHeight: 46,
-    backgroundColor: "#E2E8F0",
+    backgroundColor: COLORS.border,
     borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
   },
-  closeModalButtonText: { color: "#0F172A", fontSize: 14, fontWeight: "800" },
+  closeModalButtonText: { color: COLORS.text, fontSize: 14, fontWeight: "800" },
   pacePickerButton: { alignItems: "center", justifyContent: "center" },
   pacePickerButtonText: {
-    color: "#0F172A",
+    color: COLORS.text,
     fontSize: 15,
     fontWeight: "800",
     textAlign: "center",
@@ -2270,20 +2304,20 @@ const styles = StyleSheet.create({
     width: "100%",
     maxWidth: 420,
     maxHeight: "88%",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: COLORS.card,
     borderRadius: 22,
     padding: 16,
     gap: 12,
   },
   paceModalSubtitle: {
-    color: "#64748B",
+    color: COLORS.textSubtle,
     fontSize: 12,
     fontWeight: "700",
     textAlign: "center",
     lineHeight: 18,
   },
   pacePreviewText: {
-    color: "#0F172A",
+    color: COLORS.text,
     fontSize: 32,
     fontWeight: "900",
     textAlign: "center",
@@ -2298,15 +2332,15 @@ const styles = StyleSheet.create({
   paceColumn: {
     flex: 1,
     minWidth: 0,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: COLORS.cardSoft,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: COLORS.border,
     padding: 8,
     gap: 8,
   },
   paceColumnTitle: {
-    color: "#334155",
+    color: COLORS.textMuted,
     fontSize: 13,
     fontWeight: "900",
     textAlign: "center",
@@ -2316,56 +2350,56 @@ const styles = StyleSheet.create({
   paceOptionButton: {
     minHeight: 38,
     borderRadius: 12,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: COLORS.card,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: COLORS.border,
     alignItems: "center",
     justifyContent: "center",
   },
   paceOptionButtonActive: {
-    backgroundColor: "#0F172A",
-    borderColor: "#0F172A",
+    backgroundColor: COLORS.text,
+    borderColor: COLORS.text,
   },
   paceOptionText: {
-    color: "#334155",
+    color: COLORS.textMuted,
     fontSize: 15,
     fontWeight: "900",
     textAlign: "center",
   },
-  paceOptionTextActive: { color: "#FFFFFF" },
+  paceOptionTextActive: { color: COLORS.card },
   paceModalButtonsRow: { flexDirection: "row-reverse", gap: 10 },
   cancelPaceButton: {
     flex: 1,
     minHeight: 46,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: COLORS.cardSoft,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#CBD5E1",
+    borderColor: COLORS.borderSoft,
     alignItems: "center",
     justifyContent: "center",
   },
   cancelPaceButtonText: {
-    color: "#334155",
+    color: COLORS.textMuted,
     fontSize: 14,
     fontWeight: "800",
     textAlign: "center",
   },
   clientFeedbackBox: {
-    backgroundColor: "#ECFDF5",
+    backgroundColor: COLORS.successBg,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#BBF7D0",
+    borderColor: COLORS.successBorder,
     padding: 10,
     gap: 5,
   },
   clientFeedbackTitle: {
-    color: "#166534",
+    color: COLORS.success,
     fontSize: 13,
     fontWeight: "900",
     textAlign: "right",
   },
   clientFeedbackText: {
-    color: "#14532D",
+    color: COLORS.success,
     fontSize: 13,
     fontWeight: "700",
     textAlign: "right",

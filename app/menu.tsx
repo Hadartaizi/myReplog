@@ -48,7 +48,7 @@ import ClientTrainingProgramManager from "./components/trainingProgram/ClientTra
 import ClientTrainingProgramViewer from "./components/trainingProgram/ClientTrainingProgramViewer";
 import type { UserRole } from "./types/user";
 
-const APP_BG = "#F4F7FB";
+const APP_BG = "#0B0B0D";
 
 const DEFAULT_INSTAGRAM_URL = "https://www.instagram.com/hadar_taizi/";
 const DEFAULT_WHATSAPP_PHONE = "972502507437";
@@ -480,8 +480,8 @@ function WebDateTimeInput({
         borderRadius: 14,
         borderWidth: 1,
         borderStyle: "solid",
-        borderColor: "#CBD5E1",
-        backgroundColor: "#FFFFFF",
+        borderColor: "#2B2B31",
+        backgroundColor: "#17171C",
         boxSizing: "border-box",
         display: "flex",
         alignItems: "center",
@@ -499,7 +499,7 @@ function WebDateTimeInput({
           width: "100%",
           maxWidth: "100%",
           minWidth: 0,
-          color: "#0F172A",
+          color: "#FFFFFF",
           fontSize: 14,
           lineHeight: "20px",
           fontWeight: 800,
@@ -1168,7 +1168,7 @@ function ManualWorkoutEntryManager({
                   </View>
                   <View style={styles.inputGroup}>
                     <Text style={styles.inputLabel}>שם התרגיל</Text>
-                    <TextInput value={row.exerciseName} onChangeText={(value) => updateExerciseName(row.id, value)} placeholder="לדוגמה: סקוואט" placeholderTextColor="#94A3B8" style={styles.input} textAlign="right" />
+                    <TextInput value={row.exerciseName} onChangeText={(value) => updateExerciseName(row.id, value)} placeholder="לדוגמה: סקוואט" placeholderTextColor="#8E8E93" style={styles.input} textAlign="right" />
                   </View>
                   <View style={styles.manualSetsHeaderRow}>
                     <Text style={styles.manualWorkoutSectionLabel}>סטים</Text>
@@ -1184,11 +1184,11 @@ function ManualWorkoutEntryManager({
                         <View style={styles.manualExerciseStatsRow}>
                           <View style={styles.manualExerciseStatCol}>
                             <Text style={styles.inputLabel}>משקל</Text>
-                            <TextInput value={set.weight} onChangeText={(value) => updateExerciseSet(row.id, set.id, "weight", value)} placeholder="ק״ג" placeholderTextColor="#94A3B8" style={styles.input} textAlign="right" keyboardType={Platform.OS === "ios" ? "numbers-and-punctuation" : "decimal-pad"} />
+                            <TextInput value={set.weight} onChangeText={(value) => updateExerciseSet(row.id, set.id, "weight", value)} placeholder="ק״ג" placeholderTextColor="#8E8E93" style={styles.input} textAlign="right" keyboardType={Platform.OS === "ios" ? "numbers-and-punctuation" : "decimal-pad"} />
                           </View>
                           <View style={styles.manualExerciseStatCol}>
                             <Text style={styles.inputLabel}>חזרות</Text>
-                            <TextInput value={set.reps} onChangeText={(value) => updateExerciseSet(row.id, set.id, "reps", value)} placeholder="12" placeholderTextColor="#94A3B8" style={styles.input} textAlign="right" keyboardType={Platform.OS === "ios" ? "numbers-and-punctuation" : "numeric"} />
+                            <TextInput value={set.reps} onChangeText={(value) => updateExerciseSet(row.id, set.id, "reps", value)} placeholder="12" placeholderTextColor="#8E8E93" style={styles.input} textAlign="right" keyboardType={Platform.OS === "ios" ? "numbers-and-punctuation" : "numeric"} />
                           </View>
                         </View>
                       </View>
@@ -1907,7 +1907,7 @@ function ClientCardRenewalManager({
                 if (!value.trim()) setSelectedClientId("");
               }}
               placeholder="הקלידי שם, אימייל או טלפון"
-              placeholderTextColor="#94A3B8"
+              placeholderTextColor="#8E8E93"
               style={styles.clientSearchInput}
               textAlign="right"
               autoCapitalize="none"
@@ -1985,7 +1985,7 @@ function ClientCardRenewalManager({
                             value={redeemDate}
                             onChangeText={setRedeemDate}
                             placeholder="YYYY-MM-DD"
-                            placeholderTextColor="#94A3B8"
+                            placeholderTextColor="#8E8E93"
                             style={styles.input}
                             textAlign="right"
                           />
@@ -2013,7 +2013,7 @@ function ClientCardRenewalManager({
                               setRedeemTime(`${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`);
                             }}
                             placeholder="12:00"
-                            placeholderTextColor="#94A3B8"
+                            placeholderTextColor="#8E8E93"
                             style={styles.input}
                             keyboardType={Platform.OS === "ios" ? "numbers-and-punctuation" : "numeric"}
                             textAlign="right"
@@ -2027,7 +2027,7 @@ function ClientCardRenewalManager({
                       disabled={updatingClient}
                       style={({ pressed }) => [styles.redeemCardButton, pressed && styles.pressedLight, updatingClient && styles.disabledButton]}
                     >
-                      {updatingClient ? <ActivityIndicator color="#1D4ED8" /> : <Text style={styles.redeemCardButtonText}>מימוש כרטיסייה</Text>}
+                      {updatingClient ? <ActivityIndicator color="#FF7A00" /> : <Text style={styles.redeemCardButtonText}>מימוש כרטיסייה</Text>}
                     </Pressable>
                   </>
                 )}
@@ -2040,7 +2040,7 @@ function ClientCardRenewalManager({
                         value={purchaseAmount}
                         onChangeText={(value) => setPurchaseAmount(value.replace(/[^0-9]/g, ""))}
                         placeholder="לדוגמה: 8"
-                        placeholderTextColor="#94A3B8"
+                        placeholderTextColor="#8E8E93"
                         style={styles.input}
                         keyboardType="numeric"
                         textAlign="right"
@@ -3515,7 +3515,7 @@ export default function Menu() {
                           value={instagramInput}
                           onChangeText={setInstagramInput}
                           placeholder="לדוגמה: hadar_taizi או קישור מלא"
-                          placeholderTextColor="#94A3B8"
+                          placeholderTextColor="#8E8E93"
                           style={styles.input}
                           autoCapitalize="none"
                           textAlign="right"
@@ -3528,7 +3528,7 @@ export default function Menu() {
                           value={whatsappInput}
                           onChangeText={setWhatsappInput}
                           placeholder="0501234567"
-                          placeholderTextColor="#94A3B8"
+                          placeholderTextColor="#8E8E93"
                           style={styles.input}
                           keyboardType="phone-pad"
                           textAlign="right"
@@ -3541,7 +3541,7 @@ export default function Menu() {
                           value={phoneInput}
                           onChangeText={setPhoneInput}
                           placeholder="0501234567"
-                          placeholderTextColor="#94A3B8"
+                          placeholderTextColor="#8E8E93"
                           style={styles.input}
                           keyboardType="phone-pad"
                           textAlign="right"
@@ -3644,9 +3644,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   card: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#17171C",
     borderRadius: 24,
-    shadowColor: "#000",
+    shadowColor: "#FF7A00",
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.08,
     shadowRadius: 16,
@@ -3658,18 +3658,18 @@ const styles = StyleSheet.create({
   },
   title: {
     fontWeight: "800",
-    color: "#1E293B",
+    color: "#FFFFFF",
     textAlign: "center",
   },
   subtitle: {
-    color: "#64748B",
+    color: "#B3B3B3",
     textAlign: "center",
     marginTop: 8,
     lineHeight: 22,
   },
   loaderText: {
     marginTop: 10,
-    color: "#64748B",
+    color: "#B3B3B3",
     fontSize: 15,
     textAlign: "center",
   },
@@ -3711,7 +3711,7 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     borderRadius: 18,
-    backgroundColor: "#0F172A",
+    backgroundColor: "#FF7A00",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 16,
@@ -3729,16 +3729,16 @@ const styles = StyleSheet.create({
   },
   userSectionButton: {
     borderRadius: 18,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#222229",
     borderWidth: 1,
-    borderColor: "#D7DFE9",
+    borderColor: "#2B2B31",
     paddingHorizontal: 16,
     paddingVertical: 14,
     width: "100%",
     justifyContent: "center",
   },
   userSectionButtonText: {
-    color: "#1E293B",
+    color: "#FFFFFF",
     fontWeight: "800",
     textAlign: "right",
     flex: 1,
@@ -3747,10 +3747,10 @@ const styles = StyleSheet.create({
     marginRight: 8,
     paddingRight: 12,
     borderRightWidth: 3,
-    borderRightColor: "#DCE6F4",
+    borderRightColor: "#3A2A1A",
   },
   expandText: {
-    color: "#64748B",
+    color: "#B3B3B3",
     fontSize: 12,
     fontWeight: "700",
     textAlign: "left",
@@ -3761,60 +3761,60 @@ const styles = StyleSheet.create({
   },
   adminMainButton: {
     borderRadius: 20,
-    backgroundColor: "#E8EEFF",
+    backgroundColor: "#2A1A0E",
     borderWidth: 1.5,
-    borderColor: "#B8C8FF",
+    borderColor: "#FF7A00",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 16,
     paddingVertical: 15,
     width: "100%",
-    shadowColor: "#1D4ED8",
+    shadowColor: "#FF7A00",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.08,
     shadowRadius: 8,
     elevation: 2,
   },
   adminMainButtonText: {
-    color: "#1E293B",
+    color: "#FFFFFF",
     fontWeight: "800",
     textAlign: "center",
   },
   mainExpandTextAbsolute: {
     position: "absolute",
     left: 0,
-    color: "#1D4ED8",
+    color: "#FF7A00",
     fontSize: 12,
     fontWeight: "800",
     textAlign: "left",
   },
   adminDropdown: {
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#222229",
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#2B2B31",
     padding: 12,
     width: "100%",
     gap: 12,
   },
   categoryButton: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#17171C",
     borderRadius: 18,
     borderWidth: 1.5,
-    borderColor: "#CBD5E1",
+    borderColor: "#2B2B31",
     paddingVertical: 14,
     paddingHorizontal: 16,
     width: "100%",
     justifyContent: "center",
   },
   categoryButtonText: {
-    color: "#0F172A",
+    color: "#FFFFFF",
     fontWeight: "800",
     fontSize: 15,
     textAlign: "right",
   },
   categoryExpandText: {
-    color: "#475569",
+    color: "#B3B3B3",
     fontSize: 12,
     fontWeight: "800",
     textAlign: "left",
@@ -3825,27 +3825,27 @@ const styles = StyleSheet.create({
     marginRight: 10,
     paddingRight: 14,
     borderRightWidth: 4,
-    borderRightColor: "#C7D7F8",
+    borderRightColor: "#FF7A00",
   },
   subActionButton: {
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#222229",
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#D9E2EC",
+    borderColor: "#2B2B31",
     paddingVertical: 13,
     paddingHorizontal: 15,
     width: "100%",
     justifyContent: "center",
   },
   subActionButtonText: {
-    color: "#0F172A",
+    color: "#FFFFFF",
     fontWeight: "800",
     fontSize: 14,
     textAlign: "right",
     flex: 1,
   },
   subActionExpandText: {
-    color: "#64748B",
+    color: "#B3B3B3",
     fontSize: 12,
     fontWeight: "700",
     textAlign: "left",
@@ -3856,14 +3856,14 @@ const styles = StyleSheet.create({
     paddingRight: 12,
     gap: 10,
     borderRightWidth: 2,
-    borderRightColor: "#E2E8F0",
+    borderRightColor: "#2B2B31",
   },
   secondaryAdminStatsContainer: {
     width: "100%",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#17171C",
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "#DCE7F5",
+    borderColor: "#2B2B31",
     padding: 14,
     gap: 12,
   },
@@ -3872,13 +3872,13 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   secondaryAdminStatsTitle: {
-    color: "#0F172A",
+    color: "#FFFFFF",
     fontSize: 16,
     fontWeight: "800",
     textAlign: "right",
   },
   secondaryAdminStatsSubtitle: {
-    color: "#64748B",
+    color: "#B3B3B3",
     fontSize: 13,
     lineHeight: 20,
     textAlign: "right",
@@ -3887,10 +3887,10 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   secondaryAdminStatCard: {
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#222229",
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#2B2B31",
     paddingVertical: 12,
     paddingHorizontal: 12,
     flexDirection: "row-reverse",
@@ -3901,14 +3901,14 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 26,
-    backgroundColor: "#E0E7FF",
+    backgroundColor: "#2A1A0E",
     borderWidth: 1,
-    borderColor: "#C7D2FE",
+    borderColor: "#FF7A00",
     alignItems: "center",
     justifyContent: "center",
   },
   secondaryAdminCountBadgeText: {
-    color: "#3730A3",
+    color: "#FF7A00",
     fontSize: 18,
     fontWeight: "800",
     textAlign: "center",
@@ -3919,18 +3919,18 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   secondaryAdminStatName: {
-    color: "#0F172A",
+    color: "#FFFFFF",
     fontSize: 15,
     fontWeight: "800",
     textAlign: "right",
   },
   secondaryAdminStatEmail: {
-    color: "#64748B",
+    color: "#B3B3B3",
     fontSize: 13,
     textAlign: "right",
   },
   secondaryAdminStatMeta: {
-    color: "#1D4ED8",
+    color: "#FF7A00",
     fontSize: 13,
     fontWeight: "700",
     textAlign: "right",
@@ -3938,10 +3938,10 @@ const styles = StyleSheet.create({
   },
   accessCard: {
     width: "100%",
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#222229",
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#2B2B31",
     padding: 16,
   },
   accessRow: {
@@ -3951,7 +3951,7 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: "#E2E8F0",
+    borderBottomColor: "#2B2B31",
     gap: 12,
   },
   accessRowLast: {
@@ -3961,7 +3961,7 @@ const styles = StyleSheet.create({
   accessLabel: {
     width: 92,
     fontSize: 13,
-    color: "#64748B",
+    color: "#B3B3B3",
     fontWeight: "700",
     textAlign: "right",
     writingDirection: I18nManager.isRTL ? "rtl" : "ltr",
@@ -3969,20 +3969,20 @@ const styles = StyleSheet.create({
   accessValue: {
     flex: 1,
     fontSize: 14,
-    color: "#0F172A",
+    color: "#FFFFFF",
     fontWeight: "700",
     textAlign: "right",
     writingDirection: "rtl",
   },
   clientCardsInfoCard: {
     width: "100%",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#17171C",
     borderRadius: 22,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#2B2B31",
     padding: 16,
     gap: 14,
-    shadowColor: "#0F172A",
+    shadowColor: "#FF7A00",
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.05,
     shadowRadius: 12,
@@ -3993,13 +3993,13 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   clientCardsInfoTitle: {
-    color: "#0F172A",
+    color: "#FFFFFF",
     fontSize: 18,
     fontWeight: "800",
     textAlign: "right",
   },
   clientCardsInfoSubtitle: {
-    color: "#64748B",
+    color: "#B3B3B3",
     fontSize: 13,
     lineHeight: 20,
     textAlign: "right",
@@ -4012,34 +4012,34 @@ const styles = StyleSheet.create({
   clientCardsMiniStatBox: {
     flex: 1,
     minHeight: 96,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#222229",
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#2B2B31",
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 14,
     paddingHorizontal: 8,
   },
   clientCardsMiniValue: {
-    color: "#0F172A",
+    color: "#FFFFFF",
     fontSize: 22,
     fontWeight: "800",
     textAlign: "center",
   },
   clientCardsMiniLabel: {
     marginTop: 6,
-    color: "#64748B",
+    color: "#B3B3B3",
     fontSize: 13,
     fontWeight: "600",
     textAlign: "center",
   },
   clientCardsHighlightBox: {
     width: "100%",
-    backgroundColor: "#EFF6FF",
+    backgroundColor: "#2A1A0E",
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "#BFDBFE",
+    borderColor: "#FF7A00",
     paddingVertical: 14,
     paddingHorizontal: 14,
   },
@@ -4048,13 +4048,13 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   clientCardsHighlightLabel: {
-    color: "#1D4ED8",
+    color: "#FF7A00",
     fontSize: 13,
     fontWeight: "700",
     textAlign: "right",
   },
   clientCardsHighlightValue: {
-    color: "#0F172A",
+    color: "#FFFFFF",
     fontSize: 15,
     fontWeight: "800",
     textAlign: "right",
@@ -4070,13 +4070,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   cardUsageHistoryTitle: {
-    color: "#0F172A",
+    color: "#FFFFFF",
     fontSize: 16,
     fontWeight: "800",
     textAlign: "right",
   },
   cardUsageHistoryCount: {
-    color: "#64748B",
+    color: "#B3B3B3",
     fontSize: 13,
     fontWeight: "600",
     textAlign: "left",
@@ -4085,10 +4085,10 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   cardUsageRow: {
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#222229",
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#2B2B31",
     paddingVertical: 12,
     paddingHorizontal: 12,
     flexDirection: "row-reverse",
@@ -4099,14 +4099,14 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: "#E0E7FF",
+    backgroundColor: "#2A1A0E",
     borderWidth: 1,
-    borderColor: "#C7D2FE",
+    borderColor: "#FF7A00",
     alignItems: "center",
     justifyContent: "center",
   },
   cardUsageOrderBadgeText: {
-    color: "#3730A3",
+    color: "#FF7A00",
     fontSize: 14,
     fontWeight: "800",
     textAlign: "center",
@@ -4117,53 +4117,53 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   cardUsageMainText: {
-    color: "#0F172A",
+    color: "#FFFFFF",
     fontSize: 14,
     fontWeight: "700",
     textAlign: "right",
   },
   cardUsageSubText: {
-    color: "#64748B",
+    color: "#B3B3B3",
     fontSize: 13,
     fontWeight: "500",
     textAlign: "right",
   },
   emptyCardHistoryBox: {
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#222229",
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#2B2B31",
     paddingVertical: 22,
     paddingHorizontal: 14,
     alignItems: "center",
     justifyContent: "center",
   },
   emptyCardHistoryText: {
-    color: "#64748B",
+    color: "#B3B3B3",
     fontSize: 14,
     fontWeight: "600",
     textAlign: "center",
   },
   emptyClientsBox: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#17171C",
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#2B2B31",
     paddingVertical: 18,
     paddingHorizontal: 14,
     alignItems: "center",
   },
   emptyClientsText: {
-    color: "#64748B",
+    color: "#B3B3B3",
     fontSize: 14,
     fontWeight: "500",
     textAlign: "center",
   },
   clientRow: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#17171C",
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#2B2B31",
     paddingVertical: 14,
     paddingHorizontal: 14,
     flexDirection: "row-reverse",
@@ -4177,13 +4177,13 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
   },
   clientName: {
-    color: "#1E293B",
+    color: "#FFFFFF",
     fontWeight: "700",
     fontSize: 15,
     textAlign: "right",
   },
   clientEmail: {
-    color: "#64748B",
+    color: "#B3B3B3",
     fontSize: 13,
     textAlign: "right",
     marginTop: 4,
@@ -4193,12 +4193,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   deleteClientButton: {
-    backgroundColor: "#FEF2F2",
+    backgroundColor: "#2A1111",
     borderRadius: 12,
     paddingVertical: 8,
     paddingHorizontal: 14,
     borderWidth: 1,
-    borderColor: "#FECACA",
+    borderColor: "#7F1D1D",
   },
   deleteClientButtonText: {
     color: "#DC2626",
@@ -4208,9 +4208,9 @@ const styles = StyleSheet.create({
   },
   logoutButton: {
     borderRadius: 18,
-    backgroundColor: "#FEF2F2",
+    backgroundColor: "#2A1111",
     borderWidth: 1,
-    borderColor: "#FECACA",
+    borderColor: "#7F1D1D",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 16,
@@ -4231,7 +4231,7 @@ const styles = StyleSheet.create({
     paddingVertical: 24,
   },
   modalCard: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#17171C",
     borderRadius: 24,
     paddingHorizontal: 18,
     paddingVertical: 18,
@@ -4257,12 +4257,12 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontWeight: "800",
     fontSize: 22,
-    color: "#0F172A",
+    color: "#FFFFFF",
     marginBottom: 8,
   },
   modalSubtitle: {
     textAlign: "center",
-    color: "#64748B",
+    color: "#B3B3B3",
     fontSize: 14,
     lineHeight: 20,
   },
@@ -4272,16 +4272,16 @@ const styles = StyleSheet.create({
   editToggleButton: {
     minWidth: 66,
     borderRadius: 12,
-    backgroundColor: "#EFF6FF",
+    backgroundColor: "#2A1A0E",
     borderWidth: 1,
-    borderColor: "#BFDBFE",
+    borderColor: "#FF7A00",
     paddingVertical: 8,
     paddingHorizontal: 12,
     alignItems: "center",
     justifyContent: "center",
   },
   editToggleButtonText: {
-    color: "#1D4ED8",
+    color: "#FF7A00",
     fontWeight: "800",
     fontSize: 13,
     textAlign: "center",
@@ -4290,16 +4290,16 @@ const styles = StyleSheet.create({
     opacity: 0,
   },
   contactEditorBox: {
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#222229",
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#2B2B31",
     padding: 14,
     gap: 12,
     marginBottom: 14,
   },
   contactEditorTitle: {
-    color: "#0F172A",
+    color: "#FFFFFF",
     fontSize: 15,
     fontWeight: "800",
     textAlign: "right",
@@ -4308,7 +4308,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   inputLabel: {
-    color: "#334155",
+    color: "#E5E7EB",
     fontSize: 13,
     fontWeight: "700",
     textAlign: "right",
@@ -4316,14 +4316,14 @@ const styles = StyleSheet.create({
   input: {
     width: "100%",
     minHeight: 48,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#17171C",
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#CBD5E1",
+    borderColor: "#2B2B31",
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 14,
-    color: "#0F172A",
+    color: "#FFFFFF",
     writingDirection: "rtl",
   },
   multilineInput: {
@@ -4333,7 +4333,7 @@ const styles = StyleSheet.create({
   saveContactButton: {
     marginTop: 4,
     borderRadius: 16,
-    backgroundColor: "#059669",
+    backgroundColor: "#22C55E",
     minHeight: 50,
     alignItems: "center",
     justifyContent: "center",
@@ -4346,10 +4346,10 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   contactButton: {
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#222229",
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#2B2B31",
     paddingVertical: 14,
     paddingHorizontal: 16,
     alignItems: "center",
@@ -4358,7 +4358,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   contactButtonText: {
-    color: "#1E293B",
+    color: "#FFFFFF",
     fontWeight: "700",
     fontSize: 16,
     textAlign: "center",
@@ -4367,14 +4367,14 @@ const styles = StyleSheet.create({
   closeButton: {
     marginTop: 8,
     borderRadius: 16,
-    backgroundColor: "#E2E8F0",
+    backgroundColor: "#2B2B31",
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 13,
     width: "100%",
   },
   closeButtonText: {
-    color: "#1E293B",
+    color: "#FFFFFF",
     fontWeight: "800",
     fontSize: 16,
     textAlign: "center",
@@ -4382,10 +4382,10 @@ const styles = StyleSheet.create({
 
   manualWorkoutCard: {
     width: "100%",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#17171C",
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: "#DCE7F5",
+    borderColor: "#2B2B31",
     padding: 14,
     gap: 14,
   },
@@ -4394,19 +4394,19 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   manualWorkoutTitle: {
-    color: "#0F172A",
+    color: "#FFFFFF",
     fontSize: 17,
     fontWeight: "800",
     textAlign: "right",
   },
   manualWorkoutSubtitle: {
-    color: "#64748B",
+    color: "#B3B3B3",
     fontSize: 13,
     lineHeight: 20,
     textAlign: "right",
   },
   manualWorkoutSectionLabel: {
-    color: "#0F172A",
+    color: "#FFFFFF",
     fontSize: 14,
     fontWeight: "800",
     textAlign: "right",
@@ -4421,24 +4421,24 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
     paddingHorizontal: 14,
     borderRadius: 999,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#222229",
     borderWidth: 1,
-    borderColor: "#CBD5E1",
+    borderColor: "#2B2B31",
     alignItems: "center",
     justifyContent: "center",
   },
   manualWorkoutClientPillActive: {
-    backgroundColor: "#E0E7FF",
-    borderColor: "#A5B4FC",
+    backgroundColor: "#2A1A0E",
+    borderColor: "#FF7A00",
   },
   manualWorkoutClientPillText: {
-    color: "#0F172A",
+    color: "#FFFFFF",
     fontSize: 14,
     fontWeight: "700",
     textAlign: "center",
   },
   manualWorkoutClientPillTextActive: {
-    color: "#3730A3",
+    color: "#FF7A00",
   },
   manualWorkoutFormBox: {
     gap: 12,
@@ -4450,25 +4450,25 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   addExerciseRowButton: {
-    backgroundColor: "#EEF2FF",
+    backgroundColor: "#2A1A0E",
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#C7D2FE",
+    borderColor: "#FF7A00",
     paddingVertical: 9,
     paddingHorizontal: 12,
   },
   addExerciseRowButtonBelowSave: {
     borderRadius: 16,
-    backgroundColor: "#EEF2FF",
+    backgroundColor: "#2A1A0E",
     borderWidth: 1,
-    borderColor: "#C7D2FE",
+    borderColor: "#FF7A00",
     minHeight: 48,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 16,
   },
   addExerciseRowButtonText: {
-    color: "#4338CA",
+    color: "#FF7A00",
     fontSize: 13,
     fontWeight: "800",
     textAlign: "center",
@@ -4477,10 +4477,10 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   manualExerciseCard: {
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#222229",
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#2B2B31",
     padding: 12,
     gap: 10,
   },
@@ -4491,16 +4491,16 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   manualExerciseCardTitle: {
-    color: "#0F172A",
+    color: "#FFFFFF",
     fontSize: 14,
     fontWeight: "800",
     textAlign: "right",
   },
   removeExerciseRowButton: {
-    backgroundColor: "#FEF2F2",
+    backgroundColor: "#2A1111",
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: "#FECACA",
+    borderColor: "#7F1D1D",
     paddingVertical: 7,
     paddingHorizontal: 10,
   },
@@ -4523,7 +4523,7 @@ const styles = StyleSheet.create({
   saveManualWorkoutButton: {
     marginTop: 4,
     borderRadius: 16,
-    backgroundColor: "#2563EB",
+    backgroundColor: "#FF7A00",
     minHeight: 52,
     alignItems: "center",
     justifyContent: "center",
@@ -4537,26 +4537,26 @@ const styles = StyleSheet.create({
   },
   clearManualWorkoutButton: {
     borderRadius: 16,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#222229",
     borderWidth: 1,
-    borderColor: "#CBD5E1",
+    borderColor: "#2B2B31",
     minHeight: 48,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 16,
   },
   clearManualWorkoutButtonText: {
-    color: "#334155",
+    color: "#E5E7EB",
     fontWeight: "800",
     textAlign: "center",
   },
   datePickerButton: {
     width: "100%",
     minHeight: 52,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#17171C",
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#CBD5E1",
+    borderColor: "#2B2B31",
     paddingHorizontal: 14,
     paddingVertical: 12,
     alignItems: "flex-end",
@@ -4564,13 +4564,13 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   datePickerButtonText: {
-    color: "#0F172A",
+    color: "#FFFFFF",
     fontSize: 15,
     fontWeight: "700",
     textAlign: "right",
   },
   datePickerButtonHint: {
-    color: "#64748B",
+    color: "#B3B3B3",
     fontSize: 12,
     fontWeight: "600",
     textAlign: "right",
@@ -4585,19 +4585,19 @@ const styles = StyleSheet.create({
   dateModalCard: {
     width: "100%",
     maxWidth: 360,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#17171C",
     borderRadius: 22,
     paddingVertical: 18,
     paddingHorizontal: 16,
     alignItems: "center",
-    shadowColor: "#000",
+    shadowColor: "#FF7A00",
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.12,
     shadowRadius: 16,
     elevation: 8,
   },
   dateModalTitle: {
-    color: "#0F172A",
+    color: "#FFFFFF",
     fontSize: 18,
     fontWeight: "800",
     textAlign: "center",
@@ -4617,7 +4617,7 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 46,
     borderRadius: 14,
-    backgroundColor: "#2563EB",
+    backgroundColor: "#FF7A00",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 12,
@@ -4632,15 +4632,15 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 46,
     borderRadius: 14,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#222229",
     borderWidth: 1,
-    borderColor: "#CBD5E1",
+    borderColor: "#2B2B31",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 12,
   },
   dateModalSecondaryButtonText: {
-    color: "#334155",
+    color: "#E5E7EB",
     fontSize: 14,
     fontWeight: "800",
     textAlign: "center",
@@ -4657,10 +4657,10 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   manualSetCard: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#17171C",
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#DCE7F5",
+    borderColor: "#2B2B31",
     padding: 10,
     gap: 10,
   },
@@ -4671,30 +4671,30 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   manualSetTitle: {
-    color: "#0F172A",
+    color: "#FFFFFF",
     fontSize: 13,
     fontWeight: "800",
     textAlign: "right",
   },
   addSetButton: {
-    backgroundColor: "#EEF2FF",
+    backgroundColor: "#2A1A0E",
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#C7D2FE",
+    borderColor: "#FF7A00",
     paddingVertical: 8,
     paddingHorizontal: 12,
   },
   addSetButtonText: {
-    color: "#4338CA",
+    color: "#FF7A00",
     fontSize: 12,
     fontWeight: "800",
     textAlign: "center",
   },
   removeSetButton: {
-    backgroundColor: "#FEF2F2",
+    backgroundColor: "#2A1111",
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: "#FECACA",
+    borderColor: "#7F1D1D",
     paddingVertical: 6,
     paddingHorizontal: 9,
   },
@@ -4708,10 +4708,10 @@ const styles = StyleSheet.create({
 
   cardRenewalManagerCard: {
     width: "100%",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#17171C",
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: "#DCE7F5",
+    borderColor: "#2B2B31",
     padding: 14,
     gap: 14,
   },
@@ -4719,16 +4719,16 @@ const styles = StyleSheet.create({
     gap: 14,
   },
   cardRenewalFormBox: {
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#222229",
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#2B2B31",
     padding: 12,
     gap: 10,
   },
   addCardPurchaseButton: {
     borderRadius: 16,
-    backgroundColor: "#059669",
+    backgroundColor: "#22C55E",
     minHeight: 50,
     alignItems: "center",
     justifyContent: "center",
@@ -4742,16 +4742,16 @@ const styles = StyleSheet.create({
   },
   redeemCardButton: {
     borderRadius: 16,
-    backgroundColor: "#EFF6FF",
+    backgroundColor: "#2A1A0E",
     borderWidth: 1,
-    borderColor: "#BFDBFE",
+    borderColor: "#FF7A00",
     minHeight: 48,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 16,
   },
   redeemCardButtonText: {
-    color: "#1D4ED8",
+    color: "#FF7A00",
     fontWeight: "800",
     fontSize: 14,
     textAlign: "center",
@@ -4760,10 +4760,10 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   cardPurchaseGroupCard: {
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#222229",
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: "#DCE7F5",
+    borderColor: "#2B2B31",
     padding: 12,
     gap: 12,
   },
@@ -4784,13 +4784,13 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   cardPurchaseGroupTitle: {
-    color: "#0F172A",
+    color: "#FFFFFF",
     fontSize: 16,
     fontWeight: "800",
     textAlign: "right",
   },
   cardPurchaseGroupDate: {
-    color: "#64748B",
+    color: "#B3B3B3",
     fontSize: 12,
     fontWeight: "600",
     textAlign: "right",
@@ -4799,14 +4799,14 @@ const styles = StyleSheet.create({
     width: 46,
     height: 46,
     borderRadius: 23,
-    backgroundColor: "#DCFCE7",
+    backgroundColor: "#12331F",
     borderWidth: 1,
-    borderColor: "#BBF7D0",
+    borderColor: "#22C55E",
     alignItems: "center",
     justifyContent: "center",
   },
   cardPurchaseGroupBadgeText: {
-    color: "#166534",
+    color: "#22C55E",
     fontSize: 16,
     fontWeight: "800",
     textAlign: "center",
@@ -4817,24 +4817,24 @@ const styles = StyleSheet.create({
   },
   cardPurchaseMiniStatBox: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#17171C",
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#2B2B31",
     paddingVertical: 10,
     paddingHorizontal: 6,
     alignItems: "center",
     justifyContent: "center",
   },
   cardPurchaseMiniStatValue: {
-    color: "#0F172A",
+    color: "#FFFFFF",
     fontSize: 18,
     fontWeight: "800",
     textAlign: "center",
   },
   cardPurchaseMiniStatLabel: {
     marginTop: 4,
-    color: "#64748B",
+    color: "#B3B3B3",
     fontSize: 12,
     fontWeight: "700",
     textAlign: "center",
@@ -4852,24 +4852,24 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
   },
   editUsageButton: {
-    backgroundColor: "#EFF6FF",
+    backgroundColor: "#2A1A0E",
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: "#BFDBFE",
+    borderColor: "#FF7A00",
     paddingVertical: 7,
     paddingHorizontal: 10,
   },
   editUsageButtonText: {
-    color: "#1D4ED8",
+    color: "#FF7A00",
     fontSize: 12,
     fontWeight: "800",
     textAlign: "center",
   },
   deleteUsageButton: {
-    backgroundColor: "#FEF2F2",
+    backgroundColor: "#2A1111",
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: "#FECACA",
+    borderColor: "#7F1D1D",
     paddingVertical: 7,
     paddingHorizontal: 10,
   },
@@ -4883,25 +4883,25 @@ const styles = StyleSheet.create({
     width: "100%",
     maxWidth: 390,
     maxHeight: "88%",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#17171C",
     borderRadius: 24,
     paddingVertical: 18,
     paddingHorizontal: 16,
     gap: 12,
-    shadowColor: "#000",
+    shadowColor: "#FF7A00",
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.12,
     shadowRadius: 16,
     elevation: 8,
   },
   editUsageModalTitle: {
-    color: "#0F172A",
+    color: "#FFFFFF",
     fontSize: 18,
     fontWeight: "800",
     textAlign: "center",
   },
   editUsageModalSubtitle: {
-    color: "#64748B",
+    color: "#B3B3B3",
     fontSize: 13,
     lineHeight: 20,
     textAlign: "center",
@@ -4925,10 +4925,10 @@ const styles = StyleSheet.create({
   editUsagePickerButton: {
     width: "100%",
     minHeight: 46,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#222229",
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#CBD5E1",
+    borderColor: "#2B2B31",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 8,
@@ -4936,7 +4936,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   editUsagePickerButtonText: {
-    color: "#0F172A",
+    color: "#FFFFFF",
     fontSize: 14,
     fontWeight: "800",
     textAlign: "center",
@@ -4971,14 +4971,14 @@ const styles = StyleSheet.create({
   clientSearchInput: {
     width: "100%",
     minHeight: 50,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#17171C",
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#CBD5E1",
+    borderColor: "#2B2B31",
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 14,
-    color: "#0F172A",
+    color: "#FFFFFF",
     writingDirection: "rtl",
   },
   clientSearchResultsList: {
@@ -4987,50 +4987,50 @@ const styles = StyleSheet.create({
   },
   clientSearchResultItem: {
     width: "100%",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#17171C",
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#2B2B31",
     paddingVertical: 11,
     paddingHorizontal: 12,
     alignItems: "flex-end",
     gap: 3,
   },
   clientSearchResultItemActive: {
-    backgroundColor: "#E0E7FF",
-    borderColor: "#A5B4FC",
+    backgroundColor: "#2A1A0E",
+    borderColor: "#FF7A00",
   },
   clientSearchResultName: {
-    color: "#0F172A",
+    color: "#FFFFFF",
     fontSize: 14,
     fontWeight: "800",
     textAlign: "right",
   },
   clientSearchResultMeta: {
-    color: "#64748B",
+    color: "#B3B3B3",
     fontSize: 12,
     fontWeight: "600",
     textAlign: "right",
   },
   selectedClientSummaryBox: {
     width: "100%",
-    backgroundColor: "#EFF6FF",
+    backgroundColor: "#2A1A0E",
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "#BFDBFE",
+    borderColor: "#FF7A00",
     paddingVertical: 12,
     paddingHorizontal: 14,
     alignItems: "flex-end",
     gap: 4,
   },
   selectedClientSummaryTitle: {
-    color: "#0F172A",
+    color: "#FFFFFF",
     fontSize: 16,
     fontWeight: "800",
     textAlign: "right",
   },
   selectedClientSummaryMeta: {
-    color: "#475569",
+    color: "#B3B3B3",
     fontSize: 13,
     fontWeight: "600",
     textAlign: "right",

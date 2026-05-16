@@ -31,7 +31,14 @@ import { LineChart, BarChart } from 'react-native-chart-kit';
 import ModalSelector from 'react-native-modal-selector';
 
 const { height: screenHeight } = Dimensions.get('window');
-const APP_BG = '#F4F7FB';
+const APP_BG = '#050505';
+const LOGO_ORANGE = '#FF7A00';
+const LOGO_ORANGE_LIGHT = '#FF9A3D';
+const CARD_DARK = '#121214';
+const FIELD_DARK = '#1A1A1F';
+const BORDER_DARK = '#34343B';
+const TEXT_LIGHT = '#FFFFFF';
+const TEXT_MUTED = '#B8B8C0';
 
 const timeOptions = {
   'כל הזמנים (יומי)': 'all',
@@ -69,7 +76,7 @@ type WorkoutLike = {
   sourceCollection?: 'workouts' | 'exercises';
 };
 
-function ArrowDownIcon({ size = 20, color = '#5B6470' }) {
+function ArrowDownIcon({ size = 20, color = '#FF7A00' }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
       <Path
@@ -96,7 +103,7 @@ function DeleteIcon({ size = 18, color = '#DC2626' }) {
   );
 }
 
-function ChartIcon({ size = 26, color = '#64748B' }) {
+function ChartIcon({ size = 26, color = '#FF7A00' }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
       <Line x1="4" y1="20" x2="20" y2="20" stroke={color} strokeWidth={2} />
@@ -107,7 +114,7 @@ function ChartIcon({ size = 26, color = '#64748B' }) {
   );
 }
 
-function ExpandIcon({ size = 18, color = '#0F172A' }) {
+function ExpandIcon({ size = 18, color = '#FFFFFF' }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
       <Path
@@ -189,24 +196,24 @@ export default function GraphScreen() {
 
   const chartConfig = useMemo(
     () => ({
-      backgroundGradientFrom: '#F8FAFC',
-      backgroundGradientTo: '#F8FAFC',
+      backgroundGradientFrom: '#111113',
+      backgroundGradientTo: '#111113',
       decimalPlaces: 1,
-      color: (opacity = 1) => `rgba(15, 23, 42, ${opacity})`,
-      labelColor: () => '#334155',
+      color: (opacity = 1) => `rgba(255, 122, 0, ${opacity})`,
+      labelColor: () => '#EDEDED',
       propsForBackgroundLines: {
         strokeDasharray: '',
-        stroke: '#E2E8F0',
+        stroke: '#2B2B31',
       },
       propsForDots: {
         r: isVerySmall ? '3.5' : '4',
         strokeWidth: '2',
-        stroke: '#0F172A',
+        stroke: '#FFFFFF',
       },
       strokeWidth: 2,
       barPercentage: isVerySmall ? 0.58 : 0.7,
-      fillShadowGradient: '#0F172A',
-      fillShadowGradientOpacity: 0.18,
+      fillShadowGradient: '#FF7A00',
+      fillShadowGradientOpacity: 0.45,
       propsForLabels: {
         fontSize: isVerySmall ? 10 : 12,
       },
@@ -216,24 +223,24 @@ export default function GraphScreen() {
 
   const chartConfigFullScreen = useMemo(
     () => ({
-      backgroundGradientFrom: '#FFFFFF',
-      backgroundGradientTo: '#FFFFFF',
+      backgroundGradientFrom: '#111113',
+      backgroundGradientTo: '#111113',
       decimalPlaces: 1,
-      color: (opacity = 1) => `rgba(15, 23, 42, ${opacity})`,
-      labelColor: () => '#1E293B',
+      color: (opacity = 1) => `rgba(255, 122, 0, ${opacity})`,
+      labelColor: () => '#FFFFFF',
       propsForBackgroundLines: {
         strokeDasharray: '',
-        stroke: '#E2E8F0',
+        stroke: '#2B2B31',
       },
       propsForDots: {
         r: '3.2',
         strokeWidth: '2',
-        stroke: '#0F172A',
+        stroke: '#FFFFFF',
       },
       strokeWidth: 2,
       barPercentage: 0.34,
-      fillShadowGradient: '#0F172A',
-      fillShadowGradientOpacity: 0.14,
+      fillShadowGradient: '#FF7A00',
+      fillShadowGradientOpacity: 0.42,
       propsForLabels: {
         fontSize: 9,
       },
@@ -876,6 +883,9 @@ export default function GraphScreen() {
     maxHeight: screenHeight * 0.6,
     alignSelf: 'center' as const,
     borderRadius: 16,
+    backgroundColor: '#121214',
+    borderWidth: 1,
+    borderColor: '#FF7A00',
   };
 
   const selectorRow = ({
@@ -888,7 +898,7 @@ export default function GraphScreen() {
     fontSize: number;
   }) => (
     <View style={styles.selectorInnerRow}>
-      <ArrowDownIcon size={22} color="#5B6470" />
+      <ArrowDownIcon size={22} color="#FF7A00" />
       <Text
         style={[value ? styles.selectorText : styles.selectorPlaceholderText, { fontSize }]}
         numberOfLines={1}
@@ -960,6 +970,8 @@ export default function GraphScreen() {
                     optionTextStyle={(text: string) => ({
                       fontSize: dynamic.selectorFont,
                       textAlign: textAlignByLanguage(text),
+                      color: '#FFFFFF',
+                      fontWeight: '700',
                     })}
                     overlayStyle={styles.modalOverlay}
                     cancelStyle={styles.modalCancelButton}
@@ -987,7 +999,7 @@ export default function GraphScreen() {
                         pressed && styles.singleExerciseBoxPressed,
                       ]}
                     >
-                      <ArrowDownIcon size={22} color="#5B6470" />
+                      <ArrowDownIcon size={22} color="#FF7A00" />
                       <Text
                         style={[
                           selectedExercise ? styles.singleExerciseText : styles.singleExercisePlaceholder,
@@ -1087,7 +1099,7 @@ export default function GraphScreen() {
 
                 {loading && (
                   <View style={styles.loaderWrapper}>
-                    <ActivityIndicator size="large" color="#0F172A" />
+                    <ActivityIndicator size="large" color="#FF7A00" />
                     <Text style={[styles.loaderText, { fontSize: dynamic.textSize - 1 }]}>
                       טוען נתונים...
                     </Text>
@@ -1116,7 +1128,7 @@ export default function GraphScreen() {
                           pressed && styles.expandButtonPressed,
                         ]}
                       >
-                        <ExpandIcon size={16} color="#0F172A" />
+                        <ExpandIcon size={16} color="#FFFFFF" />
                         <Text style={styles.expandButtonText}>הגדל גרף</Text>
                       </Pressable>
                     </View>
@@ -1143,7 +1155,7 @@ export default function GraphScreen() {
 
                 {!loading && chartData.labels.length === 0 && selectedExercise && dataType && chartType && (
                   <View style={styles.emptyState}>
-                    <ChartIcon size={28} color="#64748B" />
+                    <ChartIcon size={28} color="#FF7A00" />
                     <Text style={[styles.noData, { fontSize: dynamic.textSize - 1 }]}>
                       אין נתונים להצגה עבור הבחירה הנוכחית
                     </Text>
@@ -1167,7 +1179,7 @@ export default function GraphScreen() {
               <TextInput
                 style={styles.exerciseModalSearchInput}
                 placeholder="הקלידי שם תרגיל"
-                placeholderTextColor="#94A3B8"
+                placeholderTextColor="#8F8F96"
                 value={exerciseSearchText}
                 onChangeText={setExerciseSearchText}
                 textAlign="right"
@@ -1233,20 +1245,17 @@ export default function GraphScreen() {
                 <CloseIcon size={22} color="#FFFFFF" />
               </Pressable>
 
-              <View style={styles.fakeLandscapeHeaderTextWrap}>
+              {/* <View style={styles.fakeLandscapeHeaderTextWrap}>
                 <Text style={styles.fakeLandscapeTitle}>גרף התקדמות</Text>
                 <Text style={styles.fakeLandscapeSubtitle}>
                   {selectedExercise} · {selectedPeriod} · {metricText}
                 </Text>
-              </View>
+              </View> */}
 
               <View style={styles.fakeLandscapeInfoRow}>
                 <View style={styles.fakeLandscapeMetricTag}>
                   <Text style={styles.fakeLandscapeMetricTagText}>{yAxisText}</Text>
                 </View>
-                <Text style={styles.fakeLandscapeHintTop}>
-                  התאריכים כאן מוצגים לפי תחילת כל תקופה כדי שיהיה יותר ברור
-                </Text>
               </View>
 
               <View style={styles.fakeLandscapeStage}>
@@ -1299,18 +1308,18 @@ const styles = StyleSheet.create({
   },
   safeArea: {
     flex: 1,
-    backgroundColor: '#F4F7FB',
+    backgroundColor: '#050505',
   },
   screen: {
     flex: 1,
-    backgroundColor: '#F4F7FB',
+    backgroundColor: '#050505',
   },
   scrollContent: {
     flexGrow: 1,
     alignItems: 'center',
   },
   card: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#121214',
     borderRadius: 24,
     padding: 20,
     shadowColor: '#000',
@@ -1325,11 +1334,11 @@ const styles = StyleSheet.create({
   },
   title: {
     fontWeight: '800',
-    color: '#1E293B',
+    color: '#FFFFFF',
     textAlign: 'center',
   },
   subtitle: {
-    color: '#64748B',
+    color: '#B8B8C0',
     textAlign: 'center',
     marginTop: 6,
   },
@@ -1339,23 +1348,23 @@ const styles = StyleSheet.create({
   },
   label: {
     fontWeight: '700',
-    color: '#334155',
+    color: '#EDEDED',
     marginBottom: 8,
     textAlign: 'right',
   },
   inputBox: {
     borderWidth: 1,
-    borderColor: '#D7DFE9',
+    borderColor: '#34343B',
     borderRadius: 16,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#1A1A1F',
     paddingHorizontal: 14,
     justifyContent: 'center',
   },
   singleExerciseBox: {
     borderWidth: 1,
-    borderColor: '#CBD5E1',
+    borderColor: '#34343B',
     borderRadius: 18,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#1A1A1F',
     paddingHorizontal: 16,
     paddingVertical: 12,
     flexDirection: 'row',
@@ -1369,12 +1378,12 @@ const styles = StyleSheet.create({
   singleExerciseText: {
     flex: 1,
     textAlign: 'right',
-    color: '#111827',
+    color: '#FFFFFF',
   },
   singleExercisePlaceholder: {
     flex: 1,
     textAlign: 'right',
-    color: '#8A94A6',
+    color: '#9B9BA3',
   },
   selectorInnerRow: {
     flexDirection: 'row',
@@ -1384,12 +1393,12 @@ const styles = StyleSheet.create({
   selectorText: {
     flex: 1,
     textAlign: 'right',
-    color: '#111827',
+    color: '#FFFFFF',
   },
   selectorPlaceholderText: {
     flex: 1,
     textAlign: 'right',
-    color: '#94A3B8',
+    color: '#9B9BA3',
   },
   deleteWrapper: {
     marginTop: 10,
@@ -1399,9 +1408,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row-reverse',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#FEF2F2',
+    backgroundColor: '#241010',
     borderWidth: 1,
-    borderColor: '#FECACA',
+    borderColor: '#B91C1C',
     paddingVertical: 10,
     paddingHorizontal: 14,
     borderRadius: 14,
@@ -1420,32 +1429,32 @@ const styles = StyleSheet.create({
   },
   loaderText: {
     marginTop: 10,
-    color: '#64748B',
+    color: '#B8B8C0',
   },
   graphSection: {
     marginTop: 10,
   },
   graphTitle: {
     fontWeight: '800',
-    color: '#1E293B',
+    color: '#FFFFFF',
     marginBottom: 6,
     textAlign: 'right',
   },
   graphSubTitle: {
-    color: '#64748B',
+    color: '#B8B8C0',
     textAlign: 'center',
     marginBottom: 10,
   },
   metricTag: {
     alignSelf: 'center',
-    backgroundColor: '#EEF2F7',
+    backgroundColor: '#241407',
     borderRadius: 999,
     paddingVertical: 6,
     paddingHorizontal: 14,
     marginBottom: 12,
   },
   metricTagText: {
-    color: '#334155',
+    color: '#EDEDED',
     fontWeight: '600',
     fontSize: 13,
   },
@@ -1458,9 +1467,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row-reverse',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#E2E8F0',
+    backgroundColor: '#211A16',
     borderWidth: 1,
-    borderColor: '#CBD5E1',
+    borderColor: '#34343B',
     paddingVertical: 10,
     paddingHorizontal: 14,
     borderRadius: 14,
@@ -1469,21 +1478,21 @@ const styles = StyleSheet.create({
     opacity: 0.86,
   },
   expandButtonText: {
-    color: '#0F172A',
+    color: '#FFFFFF',
     fontWeight: '700',
     fontSize: 14,
   },
   graphCard: {
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#1A1A1F',
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#34343B',
     padding: 14,
     alignItems: 'center',
   },
   yAxisTitle: {
     fontWeight: '700',
-    color: '#1E293B',
+    color: '#FFFFFF',
     marginBottom: 10,
   },
   chartViewport: {
@@ -1498,29 +1507,29 @@ const styles = StyleSheet.create({
   scrollHint: {
     marginTop: 6,
     fontSize: 12,
-    color: '#64748B',
+    color: '#B8B8C0',
     textAlign: 'center',
   },
   emptyState: {
     marginTop: 16,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#1A1A1F',
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#34343B',
     paddingVertical: 24,
     paddingHorizontal: 16,
     alignItems: 'center',
   },
   noData: {
     marginTop: 8,
-    color: '#64748B',
+    color: '#B8B8C0',
     textAlign: 'center',
   },
   modalOverlay: {
-    backgroundColor: 'rgba(0,0,0,0.35)',
+    backgroundColor: 'rgba(0,0,0,0.72)',
   },
   modalCancelButton: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#121214',
     borderRadius: 14,
     marginTop: 10,
     paddingVertical: 12,
@@ -1528,11 +1537,11 @@ const styles = StyleSheet.create({
   modalCancelText: {
     textAlign: 'center',
     fontWeight: '700',
-    color: '#111827',
+    color: '#FFFFFF',
   },
   exerciseModalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.38)',
+    backgroundColor: 'rgba(0,0,0,0.78)',
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 18,
@@ -1541,7 +1550,7 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 460,
     maxHeight: '80%',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#121214',
     borderRadius: 22,
     padding: 18,
     shadowColor: '#000',
@@ -1553,18 +1562,18 @@ const styles = StyleSheet.create({
   exerciseModalTitle: {
     fontSize: 20,
     fontWeight: '800',
-    color: '#1E293B',
+    color: '#FFFFFF',
     textAlign: 'center',
     marginBottom: 14,
   },
   exerciseModalSearchInput: {
     borderWidth: 1,
-    borderColor: '#CBD5E1',
+    borderColor: '#34343B',
     borderRadius: 16,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#1A1A1F',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    color: '#111827',
+    color: '#FFFFFF',
     textAlign: 'right',
     fontSize: 16,
     marginBottom: 12,
@@ -1577,24 +1586,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     borderRadius: 14,
     marginBottom: 8,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#1A1A1F',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#34343B',
   },
   exerciseResultRowActive: {
-    backgroundColor: '#EEF4FF',
-    borderColor: '#BFDBFE',
+    backgroundColor: '#241407',
+    borderColor: '#FF7A00',
   },
   exerciseResultRowPressed: {
     opacity: 0.82,
   },
   exerciseResultText: {
     textAlign: 'right',
-    color: '#111827',
+    color: '#FFFFFF',
     fontSize: 15,
   },
   exerciseResultTextActive: {
-    color: '#2563EB',
+    color: '#FF9A3D',
     fontWeight: '700',
   },
   noExercisesWrap: {
@@ -1602,13 +1611,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   noExercisesText: {
-    color: '#64748B',
+    color: '#B8B8C0',
     fontSize: 15,
     textAlign: 'center',
   },
   exerciseModalCloseButton: {
     marginTop: 14,
-    backgroundColor: '#0F172A',
+    backgroundColor: '#FF7A00',
     borderRadius: 16,
     paddingVertical: 13,
     alignItems: 'center',
@@ -1623,11 +1632,11 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     zIndex: 999,
     elevation: 999,
-    backgroundColor: '#0F172A',
+    backgroundColor: '#050505',
   },
   fakeLandscapeRoot: {
     flex: 1,
-    backgroundColor: '#0F172A',
+    backgroundColor: '#050505',
   },
   fullScreenExitButton: {
     position: 'absolute',
@@ -1637,9 +1646,9 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: 'rgba(15,23,42,0.72)',
+    backgroundColor: 'rgba(18,18,20,0.92)',
     borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.65)',
+    borderColor: '#FF7A00',
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000000',
@@ -1683,13 +1692,13 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   fakeLandscapeMetricTag: {
-    backgroundColor: '#E2E8F0',
+    backgroundColor: '#211A16',
     borderRadius: 999,
     paddingVertical: 7,
     paddingHorizontal: 12,
   },
   fakeLandscapeMetricTagText: {
-    color: '#1E293B',
+    color: '#FFFFFF',
     fontWeight: '700',
     fontSize: 12,
   },
@@ -1710,10 +1719,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   rotatedCanvasInner: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#121214',
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#34343B',
     paddingVertical: 6,
     paddingHorizontal: 0,
     justifyContent: 'center',

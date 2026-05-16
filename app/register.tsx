@@ -27,22 +27,24 @@ import { completeClientSignupAfterAuth } from './utils/completeClientSignupAfter
 import Svg, { Path, Circle } from 'react-native-svg';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
-const APP_BG = '#F4F7FB';
 
-// אם זה האימייל שלך, הוא יהפוך ל-owner אוטומטית
+const APP_BG = '#0B0B0D';
+const CARD_BG = '#17171C';
+const INPUT_BG = '#111114';
+const BORDER = '#2F2F35';
+const ORANGE = '#FF7A00';
+const ORANGE_DARK = '#E85D00';
+const TEXT = '#FFFFFF';
+const MUTED = '#B8B8B8';
+const ICON = '#C8CDD3';
+const ERROR = '#FF4D4D';
+
 const OWNER_EMAIL = 'hadartaizi2002@gmail.com';
 
-function PersonIcon({ size = 20, color = '#5B6470' }) {
+function PersonIcon({ size = 20, color = ICON }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Circle
-        cx="12"
-        cy="8"
-        r="4"
-        stroke={color}
-        strokeWidth="2"
-        fill="none"
-      />
+      <Circle cx="12" cy="8" r="4" stroke={color} strokeWidth="2" fill="none" />
       <Path
         d="M4 20c0-3.3 3.6-6 8-6s8 2.7 8 6"
         stroke={color}
@@ -54,7 +56,7 @@ function PersonIcon({ size = 20, color = '#5B6470' }) {
   );
 }
 
-function MailIcon({ size = 20, color = '#5B6470' }) {
+function MailIcon({ size = 20, color = ICON }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
       <Path
@@ -76,7 +78,7 @@ function MailIcon({ size = 20, color = '#5B6470' }) {
   );
 }
 
-function EyeIcon({ size = 20, color = '#5B6470' }) {
+function EyeIcon({ size = 20, color = ICON }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
       <Path
@@ -86,28 +88,15 @@ function EyeIcon({ size = 20, color = '#5B6470' }) {
         fill="none"
         strokeLinejoin="round"
       />
-      <Circle
-        cx="12"
-        cy="12"
-        r="3"
-        stroke={color}
-        strokeWidth="2"
-        fill="none"
-      />
+      <Circle cx="12" cy="12" r="3" stroke={color} strokeWidth="2" fill="none" />
     </Svg>
   );
 }
 
-function EyeOffIcon({ size = 20, color = '#5B6470' }) {
+function EyeOffIcon({ size = 20, color = ICON }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Path
-        d="M3 3l18 18"
-        stroke={color}
-        strokeWidth="2"
-        fill="none"
-        strokeLinecap="round"
-      />
+      <Path d="M3 3l18 18" stroke={color} strokeWidth="2" fill="none" strokeLinecap="round" />
       <Path
         d="M10.6 6.3A11.4 11.4 0 0 1 12 6c6.5 0 10 6 10 6a17.4 17.4 0 0 1-3.2 3.9"
         stroke={color}
@@ -273,10 +262,7 @@ export default function Register() {
         try {
           await deleteUser(createdAuthUser);
         } catch (deleteError) {
-          console.error(
-            'שגיאה במחיקת משתמש Auth אחרי כשל בשמירה:',
-            deleteError
-          );
+          console.error('שגיאה במחיקת משתמש Auth אחרי כשל בשמירה:', deleteError);
         }
       }
 
@@ -290,9 +276,7 @@ export default function Register() {
         error.code === 'permission-denied' ||
         error.code === 'firestore/permission-denied'
       ) {
-        setErrors({
-          general: 'אין הרשאה לשמור את המשתמש בבסיס הנתונים',
-        });
+        setErrors({ general: 'אין הרשאה לשמור את המשתמש בבסיס הנתונים' });
         showErrorAlert(
           'המשתמש נוצר אך השמירה למסד הנתונים נחסמה. צריך לבדוק את חוקי Firestore.'
         );
@@ -308,7 +292,7 @@ export default function Register() {
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
-      <StatusBar backgroundColor={APP_BG} barStyle="dark-content" />
+      <StatusBar backgroundColor={APP_BG} barStyle="light-content" />
 
       <View style={styles.screen}>
         <KeyboardAvoidingView
@@ -320,140 +304,126 @@ export default function Register() {
             keyboardShouldPersistTaps="always"
             showsVerticalScrollIndicator={false}
           >
-            <View style={styles.topSection}>
-              <Text style={styles.title}>הרשמה</Text>
-              <Text style={styles.subtitle}>
-                צרי חשבון חדש והתחילי לנהל את האימונים שלך בצורה מסודרת
-              </Text>
-            </View>
-
-            <View style={styles.formSection}>
-              <Text style={styles.label}>שם</Text>
-              <View style={styles.inputBox}>
-                <View style={styles.iconWrap}>
-                  <PersonIcon size={20} color="#5B6470" />
-                </View>
-                <TextInput
-                  style={styles.input}
-                  placeholder="הזיני שם"
-                  placeholderTextColor="#8A94A6"
-                  value={name}
-                  onChangeText={setName}
-                  editable={!loading}
-                  textAlign="right"
-                />
+            <View style={styles.card}>
+              <View style={styles.topSection}>
+                <Text style={styles.title}>הרשמה</Text>
               </View>
-              {errors.name ? <Text style={styles.errorText}>{errors.name}</Text> : null}
 
-              <Text style={styles.label}>אימייל</Text>
-              <View style={styles.inputBox}>
-                <View style={styles.iconWrap}>
-                  <MailIcon size={20} color="#5B6470" />
-                </View>
-                <TextInput
-                  style={styles.input}
-                  placeholder="הזיני אימייל"
-                  placeholderTextColor="#8A94A6"
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  value={email}
-                  onChangeText={setEmail}
-                  editable={!loading}
-                  textAlign="right"
-                />
-              </View>
-              {errors.email ? <Text style={styles.errorText}>{errors.email}</Text> : null}
-
-              <Text style={styles.label}>סיסמה</Text>
-              <View style={styles.inputBox}>
-                <TouchableOpacity
-                  onPress={() => setShowPassword((prev) => !prev)}
-                  style={styles.iconPressable}
-                  disabled={loading}
-                  activeOpacity={0.7}
-                >
+              <View style={styles.formSection}>
+                <Text style={styles.label}>שם</Text>
+                <View style={styles.inputBox}>
                   <View style={styles.iconWrap}>
-                    {showPassword ? (
-                      <EyeOffIcon size={20} color="#5B6470" />
-                    ) : (
-                      <EyeIcon size={20} color="#5B6470" />
-                    )}
+                    <PersonIcon />
                   </View>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="הזיני שם"
+                    placeholderTextColor="#77777D"
+                    value={name}
+                    onChangeText={setName}
+                    editable={!loading}
+                    textAlign="right"
+                  />
+                </View>
+                {errors.name ? <Text style={styles.errorText}>{errors.name}</Text> : null}
+
+                <Text style={styles.label}>אימייל</Text>
+                <View style={styles.inputBox}>
+                  <View style={styles.iconWrap}>
+                    <MailIcon />
+                  </View>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="הזיני אימייל"
+                    placeholderTextColor="#77777D"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    value={email}
+                    onChangeText={setEmail}
+                    editable={!loading}
+                    textAlign="right"
+                  />
+                </View>
+                {errors.email ? <Text style={styles.errorText}>{errors.email}</Text> : null}
+
+                <Text style={styles.label}>סיסמה</Text>
+                <View style={styles.inputBox}>
+                  <TouchableOpacity
+                    onPress={() => setShowPassword((prev) => !prev)}
+                    style={styles.iconPressable}
+                    disabled={loading}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.iconWrap}>
+                      {showPassword ? <EyeOffIcon /> : <EyeIcon />}
+                    </View>
+                  </TouchableOpacity>
+
+                  <TextInput
+                    style={styles.input}
+                    placeholder="הזיני סיסמה"
+                    placeholderTextColor="#77777D"
+                    secureTextEntry={!showPassword}
+                    value={password}
+                    onChangeText={setPassword}
+                    editable={!loading}
+                    textAlign="right"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                </View>
+                {errors.password ? <Text style={styles.errorText}>{errors.password}</Text> : null}
+
+                <Text style={styles.label}>אישור סיסמה</Text>
+                <View style={styles.inputBox}>
+                  <TouchableOpacity
+                    onPress={() => setShowConfirmPassword((prev) => !prev)}
+                    style={styles.iconPressable}
+                    disabled={loading}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.iconWrap}>
+                      {showConfirmPassword ? <EyeOffIcon /> : <EyeIcon />}
+                    </View>
+                  </TouchableOpacity>
+
+                  <TextInput
+                    style={styles.input}
+                    placeholder="הזיני שוב את הסיסמה"
+                    placeholderTextColor="#77777D"
+                    secureTextEntry={!showConfirmPassword}
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                    editable={!loading}
+                    textAlign="right"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                </View>
+                {errors.confirmPassword ? (
+                  <Text style={styles.errorText}>{errors.confirmPassword}</Text>
+                ) : null}
+
+                {errors.general ? <Text style={styles.errorText}>{errors.general}</Text> : null}
+
+                <TouchableOpacity
+                  style={[styles.button, loading && styles.buttonDisabled]}
+                  onPress={handleRegister}
+                  disabled={loading}
+                  activeOpacity={0.85}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.buttonText}>הרשמה</Text>
+                  )}
                 </TouchableOpacity>
 
-                <TextInput
-                  style={styles.input}
-                  placeholder="הזיני סיסמה"
-                  placeholderTextColor="#8A94A6"
-                  secureTextEntry={!showPassword}
-                  value={password}
-                  onChangeText={setPassword}
-                  editable={!loading}
-                  textAlign="right"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-              </View>
-              {errors.password ? <Text style={styles.errorText}>{errors.password}</Text> : null}
-
-              <Text style={styles.label}>אישור סיסמה</Text>
-              <View style={styles.inputBox}>
-                <TouchableOpacity
-                  onPress={() => setShowConfirmPassword((prev) => !prev)}
-                  style={styles.iconPressable}
-                  disabled={loading}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.iconWrap}>
-                    {showConfirmPassword ? (
-                      <EyeOffIcon size={20} color="#5B6470" />
-                    ) : (
-                      <EyeIcon size={20} color="#5B6470" />
-                    )}
-                  </View>
+                <TouchableOpacity disabled={loading} onPress={() => router.push('/')}>
+                  <Text style={styles.loginLink}>יש לך כבר חשבון? התחברות</Text>
                 </TouchableOpacity>
-
-                <TextInput
-                  style={styles.input}
-                  placeholder="הזיני שוב את הסיסמה"
-                  placeholderTextColor="#8A94A6"
-                  secureTextEntry={!showConfirmPassword}
-                  value={confirmPassword}
-                  onChangeText={setConfirmPassword}
-                  editable={!loading}
-                  textAlign="right"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
               </View>
-              {errors.confirmPassword ? (
-                <Text style={styles.errorText}>{errors.confirmPassword}</Text>
-              ) : null}
-
-              {errors.general ? (
-                <Text style={styles.errorText}>{errors.general}</Text>
-              ) : null}
-
-              <TouchableOpacity
-                style={[styles.button, loading && styles.buttonDisabled]}
-                onPress={handleRegister}
-                disabled={loading}
-                activeOpacity={0.85}
-              >
-                {loading ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <Text style={styles.buttonText}>הרשמה</Text>
-                )}
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                disabled={loading}
-                onPress={() => router.push('/')}
-              >
-                <Text style={styles.loginLink}>יש לך כבר חשבון? התחברות</Text>
-              </TouchableOpacity>
             </View>
           </ScrollView>
         </KeyboardAvoidingView>
@@ -465,33 +435,55 @@ export default function Register() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#aec6cfb7',
+    backgroundColor: APP_BG,
   },
 
   container: {
     flexGrow: 1,
     justifyContent: 'center',
-    paddingHorizontal: screenWidth * 0.07,
-    paddingTop: screenHeight * 0.08,
+    paddingHorizontal: screenWidth * 0.06,
+    paddingTop: screenHeight * 0.06,
     paddingBottom: screenHeight * 0.05,
+  },
+
+  card: {
+    width: '100%',
+    backgroundColor: CARD_BG,
+    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: BORDER,
+    padding: screenWidth < 380 ? 18 : 22,
+    shadowColor: ORANGE,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.16,
+    shadowRadius: 24,
+    elevation: 7,
   },
 
   topSection: {
     alignItems: 'center',
-    marginBottom: screenHeight * 0.045,
+    marginBottom: screenHeight * 0.035,
+  },
+
+  logoText: {
+    color: ORANGE,
+    fontSize: screenWidth < 380 ? 28 : 34,
+    fontWeight: '900',
+    letterSpacing: 2,
+    marginBottom: 8,
   },
 
   title: {
     fontSize: screenWidth < 380 ? 22 : 27,
     fontWeight: '800',
-    color: '#1E293B',
+    color: TEXT,
     textAlign: 'center',
     marginBottom: 8,
   },
 
   subtitle: {
     fontSize: screenWidth < 380 ? 14 : 15,
-    color: '#64748B',
+    color: MUTED,
     textAlign: 'center',
     lineHeight: 22,
     paddingHorizontal: 10,
@@ -502,7 +494,7 @@ const styles = StyleSheet.create({
   },
 
   label: {
-    color: '#334155',
+    color: '#EDEDED',
     fontWeight: '700',
     textAlign: 'right',
     marginBottom: 8,
@@ -513,19 +505,19 @@ const styles = StyleSheet.create({
   inputBox: {
     width: '100%',
     minHeight: 54,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: INPUT_BG,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#D7DFE9',
+    borderColor: BORDER,
     paddingHorizontal: 14,
     flexDirection: 'row-reverse',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 10,
-    shadowColor: '#000',
+    shadowColor: '#000000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04,
-    shadowRadius: 10,
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
     elevation: 2,
   },
 
@@ -539,7 +531,7 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     fontSize: screenWidth < 380 ? 14 : 16,
-    color: '#111827',
+    color: TEXT,
     textAlign: 'right',
     marginRight: 10,
     minHeight: 44,
@@ -553,20 +545,21 @@ const styles = StyleSheet.create({
   button: {
     width: '100%',
     minHeight: 54,
-    backgroundColor: '#0F172A',
+    backgroundColor: ORANGE,
     borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 14,
-    shadowColor: '#000',
+    shadowColor: ORANGE,
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 4,
+    shadowOpacity: 0.28,
+    shadowRadius: 14,
+    elevation: 5,
   },
 
   buttonDisabled: {
-    opacity: 0.7,
+    backgroundColor: ORANGE_DARK,
+    opacity: 0.75,
   },
 
   buttonText: {
@@ -576,7 +569,7 @@ const styles = StyleSheet.create({
   },
 
   loginLink: {
-    color: '#1D4ED8',
+    color: ORANGE,
     fontSize: screenWidth < 380 ? 14 : 15,
     textAlign: 'center',
     marginTop: 18,
@@ -584,7 +577,7 @@ const styles = StyleSheet.create({
   },
 
   errorText: {
-    color: '#DC2626',
+    color: ERROR,
     fontSize: screenWidth < 380 ? 13 : 14,
     textAlign: 'right',
     fontWeight: '500',

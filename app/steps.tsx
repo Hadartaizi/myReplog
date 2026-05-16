@@ -27,7 +27,15 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 
-const APP_BG = '#F4F7FB';
+const APP_BG = '#050505';
+const CARD_BG = '#111111';
+const CARD_BG_2 = '#171717';
+const FIELD_BG = '#202020';
+const ORANGE = '#FF6A00';
+const ORANGE_LIGHT = '#FF8A00';
+const TEXT_LIGHT = '#F5F5F5';
+const TEXT_MUTED = '#B8B8B8';
+const BORDER_DARK = '#333333';
 
 const formatDateForInput = (value: Date) => {
   const year = value.getFullYear();
@@ -504,7 +512,7 @@ export default function Steps() {
       <View style={styles.root}>
         <AppLayout>
           <View style={styles.loaderScreen}>
-            <ActivityIndicator size="large" color="#0F172A" />
+            <ActivityIndicator size="large" color="#FF6A00" />
             <Text style={styles.loaderText}>טוען אימונים...</Text>
           </View>
         </AppLayout>
@@ -572,7 +580,7 @@ export default function Steps() {
                         outline: 'none',
                         background: 'transparent',
                         fontSize: dynamic.textSize,
-                        color: '#111827',
+                        color: TEXT_LIGHT,
                         direction: 'rtl',
                         textAlign: 'right',
                       }}
@@ -658,7 +666,7 @@ export default function Steps() {
                               editable={canEditFields && !isSavingThis && !isDeletingThis}
                               textAlign="right"
                               placeholder="מספר סטים"
-                              placeholderTextColor="#8A94A6"
+                              placeholderTextColor="#8F8F8F"
                             />
 
                             {errorMessage ? (
@@ -698,7 +706,7 @@ export default function Steps() {
                                       ]}
                                       value={String(workout.repsPerSet[setIdx]?.reps || '')}
                                       placeholder="לדוגמה 12"
-                                      placeholderTextColor="#8A94A6"
+                                      placeholderTextColor="#8F8F8F"
                                       keyboardType="numeric"
                                       onChangeText={(val) =>
                                         handleRepsWeightChange(workout.id, setIdx, 'reps', val)
@@ -723,7 +731,7 @@ export default function Steps() {
                                       ]}
                                       value={String(workout.repsPerSet[setIdx]?.weight || '')}
                                       placeholder="לדוגמה 20"
-                                      placeholderTextColor="#8A94A6"
+                                      placeholderTextColor="#8F8F8F"
                                       keyboardType={Platform.OS === "ios" ? "numbers-and-punctuation" : "decimal-pad"}
                                       onChangeText={(val) =>
                                         handleRepsWeightChange(workout.id, setIdx, 'weight', val)
@@ -756,7 +764,7 @@ export default function Steps() {
                                   disabled={isSavingThis || isDeletingThis}
                                 >
                                   {isSavingThis ? (
-                                    <ActivityIndicator size="small" color="#166534" />
+                                    <ActivityIndicator size="small" color="#050505" />
                                   ) : (
                                     <Text
                                       style={[
@@ -837,7 +845,7 @@ export default function Steps() {
                             disabled={isSavingThis || isDeletingThis}
                           >
                             {isDeletingThis ? (
-                              <ActivityIndicator size="small" color="#DC2626" />
+                              <ActivityIndicator size="small" color="#FF6A00" />
                             ) : (
                               <Text
                                 style={[
@@ -922,7 +930,7 @@ const styles = StyleSheet.create({
   },
   loaderText: {
     marginTop: 10,
-    color: '#64748B',
+    color: TEXT_MUTED,
     fontSize: 15,
   },
   scrollContent: {
@@ -931,9 +939,9 @@ const styles = StyleSheet.create({
     backgroundColor: APP_BG,
   },
   mainCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: CARD_BG,
     borderRadius: 24,
-    shadowColor: '#000',
+    shadowColor: ORANGE,
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.08,
     shadowRadius: 16,
@@ -946,11 +954,11 @@ const styles = StyleSheet.create({
   },
   title: {
     fontWeight: '800',
-    color: '#1E293B',
+    color: TEXT_LIGHT,
     textAlign: 'center',
   },
   subtitle: {
-    color: '#64748B',
+    color: TEXT_MUTED,
     textAlign: 'center',
     marginTop: 8,
   },
@@ -961,7 +969,7 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   label: {
-    color: '#334155',
+    color: '#E8E8E8',
     fontWeight: '700',
     textAlign: 'right',
     marginBottom: 8,
@@ -969,32 +977,32 @@ const styles = StyleSheet.create({
   inputBox: {
     width: '100%',
     borderWidth: 1,
-    borderColor: '#D7DFE9',
+    borderColor: BORDER_DARK,
     borderRadius: 16,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: FIELD_BG,
     paddingHorizontal: 14,
     flexDirection: 'row-reverse',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   textInput: {
-    color: '#111827',
+    color: TEXT_LIGHT,
     textAlign: 'right',
     writingDirection: 'rtl',
     paddingVertical: 0,
     width: '100%',
   },
   disabledInput: {
-    backgroundColor: '#F1F5F9',
-    color: '#64748B',
+    backgroundColor: '#262626',
+    color: TEXT_MUTED,
     opacity: 0.85,
   },
   dateField: {
     width: '100%',
     borderWidth: 1,
-    borderColor: '#D7DFE9',
+    borderColor: BORDER_DARK,
     borderRadius: 16,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: FIELD_BG,
     paddingHorizontal: 14,
     flexDirection: 'row-reverse',
     alignItems: 'center',
@@ -1009,19 +1017,19 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   dateValue: {
-    color: '#111827',
+    color: TEXT_LIGHT,
     fontWeight: '700',
     textAlign: 'right',
   },
   dateHint: {
     marginTop: 2,
     fontSize: 12,
-    color: '#64748B',
+    color: TEXT_MUTED,
     textAlign: 'right',
   },
   dateArrowText: {
     fontSize: 22,
-    color: '#475569',
+    color: ORANGE,
     fontWeight: '700',
     textAlign: 'center',
     lineHeight: 22,
@@ -1029,10 +1037,10 @@ const styles = StyleSheet.create({
   },
   emptyState: {
     marginTop: 8,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: FIELD_BG,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: BORDER_DARK,
     paddingVertical: 24,
     paddingHorizontal: 16,
     alignItems: 'center',
@@ -1040,21 +1048,21 @@ const styles = StyleSheet.create({
   },
   emptyStateSymbol: {
     fontSize: 28,
-    color: '#64748B',
+    color: TEXT_MUTED,
     fontWeight: '700',
     lineHeight: 30,
   },
   noWorkoutText: {
-    color: '#64748B',
+    color: TEXT_MUTED,
     textAlign: 'center',
     fontWeight: '500',
     marginTop: 8,
   },
   workoutCard: {
-    backgroundColor: '#F8FAFC',
+    backgroundColor: FIELD_BG,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: BORDER_DARK,
     padding: 14,
     marginBottom: 14,
   },
@@ -1075,7 +1083,7 @@ const styles = StyleSheet.create({
   },
   arrowText: {
     fontSize: 22,
-    color: '#475569',
+    color: ORANGE,
     fontWeight: '700',
     textAlign: 'center',
     lineHeight: 22,
@@ -1089,21 +1097,21 @@ const styles = StyleSheet.create({
   },
   cardTitle: {
     fontWeight: '800',
-    color: '#1E293B',
+    color: TEXT_LIGHT,
     textAlign: 'right',
   },
   setCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: CARD_BG,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: BORDER_DARK,
     padding: 14,
     marginBottom: 12,
   },
   setTitle: {
     textAlign: 'right',
     fontWeight: '700',
-    color: '#1E293B',
+    color: TEXT_LIGHT,
     marginBottom: 10,
   },
   setInputsRow: {
@@ -1123,7 +1131,7 @@ const styles = StyleSheet.create({
   },
   miniLabel: {
     textAlign: 'right',
-    color: '#64748B',
+    color: TEXT_MUTED,
     marginBottom: 6,
     fontSize: 13,
     fontWeight: '600',
@@ -1132,7 +1140,7 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   errorText: {
-    color: '#DC2626',
+    color: '#FF3B30',
     marginTop: 8,
     textAlign: 'right',
     fontWeight: '500',
@@ -1158,42 +1166,42 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   editButton: {
-    backgroundColor: '#E2E8F0',
+    backgroundColor: '#2A2A2A',
   },
   editButtonText: {
-    color: '#1E293B',
+    color: TEXT_LIGHT,
     fontWeight: '800',
   },
   saveButton: {
-    backgroundColor: '#DCFCE7',
+    backgroundColor: ORANGE,
     borderWidth: 1,
-    borderColor: '#BBF7D0',
+    borderColor: ORANGE_LIGHT,
   },
   saveButtonText: {
-    color: '#166534',
+    color: '#050505',
     fontWeight: '800',
   },
   cancelButton: {
-    backgroundColor: '#DBEAFE',
+    backgroundColor: '#242424',
     borderWidth: 1,
-    borderColor: '#BFDBFE',
+    borderColor: '#3A3A3A',
   },
   cancelButtonText: {
-    color: '#1D4ED8',
+    color: TEXT_LIGHT,
     fontWeight: '800',
   },
   deleteButton: {
     marginTop: 10,
     borderRadius: 16,
-    backgroundColor: '#FEF2F2',
+    backgroundColor: '#1C1C1C',
     borderWidth: 1,
-    borderColor: '#FECACA',
+    borderColor: '#FF3B30',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 12,
   },
   deleteButtonText: {
-    color: '#DC2626',
+    color: '#FF3B30',
     fontWeight: '800',
   },
   disabledButton: {
@@ -1205,20 +1213,20 @@ const styles = StyleSheet.create({
     backgroundColor: APP_BG,
   },
   iosPickerCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: CARD_BG,
     borderRadius: 24,
     padding: 20,
   },
   dateModalTitle: {
     fontSize: 18,
     fontWeight: '800',
-    color: '#0F172A',
+    color: TEXT_LIGHT,
     marginBottom: 12,
     textAlign: 'center',
   },
   dateModalButton: {
     marginTop: 16,
-    backgroundColor: '#0F172A',
+    backgroundColor: ORANGE,
     borderRadius: 14,
     paddingVertical: 12,
     paddingHorizontal: 24,
@@ -1240,10 +1248,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   cancelLightButton: {
-    backgroundColor: '#E2E8F0',
+    backgroundColor: '#2A2A2A',
   },
   cancelLightButtonText: {
-    color: '#1E293B',
+    color: TEXT_LIGHT,
     fontWeight: '700',
     fontSize: 15,
   },

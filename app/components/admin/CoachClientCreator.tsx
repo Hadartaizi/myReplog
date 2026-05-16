@@ -317,7 +317,7 @@ export default function CoachClientCreator({ onAfterCreate }: Props) {
         value={name}
         onChangeText={setName}
         placeholder="שם מלא"
-        placeholderTextColor="#94A3B8"
+        placeholderTextColor="#7A7A7A"
         style={styles.input}
       />
 
@@ -325,7 +325,7 @@ export default function CoachClientCreator({ onAfterCreate }: Props) {
         value={email}
         onChangeText={setEmail}
         placeholder="אימייל"
-        placeholderTextColor="#94A3B8"
+        placeholderTextColor="#7A7A7A"
         autoCapitalize="none"
         keyboardType="email-address"
         style={styles.input}
@@ -335,7 +335,7 @@ export default function CoachClientCreator({ onAfterCreate }: Props) {
         value={phone}
         onChangeText={setPhone}
         placeholder="טלפון"
-        placeholderTextColor="#94A3B8"
+        placeholderTextColor="#7A7A7A"
         keyboardType="phone-pad"
         style={styles.input}
       />
@@ -450,21 +450,21 @@ export default function CoachClientCreator({ onAfterCreate }: Props) {
 const styles = StyleSheet.create({
   card: {
     width: "100%",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#141414",
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#2A2A2A",
     borderRadius: 18,
     padding: 14,
     gap: 10,
   },
   title: {
-    color: "#0F172A",
+    color: "#FFFFFF",
     fontSize: 16,
     fontWeight: "800",
     textAlign: "right",
   },
   subtitle: {
-    color: "#64748B",
+    color: "#B8B8B8",
     fontSize: 13,
     lineHeight: 20,
     textAlign: "right",
@@ -474,10 +474,10 @@ const styles = StyleSheet.create({
     minHeight: 48,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#CBD5E1",
-    backgroundColor: "#F8FAFC",
+    borderColor: "#3A3A3A",
+    backgroundColor: "#1C1C1C",
     paddingHorizontal: 14,
-    color: "#0F172A",
+    color: "#FFFFFF",
     textAlign: "right",
     writingDirection: "rtl",
   },
@@ -486,8 +486,8 @@ const styles = StyleSheet.create({
     minHeight: 48,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#CBD5E1",
-    backgroundColor: "#F8FAFC",
+    borderColor: "#3A3A3A",
+    backgroundColor: "#1C1C1C",
     paddingHorizontal: 14,
     justifyContent: "center",
     alignItems: "flex-end",
@@ -497,22 +497,22 @@ const styles = StyleSheet.create({
   dateFieldText: {
     width: "100%",
     fontSize: 14,
-    color: "#0F172A",
+    color: "#FFFFFF",
     textAlign: "right",
   },
   placeholderText: {
-    color: "#94A3B8",
+    color: "#7A7A7A",
   },
   primaryButton: {
     minHeight: 50,
     borderRadius: 14,
-    backgroundColor: "#0F172A",
+    backgroundColor: "#FF6A00",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 16,
   },
   primaryButtonText: {
-    color: "#FFFFFF",
+    color: "#141414",
     fontWeight: "800",
     fontSize: 14,
     textAlign: "center",

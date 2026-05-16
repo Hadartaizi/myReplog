@@ -47,7 +47,7 @@ type Props = {
   onAfterUpdate?: () => void | Promise<void>;
 };
 
-function CardsIcon({ size = 18, color = "#0F172A" }) {
+function CardsIcon({ size = 18, color = "#FF6A00" }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
       <Rect x="4" y="6" width="12" height="9" rx="2" stroke={color} strokeWidth={2} fill="none" />
@@ -57,7 +57,7 @@ function CardsIcon({ size = 18, color = "#0F172A" }) {
   );
 }
 
-function TrashIcon({ size = 18, color = "#DC2626" }) {
+function TrashIcon({ size = 18, color = "#FF4D4D" }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
       <Line x1="4" y1="7" x2="20" y2="7" stroke={color} strokeWidth={2} />
@@ -69,7 +69,7 @@ function TrashIcon({ size = 18, color = "#DC2626" }) {
   );
 }
 
-function PlusUserIcon({ size = 18, color = "#0F172A" }) {
+function PlusUserIcon({ size = 18, color = "#FF6A00" }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
       <Rect x="3" y="3" width="18" height="18" rx="4" stroke={color} strokeWidth={1.8} fill="none" />
@@ -82,7 +82,7 @@ function PlusUserIcon({ size = 18, color = "#0F172A" }) {
 
 function ChevronIcon({
   size = 16,
-  color = "#334155",
+  color = "#F3F4F6",
   direction = "down",
 }: {
   size?: number;
@@ -769,7 +769,7 @@ export default function ClientCardManager({
   if (loadingClients) {
     return (
       <View style={styles.loadingBox}>
-        <ActivityIndicator size="large" color="#0F172A" />
+        <ActivityIndicator size="large" color="#FFFFFF" />
         <Text style={styles.loadingText}>טוען רשימת לקוחות...</Text>
       </View>
     );
@@ -791,7 +791,7 @@ export default function ClientCardManager({
 
       <View style={styles.topHeader}>
         <View style={styles.headerTitleRow}>
-          <CardsIcon size={18} color="#0F172A" />
+          <CardsIcon size={18} color="#FFFFFF" />
           <Text style={[styles.headerTitle, { fontSize: dynamic.titleSize }]}>
             מימוש כרטיסייה
           </Text>
@@ -812,7 +812,7 @@ export default function ClientCardManager({
           ]}
         >
           <View style={styles.expandButtonRight}>
-            <PlusUserIcon size={18} color="#0F172A" />
+            <PlusUserIcon size={18} color="#FFFFFF" />
             <Text style={styles.expandButtonText}>הוספה ידנית</Text>
           </View>
 
@@ -825,7 +825,7 @@ export default function ClientCardManager({
               value={manualName}
               onChangeText={setManualName}
               placeholder="שם הלקוח"
-              placeholderTextColor="#94A3B8"
+              placeholderTextColor="#7A7A7A"
               style={styles.input}
               textAlign="right"
             />
@@ -834,7 +834,7 @@ export default function ClientCardManager({
               value={manualEmail}
               onChangeText={setManualEmail}
               placeholder="אימייל הלקוח (לא חובה)"
-              placeholderTextColor="#94A3B8"
+              placeholderTextColor="#7A7A7A"
               style={styles.input}
               autoCapitalize="none"
               keyboardType="email-address"
@@ -851,7 +851,7 @@ export default function ClientCardManager({
               ]}
             >
               {creatingClient ? (
-                <ActivityIndicator color="#FFFFFF" />
+                <ActivityIndicator color="#141414" />
               ) : (
                 <Text style={styles.primaryActionButtonText}>הוסף לקוח</Text>
               )}
@@ -888,7 +888,7 @@ export default function ClientCardManager({
           }}
           onFocus={() => setSearchFocused(true)}
           placeholder="הקלידי שם לקוחה"
-          placeholderTextColor="#94A3B8"
+          placeholderTextColor="#7A7A7A"
           style={styles.input}
           textAlign="right"
         />
@@ -938,7 +938,7 @@ export default function ClientCardManager({
       {selectedClient ? (
         loadingData ? (
           <View style={styles.loadingBox}>
-            <ActivityIndicator size="large" color="#0F172A" />
+            <ActivityIndicator size="large" color="#FFFFFF" />
             <Text style={styles.loadingText}>טוען נתוני כרטיסיות...</Text>
           </View>
         ) : (
@@ -975,7 +975,7 @@ export default function ClientCardManager({
                 onChangeText={(text) => setCardsPurchasedInput(text.replace(/[^0-9]/g, ""))}
                 keyboardType="number-pad"
                 placeholder="הזיני מספר כרטיסיות"
-                placeholderTextColor="#94A3B8"
+                placeholderTextColor="#7A7A7A"
                 style={styles.input}
                 textAlign="right"
               />
@@ -990,7 +990,7 @@ export default function ClientCardManager({
                 ]}
               >
                 {savingCards ? (
-                  <ActivityIndicator color="#FFFFFF" />
+                  <ActivityIndicator color="#141414" />
                 ) : (
                   <Text style={styles.primaryActionButtonText}>שמור מספר כרטיסיות</Text>
                 )}
@@ -1036,7 +1036,7 @@ export default function ClientCardManager({
                 ]}
               >
                 {redeemingCard ? (
-                  <ActivityIndicator color="#FFFFFF" />
+                  <ActivityIndicator color="#141414" />
                 ) : (
                   <Text style={styles.redeemButtonText}>ממש כרטיסייה</Text>
                 )}
@@ -1071,9 +1071,9 @@ export default function ClientCardManager({
                           ]}
                         >
                           {deletingRedeemIndex === index ? (
-                            <ActivityIndicator size="small" color="#DC2626" />
+                            <ActivityIndicator size="small" color="#FF4D4D" />
                           ) : (
-                            <TrashIcon size={18} color="#DC2626" />
+                            <TrashIcon size={18} color="#FF4D4D" />
                           )}
                         </Pressable>
                       </View>
@@ -1105,10 +1105,10 @@ const styles = StyleSheet.create({
   },
 
   topHeader: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#141414",
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#2A2A2A",
     padding: 16,
   },
 
@@ -1120,29 +1120,29 @@ const styles = StyleSheet.create({
   },
 
   headerTitle: {
-    color: "#0F172A",
+    color: "#FFFFFF",
     fontWeight: "800",
     textAlign: "center",
   },
 
   headerSubtitle: {
     marginTop: 8,
-    color: "#64748B",
+    color: "#B8B8B8",
     textAlign: "center",
     lineHeight: 20,
   },
 
   section: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#141414",
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#2A2A2A",
     padding: 14,
     gap: 12,
   },
 
   sectionTitle: {
-    color: "#0F172A",
+    color: "#FFFFFF",
     fontSize: 16,
     fontWeight: "800",
     textAlign: "right",
@@ -1152,8 +1152,8 @@ const styles = StyleSheet.create({
     minHeight: 54,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#CBD5E1",
-    backgroundColor: "#F8FAFC",
+    borderColor: "#3A3A3A",
+    backgroundColor: "#1C1C1C",
     paddingHorizontal: 14,
     flexDirection: "row-reverse",
     alignItems: "center",
@@ -1161,8 +1161,8 @@ const styles = StyleSheet.create({
   },
 
   expandButtonActive: {
-    borderColor: "#94A3B8",
-    backgroundColor: "#F1F5F9",
+    borderColor: "#7A7A7A",
+    backgroundColor: "#242424",
   },
 
   expandButtonRight: {
@@ -1172,7 +1172,7 @@ const styles = StyleSheet.create({
   },
 
   expandButtonText: {
-    color: "#0F172A",
+    color: "#FFFFFF",
     fontSize: 15,
     fontWeight: "800",
     textAlign: "right",
@@ -1187,11 +1187,11 @@ const styles = StyleSheet.create({
     width: "100%",
     minHeight: 52,
     borderWidth: 1,
-    borderColor: "#CBD5E1",
+    borderColor: "#3A3A3A",
     borderRadius: 14,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#1C1C1C",
     paddingHorizontal: 14,
-    color: "#0F172A",
+    color: "#FFFFFF",
     fontSize: 15,
     textAlign: "right",
   },
@@ -1200,36 +1200,36 @@ const styles = StyleSheet.create({
     width: "100%",
     minHeight: 52,
     borderRadius: 16,
-    backgroundColor: "#0F172A",
+    backgroundColor: "#FF6A00",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 16,
   },
 
   primaryActionButtonText: {
-    color: "#FFFFFF",
+    color: "#141414",
     fontWeight: "800",
     fontSize: 15,
     textAlign: "center",
   },
 
   searchHintBox: {
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#1C1C1C",
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#2A2A2A",
     paddingVertical: 14,
     paddingHorizontal: 12,
   },
 
   searchHintText: {
-    color: "#64748B",
+    color: "#B8B8B8",
     fontSize: 14,
     textAlign: "right",
   },
 
   searchNotFoundText: {
-    color: "#DC2626",
+    color: "#FF4D4D",
     fontSize: 14,
     textAlign: "right",
     fontWeight: "600",
@@ -1240,17 +1240,17 @@ const styles = StyleSheet.create({
   },
 
   searchResultCard: {
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#1C1C1C",
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#2A2A2A",
     paddingVertical: 12,
     paddingHorizontal: 14,
   },
 
   searchResultCardActive: {
-    backgroundColor: "#EEF2FF",
-    borderColor: "#C7D2FE",
+    backgroundColor: "#251A12",
+    borderColor: "#FF7A00",
   },
 
   searchResultTextWrap: {
@@ -1258,7 +1258,7 @@ const styles = StyleSheet.create({
   },
 
   searchResultName: {
-    color: "#0F172A",
+    color: "#FFFFFF",
     fontSize: 15,
     fontWeight: "800",
     textAlign: "right",
@@ -1266,18 +1266,18 @@ const styles = StyleSheet.create({
   },
 
   searchResultNameActive: {
-    color: "#1E293B",
+    color: "#FFFFFF",
   },
 
   searchResultEmail: {
     marginTop: 4,
-    color: "#64748B",
+    color: "#B8B8B8",
     fontSize: 13,
     textAlign: "right",
   },
 
   searchResultEmailActive: {
-    color: "#475569",
+    color: "#D1D5DB",
   },
 
   summaryGrid: {
@@ -1290,17 +1290,17 @@ const styles = StyleSheet.create({
 
   summaryCard: {
     width: "48%",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#141414",
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#2A2A2A",
     alignItems: "center",
     justifyContent: "center",
     minHeight: 95,
   },
 
   summaryValue: {
-    color: "#0F172A",
+    color: "#FFFFFF",
     fontSize: 18,
     fontWeight: "800",
     textAlign: "center",
@@ -1308,7 +1308,7 @@ const styles = StyleSheet.create({
 
   summaryLabel: {
     marginTop: 6,
-    color: "#64748B",
+    color: "#B8B8B8",
     fontSize: 13,
     fontWeight: "600",
     textAlign: "center",
@@ -1319,15 +1319,15 @@ const styles = StyleSheet.create({
     minHeight: 52,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#CBD5E1",
-    backgroundColor: "#F8FAFC",
+    borderColor: "#3A3A3A",
+    backgroundColor: "#1C1C1C",
     alignItems: "flex-end",
     justifyContent: "center",
     paddingHorizontal: 14,
   },
 
   datePickerOpenButtonText: {
-    color: "#0F172A",
+    color: "#FFFFFF",
     fontSize: 15,
     fontWeight: "600",
     textAlign: "right",
@@ -1337,21 +1337,21 @@ const styles = StyleSheet.create({
     width: "100%",
     minHeight: 52,
     borderRadius: 16,
-    backgroundColor: "#1D4ED8",
+    backgroundColor: "#FF7A00",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 16,
   },
 
   redeemButtonText: {
-    color: "#FFFFFF",
+    color: "#141414",
     fontWeight: "800",
     fontSize: 15,
     textAlign: "center",
   },
 
   remainingText: {
-    color: "#475569",
+    color: "#D1D5DB",
     fontSize: 14,
     fontWeight: "600",
     textAlign: "right",
@@ -1362,10 +1362,10 @@ const styles = StyleSheet.create({
   },
 
   usageRow: {
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#1C1C1C",
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#2A2A2A",
     paddingVertical: 12,
     paddingHorizontal: 12,
     flexDirection: "row-reverse",
@@ -1386,42 +1386,42 @@ const styles = StyleSheet.create({
   },
 
   deleteUsageButton: {
-    backgroundColor: "#FEF2F2",
+    backgroundColor: "#2A1212",
     borderRadius: 10,
     padding: 6,
     borderWidth: 1,
-    borderColor: "#FECACA",
+    borderColor: "#7F1D1D",
   },
 
   usageDateText: {
-    color: "#0F172A",
+    color: "#FFFFFF",
     fontSize: 13,
     textAlign: "right",
     flexShrink: 1,
   },
 
   emptyBox: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#141414",
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#2A2A2A",
     paddingVertical: 20,
     paddingHorizontal: 14,
     alignItems: "center",
   },
 
   emptyInnerBox: {
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#1C1C1C",
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#2A2A2A",
     paddingVertical: 16,
     paddingHorizontal: 12,
     alignItems: "center",
   },
 
   emptyText: {
-    color: "#64748B",
+    color: "#B8B8B8",
     fontSize: 14,
     textAlign: "center",
   },
@@ -1434,7 +1434,7 @@ const styles = StyleSheet.create({
   },
 
   loadingText: {
-    color: "#64748B",
+    color: "#B8B8B8",
     fontSize: 14,
     textAlign: "center",
   },
@@ -1455,23 +1455,23 @@ const styles = StyleSheet.create({
   },
 
   modalCard: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#141414",
     borderRadius: 22,
     padding: 16,
     gap: 14,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#2A2A2A",
   },
 
   modalTitle: {
-    color: "#0F172A",
+    color: "#FFFFFF",
     fontSize: 18,
     fontWeight: "800",
     textAlign: "center",
   },
 
   modalPreviewText: {
-    color: "#334155",
+    color: "#F3F4F6",
     fontSize: 14,
     fontWeight: "600",
     textAlign: "center",
@@ -1490,7 +1490,7 @@ const styles = StyleSheet.create({
   },
 
   wheelLabel: {
-    color: "#475569",
+    color: "#D1D5DB",
     fontSize: 13,
     fontWeight: "700",
     textAlign: "center",
@@ -1499,9 +1499,9 @@ const styles = StyleSheet.create({
   wheelOuter: {
     height: 220,
     width: "100%",
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#1C1C1C",
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "#2A2A2A",
     borderRadius: 16,
     overflow: "hidden",
   },
@@ -1519,18 +1519,18 @@ const styles = StyleSheet.create({
   },
 
   wheelItemSelected: {
-    backgroundColor: "#E2E8F0",
+    backgroundColor: "#2A2A2A",
   },
 
   wheelItemText: {
-    color: "#334155",
+    color: "#F3F4F6",
     fontSize: 18,
     fontWeight: "600",
     textAlign: "center",
   },
 
   wheelItemTextSelected: {
-    color: "#0F172A",
+    color: "#FFFFFF",
     fontWeight: "800",
   },
 
@@ -1543,14 +1543,14 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 50,
     borderRadius: 14,
-    backgroundColor: "#1D4ED8",
+    backgroundColor: "#FF7A00",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 14,
   },
 
   modalPrimaryButtonText: {
-    color: "#FFFFFF",
+    color: "#141414",
     fontSize: 15,
     fontWeight: "800",
     textAlign: "center",
@@ -1560,14 +1560,14 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 50,
     borderRadius: 14,
-    backgroundColor: "#E2E8F0",
+    backgroundColor: "#2A2A2A",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 14,
   },
 
   modalSecondaryButtonText: {
-    color: "#0F172A",
+    color: "#FFFFFF",
     fontSize: 15,
     fontWeight: "800",
     textAlign: "center",
