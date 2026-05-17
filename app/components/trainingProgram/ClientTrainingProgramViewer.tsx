@@ -232,6 +232,7 @@ const getStrengthHistorySource = (program?: TrainingProgramDoc | null) => {
 export default function ClientTrainingProgramViewer() {
   const [loading, setLoading] = useState(true);
   const [savingWeekId, setSavingWeekId] = useState<string | null>(null);
+  const [editingRunningWeekIds, setEditingRunningWeekIds] = useState<Record<string, boolean>>({});
   const [programData, setProgramData] = useState<TrainingProgramDoc | null>(null);
   const [selectedProgramView, setSelectedProgramView] = useState<ProgramType | null>(null);
   const [openRunningWeekIds, setOpenRunningWeekIds] = useState<Record<string, boolean>>({});
@@ -252,6 +253,7 @@ export default function ClientTrainingProgramViewer() {
       setOpenRunningWeekIds({});
       setOpenHistoryProgramIds({});
       setOpenStrengthSectionIds({});
+      setEditingRunningWeekIds({});
     } catch (error) {
       console.error("שגיאה בטעינת תוכנית אימון ללקוח:", error);
       Alert.alert("שגיאה", "לא ניתן לטעון את תוכנית האימון");
@@ -322,6 +324,14 @@ export default function ClientTrainingProgramViewer() {
       return;
     }
 
+    if (selectedProgramView === "running" && hasRunningProgram) {
+      return;
+    }
+
+    if (selectedProgramView === "strength" && hasStrengthProgram) {
+      return;
+    }
+
     if (hasRunningProgram && !hasStrengthProgram) {
       setSelectedProgramView("running");
       return;
@@ -332,8 +342,10 @@ export default function ClientTrainingProgramViewer() {
       return;
     }
 
-    setSelectedProgramView(null);
-  }, [programData, hasRunningProgram, hasStrengthProgram]);
+    if (!hasRunningProgram && !hasStrengthProgram) {
+      setSelectedProgramView(null);
+    }
+  }, [programData, hasRunningProgram, hasStrengthProgram, selectedProgramView]);
 
   const updateLocalRunningWeek = (weekId: string, patch: Partial<RunningWeek>) => {
     setProgramData((prev) => {
@@ -360,6 +372,7 @@ export default function ClientTrainingProgramViewer() {
 
       await setDoc(doc(db, "clientTrainingPrograms", authUser.uid), { runningWeeks: nextWeeks, runningWeeksCount: nextWeeks.length }, { merge: true });
       setProgramData((prev) => (prev ? { ...prev, runningWeeks: nextWeeks, runningWeeksCount: nextWeeks.length } : prev));
+      setEditingRunningWeekIds((prev) => ({ ...prev, [weekId]: false }));
       Alert.alert("נשמר", "העדכון שלך נשמר למאמן");
     } catch (error) {
       console.error("שגיאה בשמירת עדכון שבוע ריצה:", error);
@@ -490,28 +503,92 @@ export default function ClientTrainingProgramViewer() {
                           )}
 
                           <View style={styles.feedbackBox}>
-                            <Text style={styles.feedbackTitle}>איך היה השבוע?</Text>
-                            <View style={styles.feedbackButtonsRow}>
-                              <Pressable onPress={() => updateLocalRunningWeek(weekId, { clientSucceeded: true })} style={({ pressed }) => [styles.feedbackButton, week.clientSucceeded === true && styles.feedbackButtonSuccess, pressed && styles.pressed]}>
-                                <Text style={[styles.feedbackButtonText, week.clientSucceeded === true && styles.feedbackButtonTextActive]}>הצלחתי</Text>
-                              </Pressable>
-                              <Pressable onPress={() => updateLocalRunningWeek(weekId, { clientSucceeded: false })} style={({ pressed }) => [styles.feedbackButton, week.clientSucceeded === false && styles.feedbackButtonFail, pressed && styles.pressed]}>
-                                <Text style={[styles.feedbackButtonText, week.clientSucceeded === false && styles.feedbackButtonTextActive]}>לא הצלחתי</Text>
-                              </Pressable>
-                            </View>
-                            <TextInput
-                              value={String(week.clientNotes || "")}
-                              onChangeText={(value) => updateLocalRunningWeek(weekId, { clientNotes: value })}
-                              placeholder="הערות למאמן על השבוע הזה"
-                              placeholderTextColor="#8F8F96"
-                              style={styles.clientNotesInput}
-                              textAlign="right"
-                              multiline
-                            />
-                            <Pressable onPress={() => saveRunningWeekFeedback(weekId)} disabled={savingWeekId === weekId} style={({ pressed }) => [styles.saveFeedbackButton, pressed && styles.pressed, savingWeekId === weekId && styles.disabledButton]}>
-                              {savingWeekId === weekId ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.saveFeedbackButtonText}>שמירת עדכון לשבוע</Text>}
-                            </Pressable>
-                            {!!week.clientUpdatedAt && <Text style={styles.savedAtText}>עודכן לאחרונה: {formatDateTime(week.clientUpdatedAt)}</Text>}
+                            {(() => {
+                              const isEditingWeek = !!editingRunningWeekIds[weekId];
+                              const isSavingWeek = savingWeekId === weekId;
+
+                              return (
+                                <>
+                                  <Text style={styles.feedbackTitle}>איך היה השבוע?</Text>
+                                  <View style={styles.feedbackButtonsRow}>
+                                    <Pressable
+                                      onPress={() => {
+                                        if (!isEditingWeek) return;
+                                        updateLocalRunningWeek(weekId, { clientSucceeded: true });
+                                      }}
+                                      disabled={!isEditingWeek || isSavingWeek}
+                                      style={({ pressed }) => [
+                                        styles.feedbackButton,
+                                        week.clientSucceeded === true && styles.feedbackButtonSuccess,
+                                        (!isEditingWeek || isSavingWeek) && styles.lockedFeedbackButton,
+                                        pressed && isEditingWeek && styles.pressed,
+                                      ]}
+                                    >
+                                      <Text style={[styles.feedbackButtonText, week.clientSucceeded === true && styles.feedbackButtonTextActive]}>
+                                        הצלחתי
+                                      </Text>
+                                    </Pressable>
+
+                                    <Pressable
+                                      onPress={() => {
+                                        if (!isEditingWeek) return;
+                                        updateLocalRunningWeek(weekId, { clientSucceeded: false });
+                                      }}
+                                      disabled={!isEditingWeek || isSavingWeek}
+                                      style={({ pressed }) => [
+                                        styles.feedbackButton,
+                                        week.clientSucceeded === false && styles.feedbackButtonFail,
+                                        (!isEditingWeek || isSavingWeek) && styles.lockedFeedbackButton,
+                                        pressed && isEditingWeek && styles.pressed,
+                                      ]}
+                                    >
+                                      <Text style={[styles.feedbackButtonText, week.clientSucceeded === false && styles.feedbackButtonTextActive]}>
+                                        לא הצלחתי
+                                      </Text>
+                                    </Pressable>
+                                  </View>
+
+                                  <TextInput
+                                    value={String(week.clientNotes || "")}
+                                    onChangeText={(value) => {
+                                      if (!isEditingWeek) return;
+                                      updateLocalRunningWeek(weekId, { clientNotes: value });
+                                    }}
+                                    editable={isEditingWeek && !isSavingWeek}
+                                    placeholder="הערות למאמן על השבוע הזה"
+                                    placeholderTextColor="#8F8F96"
+                                    style={[styles.clientNotesInput, !isEditingWeek && styles.lockedInput]}
+                                    textAlign="right"
+                                    multiline
+                                  />
+
+                                  <Pressable
+                                    onPress={() => {
+                                      if (!isEditingWeek) {
+                                        setEditingRunningWeekIds((prev) => ({ ...prev, [weekId]: true }));
+                                        return;
+                                      }
+
+                                      saveRunningWeekFeedback(weekId);
+                                    }}
+                                    disabled={isSavingWeek}
+                                    style={({ pressed }) => [
+                                      styles.saveFeedbackButton,
+                                      pressed && styles.pressed,
+                                      isSavingWeek && styles.disabledButton,
+                                    ]}
+                                  >
+                                    {isSavingWeek ? (
+                                      <ActivityIndicator color="#FFFFFF" />
+                                    ) : (
+                                      <Text style={styles.saveFeedbackButtonText}>{isEditingWeek ? "שמירה" : "עריכה"}</Text>
+                                    )}
+                                  </Pressable>
+
+                                  {!!week.clientUpdatedAt && <Text style={styles.savedAtText}>עודכן לאחרונה: {formatDateTime(week.clientUpdatedAt)}</Text>}
+                                </>
+                              );
+                            })()}
                           </View>
                         </View>
                       )}
@@ -789,9 +866,11 @@ const styles = StyleSheet.create({
   feedbackButton: { flex: 1, minHeight: 44, borderRadius: 14, borderWidth: 1, borderColor: "#2B2B31", backgroundColor: "#222229", alignItems: "center", justifyContent: "center" },
   feedbackButtonSuccess: { backgroundColor: "#16A34A", borderColor: "#16A34A" },
   feedbackButtonFail: { backgroundColor: "#DC2626", borderColor: "#DC2626" },
+  lockedFeedbackButton: { opacity: 0.55 },
   feedbackButtonText: { color: "#EDEDED", fontSize: 13, fontWeight: "800", textAlign: "center" },
   feedbackButtonTextActive: { color: "#FFFFFF" },
   clientNotesInput: { width: "100%", minHeight: 88, backgroundColor: "#222229", borderRadius: 14, borderWidth: 1, borderColor: "#2B2B31", paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: "#FFFFFF", writingDirection: "rtl", textAlignVertical: "top" },
+  lockedInput: { opacity: 0.65 },
   saveFeedbackButton: { minHeight: 46, backgroundColor: "#FF7A00", borderRadius: 14, alignItems: "center", justifyContent: "center" },
   saveFeedbackButtonText: { color: "#FFFFFF", fontSize: 14, fontWeight: "800", textAlign: "center" },
   savedAtText: { color: "#B3B3B3", fontSize: 12, fontWeight: "600", textAlign: "right" },

@@ -483,10 +483,12 @@ function OptionButtons<T extends string>({
   value,
   options,
   onChange,
+  disabled = false,
 }: {
   value: T;
   options: Array<{ value: T; label: string }>;
   onChange: (value: T) => void;
+  disabled?: boolean;
 }) {
   return (
     <View style={styles.optionButtonsWrap}>
@@ -496,8 +498,16 @@ function OptionButtons<T extends string>({
           <TouchableOpacity
             key={option.value}
             activeOpacity={0.85}
-            onPress={() => onChange(option.value)}
-            style={[styles.optionButton, selected && styles.optionButtonActive]}
+            disabled={disabled}
+            onPress={() => {
+              if (disabled) return;
+              onChange(option.value);
+            }}
+            style={[
+              styles.optionButton,
+              selected && styles.optionButtonActive,
+              disabled && styles.lockedButton,
+            ]}
           >
             <Text
               style={[
@@ -517,19 +527,26 @@ function OptionButtons<T extends string>({
 function ProgramTypeButtons({
   value,
   onChange,
+  disabled = false,
 }: {
   value: ProgramType;
   onChange: (next: ProgramType) => void;
+  disabled?: boolean;
 }) {
   return (
     <View style={styles.splitButtonsWrap}>
       <View style={styles.splitButtonsRow}>
         <TouchableOpacity
           activeOpacity={0.85}
-          onPress={() => onChange("strength")}
+          disabled={disabled}
+          onPress={() => {
+            if (disabled) return;
+            onChange("strength");
+          }}
           style={[
             styles.splitButton,
             value === "strength" && styles.splitButtonActive,
+            disabled && styles.lockedButton,
           ]}
         >
           <Text
@@ -543,10 +560,15 @@ function ProgramTypeButtons({
         </TouchableOpacity>
         <TouchableOpacity
           activeOpacity={0.85}
-          onPress={() => onChange("running")}
+          disabled={disabled}
+          onPress={() => {
+            if (disabled) return;
+            onChange("running");
+          }}
           style={[
             styles.splitButton,
             value === "running" && styles.splitButtonActive,
+            disabled && styles.lockedButton,
           ]}
         >
           <Text
@@ -566,9 +588,11 @@ function ProgramTypeButtons({
 function SplitTypeButtons({
   value,
   onChange,
+  disabled = false,
 }: {
   value: TrainingSplitType;
   onChange: (next: TrainingSplitType) => void;
+  disabled?: boolean;
 }) {
   const options: Array<{ value: TrainingSplitType; label: string }> = [
     { value: "fullbody", label: "פול באדי" },
@@ -576,7 +600,14 @@ function SplitTypeButtons({
     { value: "abc", label: "ABC" },
     { value: "abcd", label: "ABCD" },
   ];
-  return <OptionButtons value={value} options={options} onChange={onChange} />;
+  return (
+    <OptionButtons
+      value={value}
+      options={options}
+      onChange={onChange}
+      disabled={disabled}
+    />
+  );
 }
 
 export default function ClientTrainingProgramManager({
@@ -645,6 +676,7 @@ export default function ClientTrainingProgramManager({
   );
   const [loadingProgram, setLoadingProgram] = useState(false);
   const [savingProgram, setSavingProgram] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
   const [pacePickerWeekId, setPacePickerWeekId] = useState<string | null>(null);
   const [pacePickerDraftSeconds, setPacePickerDraftSeconds] = useState(0);
 
@@ -676,6 +708,7 @@ export default function ClientTrainingProgramManager({
   }, [clientSearchQuery, selectablePeople]);
 
   useEffect(() => {
+    setIsEditing(false);
     if (!selectedClientUid) {
       setProgramType("strength");
       setSections([]);
@@ -833,6 +866,7 @@ export default function ClientTrainingProgramManager({
   }, [exerciseHistory, historySearch]);
 
   const openExerciseHistory = (sectionId: string, exerciseId: string) => {
+    if (!isEditing || savingProgram) return;
     setHistoryTarget({ sectionId, exerciseId });
     setHistorySearch("");
     setHistoryModalVisible(true);
@@ -845,7 +879,7 @@ export default function ClientTrainingProgramManager({
   };
 
   const selectExerciseFromHistory = (exerciseName: string) => {
-    if (!historyTarget) return;
+    if (!isEditing || !historyTarget) return;
     updateExerciseField(
       historyTarget.sectionId,
       historyTarget.exerciseId,
@@ -926,15 +960,33 @@ export default function ClientTrainingProgramManager({
     );
   };
 
-  const handleSave = async () => {
+  const handleEditButtonPress = async () => {
+    if (!isEditing) {
+      setIsEditing(true);
+      return;
+    }
+
+    const savedSuccessfully = await handleSave();
+    if (savedSuccessfully) setIsEditing(false);
+  };
+
+  const handleSave = async (): Promise<boolean> => {
     const signedInUser = auth.currentUser;
-    if (!signedInUser) return Alert.alert("שגיאה", "לא נמצא משתמש מחובר");
+    if (!signedInUser) {
+      Alert.alert("שגיאה", "לא נמצא משתמש מחובר");
+      return false;
+    }
     const targetClient = selectedClient || selectablePeople.find((client) => getClientResolvedUid(client) === selectedClientUid) || null;
-    if (!targetClient)
-      return Alert.alert("שגיאה", "יש לבחור מתאמן או את עצמך");
+    if (!targetClient) {
+      Alert.alert("שגיאה", "יש לבחור מתאמן או את עצמך");
+      return false;
+    }
 
     const resolvedClientUid = getClientResolvedUid(targetClient);
-    if (!resolvedClientUid) return Alert.alert("שגיאה", "לא נמצא מזהה תקין");
+    if (!resolvedClientUid) {
+      Alert.alert("שגיאה", "לא נמצא מזהה תקין");
+      return false;
+    }
 
     const cleanedSections = normalizeSectionsForSave(sections);
 
@@ -944,16 +996,20 @@ export default function ClientTrainingProgramManager({
       programType === "strength" &&
       cleanedSections.length === 0 &&
       !strengthNotes.trim()
-    )
-      return Alert.alert("שגיאה", "יש למלא לפחות כותרת אחת או תרגיל אחד");
+    ) {
+      Alert.alert("שגיאה", "יש למלא לפחות כותרת אחת או תרגיל אחד");
+      return false;
+    }
     if (
       programType === "running" &&
       cleanedRunningWeeks.some((week) => !week.distanceKm || !week.pacePerKm)
-    )
-      return Alert.alert(
+    ) {
+      Alert.alert(
         "שגיאה",
         "בתוכנית ריצה יש למלא מרחק וזמן לק״מ בכל שבוע",
       );
+      return false;
+    }
 
     try {
       setSavingProgram(true);
@@ -1017,9 +1073,11 @@ export default function ClientTrainingProgramManager({
         ? window.alert("תוכנית האימון נשמרה בהצלחה")
         : Alert.alert("הצלחה", "תוכנית האימון נשמרה בהצלחה");
       // חשוב: לא קוראים כאן ל-onAfterSave כדי שלא יהיה ריענון שמוציא את המאמן מהתוכנית שבנה.
+      return true;
     } catch (error) {
       console.error("שגיאה בשמירת תוכנית אימון:", error);
       Alert.alert("שגיאה", "לא ניתן לשמור את תוכנית האימון");
+      return false;
     } finally {
       setSavingProgram(false);
     }
@@ -1089,10 +1147,11 @@ export default function ClientTrainingProgramManager({
       setSplitType("fullbody");
       setSections(getSectionsBySplit("fullbody"));
       setStrengthNotes("");
+      setIsEditing(true);
 
       Platform.OS === "web"
-        ? window.alert("תוכנית הכוח הפעילה עברה להיסטוריה והשדות אופסו. התוכנית החדשה תוצג ללקוח רק אחרי לחיצה על שמירת עריכה לתוכנית.")
-        : Alert.alert("הצלחה", "תוכנית הכוח הפעילה עברה להיסטוריה והשדות אופסו. התוכנית החדשה תוצג ללקוח רק אחרי לחיצה על שמירת עריכה לתוכנית.");
+        ? window.alert("התוכנית הפעילה עברה להיסטוריה והשדות אופסו. עכשיו ניתן לבנות תוכנית חדשה וללחוץ על שמירת אימון.")
+        : Alert.alert("הצלחה", "התוכנית הפעילה עברה להיסטוריה והשדות אופסו. עכשיו ניתן לבנות תוכנית חדשה וללחוץ על שמירת אימון.");
     } catch (error) {
       console.error("שגיאה בהעברת תוכנית כוח להיסטוריה:", error);
       Alert.alert("שגיאה", "לא ניתן להעביר את תוכנית הכוח להיסטוריה");
@@ -1170,10 +1229,11 @@ export default function ClientTrainingProgramManager({
       setRunningWeeks(emptyRunningWeeks);
       setPacePickerWeekId(null);
       setPacePickerDraftSeconds(0);
+      setIsEditing(true);
 
       Platform.OS === "web"
-        ? window.alert("התוכנית הפעילה עברה להיסטוריה והשדות אופסו. התוכנית החדשה תוצג ללקוח רק אחרי לחיצה על שמירת עריכה לתוכנית.")
-        : Alert.alert("הצלחה", "התוכנית הפעילה עברה להיסטוריה והשדות אופסו. התוכנית החדשה תוצג ללקוח רק אחרי לחיצה על שמירת עריכה לתוכנית.");
+        ? window.alert("התוכנית הפעילה עברה להיסטוריה והשדות אופסו. עכשיו ניתן לבנות תוכנית חדשה וללחוץ על שמירת אימון.")
+        : Alert.alert("הצלחה", "התוכנית הפעילה עברה להיסטוריה והשדות אופסו. עכשיו ניתן לבנות תוכנית חדשה וללחוץ על שמירת אימון.");
     } catch (error) {
       console.error("שגיאה בהעברת תוכנית ריצה להיסטוריה:", error);
       Alert.alert("שגיאה", "לא ניתן להעביר את תוכנית הריצה להיסטוריה");
@@ -1310,6 +1370,7 @@ export default function ClientTrainingProgramManager({
                     <ProgramTypeButtons
                       value={programType}
                       onChange={setProgramType}
+                      disabled={!isEditing || savingProgram}
                     />
                   </View>
 
@@ -1320,27 +1381,37 @@ export default function ClientTrainingProgramManager({
                         <SplitTypeButtons
                           value={splitType}
                           onChange={applySplitTemplate}
+                          disabled={!isEditing || savingProgram}
                         />
                       </View>
                       {sections.map((section) => (
                         <View key={section.id} style={styles.sectionCard}>
                           <TouchableOpacity
                             activeOpacity={0.85}
-                            onPress={() => removeSection(section.id)}
-                            style={styles.removeButton}
+                            onPress={() => {
+                              if (!isEditing) return;
+                              removeSection(section.id);
+                            }}
+                            disabled={!isEditing || savingProgram}
+                            style={[
+                              styles.removeButton,
+                              !isEditing && styles.lockedButton,
+                              savingProgram && styles.disabledButton,
+                            ]}
                           >
                             <Text style={styles.removeButtonText}>
                               מחיקת כותרת
                             </Text>
                           </TouchableOpacity>
                           <TextInput
+                            editable={isEditing}
                             value={section.title}
                             onChangeText={(value) =>
                               updateSectionTitle(section.id, value)
                             }
                             placeholder="כותרת לדוגמה: פול באדי / אימון A"
                             placeholderTextColor={COLORS.textSubtle}
-                            style={styles.sectionTitleInput}
+                            style={[styles.sectionTitleInput, !isEditing && styles.lockedInput]}
                             textAlign="right"
                           />
                           {section.exercises.map((exercise, exerciseIndex) => (
@@ -1348,10 +1419,16 @@ export default function ClientTrainingProgramManager({
                               <View style={styles.exerciseHeader}>
                                 <TouchableOpacity
                                   activeOpacity={0.85}
-                                  onPress={() =>
-                                    removeExercise(section.id, exercise.id)
-                                  }
-                                  style={styles.removeSmallButton}
+                                  onPress={() => {
+                                    if (!isEditing) return;
+                                    removeExercise(section.id, exercise.id);
+                                  }}
+                                  disabled={!isEditing || savingProgram}
+                                  style={[
+                                    styles.removeSmallButton,
+                                    !isEditing && styles.lockedButton,
+                                    savingProgram && styles.disabledButton,
+                                  ]}
                                 >
                                   <Text style={styles.removeSmallButtonText}>
                                     מחיקת תרגיל
@@ -1362,6 +1439,7 @@ export default function ClientTrainingProgramManager({
                                 </Text>
                               </View>
                               <TextInput
+                                editable={isEditing}
                                 value={exercise.name}
                                 onChangeText={(value) =>
                                   updateExerciseField(
@@ -1373,15 +1451,20 @@ export default function ClientTrainingProgramManager({
                                 }
                                 placeholder="שם תרגיל"
                                 placeholderTextColor={COLORS.textSubtle}
-                                style={styles.input}
+                                style={[styles.input, !isEditing && styles.lockedInput]}
                                 textAlign="right"
                               />
                               <TouchableOpacity
                                 activeOpacity={0.85}
+                                disabled={!isEditing || savingProgram}
                                 onPress={() =>
                                   openExerciseHistory(section.id, exercise.id)
                                 }
-                                style={styles.historyButton}
+                                style={[
+                                  styles.historyButton,
+                                  !isEditing && styles.lockedButton,
+                                  savingProgram && styles.disabledButton,
+                                ]}
                               >
                                 <Text style={styles.historyButtonText}>
                                   היסטוריית תרגילים
@@ -1390,6 +1473,7 @@ export default function ClientTrainingProgramManager({
                               <View style={styles.rowInputs}>
                                 <View style={styles.halfField}>
                                   <TextInput
+                                    editable={isEditing}
                                     value={exercise.sets}
                                     onChangeText={(value) =>
                                       updateExerciseField(
@@ -1404,6 +1488,7 @@ export default function ClientTrainingProgramManager({
                                     style={[
                                       styles.halfInput,
                                       styles.fieldInput,
+                                      !isEditing && styles.lockedInput,
                                     ]}
                                     textAlign="right"
                                     keyboardType="numeric"
@@ -1411,6 +1496,7 @@ export default function ClientTrainingProgramManager({
                                 </View>
                                 <View style={styles.halfField}>
                                   <TextInput
+                                    editable={isEditing}
                                     value={exercise.reps}
                                     onChangeText={(value) =>
                                       updateExerciseField(
@@ -1425,6 +1511,7 @@ export default function ClientTrainingProgramManager({
                                     style={[
                                       styles.halfInput,
                                       styles.fieldInput,
+                                      !isEditing && styles.lockedInput,
                                     ]}
                                     textAlign="right"
                                     keyboardType="numeric"
@@ -1432,6 +1519,7 @@ export default function ClientTrainingProgramManager({
                                 </View>
                               </View>
                               <TextInput
+                                editable={isEditing}
                                 value={exercise.notes}
                                 onChangeText={(value) =>
                                   updateExerciseField(
@@ -1443,15 +1531,23 @@ export default function ClientTrainingProgramManager({
                                 }
                                 placeholder="הערות לתרגיל"
                                 placeholderTextColor={COLORS.textSubtle}
-                                style={styles.input}
+                                style={[styles.input, !isEditing && styles.lockedInput]}
                                 textAlign="right"
                               />
                             </View>
                           ))}
                           <TouchableOpacity
                             activeOpacity={0.85}
-                            onPress={() => addExercise(section.id)}
-                            style={styles.secondaryActionButton}
+                            disabled={!isEditing || savingProgram}
+                            onPress={() => {
+                              if (!isEditing) return;
+                              addExercise(section.id);
+                            }}
+                            style={[
+                              styles.secondaryActionButton,
+                              !isEditing && styles.lockedButton,
+                              savingProgram && styles.disabledButton,
+                            ]}
                           >
                             <Text style={styles.secondaryActionButtonText}>
                               הוספת תרגיל
@@ -1461,8 +1557,16 @@ export default function ClientTrainingProgramManager({
                       ))}
                       <TouchableOpacity
                         activeOpacity={0.85}
-                        onPress={addSection}
-                        style={styles.addSectionButton}
+                        disabled={!isEditing || savingProgram}
+                        onPress={() => {
+                          if (!isEditing) return;
+                          addSection();
+                        }}
+                        style={[
+                          styles.addSectionButton,
+                          !isEditing && styles.lockedButton,
+                          savingProgram && styles.disabledButton,
+                        ]}
                       >
                         <Text style={styles.addSectionButtonText}>
                           הוספת כותרת חדשה
@@ -1476,11 +1580,12 @@ export default function ClientTrainingProgramManager({
                           מספר שבועות לתוכנית ריצה
                         </Text>
                         <TextInput
+                          editable={isEditing}
                           value={runningWeeksCount}
                           onChangeText={updateRunningWeeksCount}
                           placeholder="לדוגמה: 8"
                           placeholderTextColor={COLORS.textSubtle}
-                          style={styles.input}
+                          style={[styles.input, !isEditing && styles.lockedInput]}
                           textAlign="right"
                           keyboardType="numeric"
                         />
@@ -1490,7 +1595,19 @@ export default function ClientTrainingProgramManager({
                           <View style={styles.runningWeekHeaderRow}>
                             <Text style={styles.runningWeekTitle}>שבוע {week.weekNumber}</Text>
                             {runningWeeks.length > 1 && (
-                              <TouchableOpacity activeOpacity={0.85} onPress={() => removeRunningWeek(week.id)} style={styles.deleteWeekButton}>
+                              <TouchableOpacity
+                                activeOpacity={0.85}
+                                onPress={() => {
+                                  if (!isEditing) return;
+                                  removeRunningWeek(week.id);
+                                }}
+                                disabled={!isEditing || savingProgram}
+                                style={[
+                                  styles.deleteWeekButton,
+                                  !isEditing && styles.lockedButton,
+                                  savingProgram && styles.disabledButton,
+                                ]}
+                              >
                                 <Text style={styles.deleteWeekButtonText}>מחיקת שבוע</Text>
                               </TouchableOpacity>
                             )}
@@ -1499,6 +1616,7 @@ export default function ClientTrainingProgramManager({
                             <View style={styles.halfField}>
                               <Text style={styles.smallLabel}>מרחק בק״מ</Text>
                               <TextInput
+                                editable={isEditing}
                                 value={week.distanceKm}
                                 onChangeText={(value) =>
                                   updateRunningWeek(
@@ -1509,7 +1627,7 @@ export default function ClientTrainingProgramManager({
                                 }
                                 placeholder="5"
                                 placeholderTextColor={COLORS.textSubtle}
-                                style={[styles.halfInput, styles.fieldInput]}
+                                style={[styles.halfInput, styles.fieldInput, !isEditing && styles.lockedInput]}
                                 textAlign="right"
                                 keyboardType={
                                   Platform.OS === "ios"
@@ -1522,7 +1640,9 @@ export default function ClientTrainingProgramManager({
                               <Text style={styles.smallLabel}>זמן לק״מ</Text>
                               <TouchableOpacity
                                 activeOpacity={0.85}
+                                disabled={!isEditing || savingProgram}
                                 onPress={() => {
+                                  if (!isEditing || savingProgram) return;
                                   setPacePickerWeekId(week.id);
                                   setPacePickerDraftSeconds(
                                     paceToSeconds(week.pacePerKm),
@@ -1532,6 +1652,8 @@ export default function ClientTrainingProgramManager({
                                   styles.halfInput,
                                   styles.fieldInput,
                                   styles.pacePickerButton,
+                                  !isEditing && styles.lockedInput,
+                                  savingProgram && styles.disabledButton,
                                 ]}
                               >
                                 <Text style={styles.pacePickerButtonText}>
@@ -1544,6 +1666,7 @@ export default function ClientTrainingProgramManager({
                           <OptionButtons
                             value={week.paceType}
                             options={RUNNING_PACE_OPTIONS}
+                            disabled={!isEditing || savingProgram}
                             onChange={(value) =>
                               updateRunningWeek(week.id, "paceType", value)
                             }
@@ -1552,6 +1675,7 @@ export default function ClientTrainingProgramManager({
                           <OptionButtons
                             value={week.manipulationType}
                             options={RUNNING_MANIPULATION_OPTIONS}
+                            disabled={!isEditing || savingProgram}
                             onChange={(value) =>
                               updateRunningWeek(
                                 week.id,
@@ -1561,13 +1685,14 @@ export default function ClientTrainingProgramManager({
                             }
                           />
                           <TextInput
+                            editable={isEditing}
                             value={week.notes}
                             onChangeText={(value) =>
                               updateRunningWeek(week.id, "notes", value)
                             }
                             placeholder="הערות לשבוע הזה"
                             placeholderTextColor={COLORS.textSubtle}
-                            style={[styles.input, styles.multilineInput]}
+                            style={[styles.input, styles.multilineInput, !isEditing && styles.lockedInput]}
                             textAlign="right"
                             multiline
                           />
@@ -1580,17 +1705,18 @@ export default function ClientTrainingProgramManager({
                     {programType === "running" ? "הערות כלליות לריצה" : "הערות כלליות לכוח"}
                   </Text>
                   <TextInput
+                    editable={isEditing}
                     value={programType === "running" ? runningNotes : strengthNotes}
                     onChangeText={programType === "running" ? setRunningNotes : setStrengthNotes}
                     placeholder={programType === "running" ? "הערות כלליות לתוכנית הריצה" : "הערות כלליות לתוכנית הכוח"}
                     placeholderTextColor={COLORS.textSubtle}
-                    style={[styles.input, styles.multilineInput]}
+                    style={[styles.input, styles.multilineInput, !isEditing && styles.lockedInput]}
                     textAlign="right"
                     multiline
                   />
                   <TouchableOpacity
                     activeOpacity={0.85}
-                    onPress={handleSave}
+                    onPress={handleEditButtonPress}
                     disabled={savingProgram}
                     style={[
                       styles.saveButton,
@@ -1600,9 +1726,12 @@ export default function ClientTrainingProgramManager({
                     {savingProgram ? (
                       <ActivityIndicator color="#FFFFFF" />
                     ) : (
-                      <Text style={styles.saveButtonText}>שמירת עריכה לתוכנית</Text>
+                      <Text style={styles.saveButtonText}>
+                        {isEditing ? "שמירת אימון" : "עריכה"}
+                      </Text>
                     )}
                   </TouchableOpacity>
+
                   {programType === "strength" && (
                     <TouchableOpacity
                       activeOpacity={0.85}
@@ -1610,7 +1739,7 @@ export default function ClientTrainingProgramManager({
                       disabled={savingProgram}
                       style={[styles.newRunningProgramButton, savingProgram && styles.disabledButton]}
                     >
-                      <Text style={styles.newRunningProgramButtonText}>העבר תוכנית כוח פעילה להיסטוריה ואפס שדות</Text>
+                      <Text style={styles.newRunningProgramButtonText}>בניית תוכנית חדשה</Text>
                     </TouchableOpacity>
                   )}
                   {programType === "running" && (
@@ -1620,7 +1749,7 @@ export default function ClientTrainingProgramManager({
                       disabled={savingProgram}
                       style={[styles.newRunningProgramButton, savingProgram && styles.disabledButton]}
                     >
-                      <Text style={styles.newRunningProgramButtonText}>העבר תוכנית ריצה פעילה להיסטוריה ואפס שדות</Text>
+                      <Text style={styles.newRunningProgramButtonText}>בניית תוכנית אימון חדשה</Text>
                     </TouchableOpacity>
                   )}
                 </>
@@ -1762,6 +1891,7 @@ export default function ClientTrainingProgramManager({
               בחירה מהיסטוריית תרגילים
             </Text>
             <TextInput
+              editable={isEditing}
               value={historySearch}
               onChangeText={setHistorySearch}
               placeholder="חיפוש תרגיל"
@@ -1780,8 +1910,9 @@ export default function ClientTrainingProgramManager({
                   <TouchableOpacity
                     key={name}
                     activeOpacity={0.85}
+                    disabled={!isEditing}
                     onPress={() => selectExerciseFromHistory(name)}
-                    style={styles.historyItem}
+                    style={[styles.historyItem, !isEditing && styles.lockedButton]}
                   >
                     <Text style={styles.historyItemText}>{name}</Text>
                   </TouchableOpacity>
@@ -2226,6 +2357,28 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "800",
     textAlign: "center",
+  },
+  editToggleButton: {
+    minHeight: 50,
+    backgroundColor: COLORS.cardSoft,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 16,
+  },
+  editToggleButtonText: {
+    color: COLORS.primary,
+    fontSize: 15,
+    fontWeight: "900",
+    textAlign: "center",
+  },
+  lockedInput: {
+    opacity: 0.65,
+  },
+  lockedButton: {
+    opacity: 0.45,
   },
   saveButton: {
     minHeight: 52,

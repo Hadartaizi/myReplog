@@ -443,6 +443,7 @@ export default function Home() {
   const [exerciseSucceeded, setExerciseSucceeded] = useState<boolean | null>(null);
   const [exerciseClientNotes, setExerciseClientNotes] = useState('');
   const [savingRunningWeekId, setSavingRunningWeekId] = useState<string | null>(null);
+  const [runningWeekDrafts, setRunningWeekDrafts] = useState<Record<string, Partial<RunningWeek>>>({});
   const [programStrengthEntries, setProgramStrengthEntries] = useState<Record<string, ProgramStrengthEntry>>({});
   const [savingProgramStrengthExerciseKey, setSavingProgramStrengthExerciseKey] = useState<string | null>(null);
 
@@ -1811,35 +1812,72 @@ export default function Home() {
   };
 
   const updateLocalRunningWeek = (weekId: string, patch: Partial<RunningWeek>) => {
-    setTrainingProgram((prev) => {
-      if (!prev) return prev;
-      const nextWeeks = buildNormalizedRunningWeeks(prev).map((week, index) => {
-        const id = getRunningWeekId(week, index);
-        return id === weekId ? { ...week, id, ...patch } : { ...week, id };
-      });
-      return { ...prev, runningWeeks: nextWeeks, runningWeeksCount: Math.max(Number(prev.runningWeeksCount || 0), nextWeeks.length) };
-    });
+    setRunningWeekDrafts((prev) => ({
+      ...prev,
+      [weekId]: {
+        ...(prev[weekId] || {}),
+        ...patch,
+      },
+    }));
   };
 
   const saveRunningWeekFeedback = async (weekId?: string) => {
     const user = auth.currentUser;
     if (!user || !weekId || !trainingProgram) return;
 
+    const savedWeek = buildNormalizedRunningWeeks(trainingProgram).find(
+      (week, index) => getRunningWeekId(week, index) === weekId
+    );
+    const draft = runningWeekDrafts[weekId] || {};
+
+    const selectedSucceeded =
+      draft.clientSucceeded === true || draft.clientSucceeded === false
+        ? draft.clientSucceeded
+        : savedWeek?.clientSucceeded;
+
+    if (selectedSucceeded !== true && selectedSucceeded !== false) {
+      showToast('יש לבחור אם הצלחת או לא הצלחת לפני שמירה');
+      return;
+    }
+
     try {
       setSavingRunningWeekId(weekId);
       const nowIso = new Date().toISOString();
+
       const nextWeeks = buildNormalizedRunningWeeks(trainingProgram).map((week, index) => {
         const id = getRunningWeekId(week, index);
-        return id === weekId ? { ...week, id, clientUpdatedAt: nowIso } : { ...week, id };
+
+        if (id !== weekId) {
+          return { ...week, id };
+        }
+
+        return {
+          ...week,
+          id,
+          clientSucceeded: selectedSucceeded,
+          clientNotes: String(draft.clientNotes ?? week.clientNotes ?? ''),
+          clientUpdatedAt: nowIso,
+        };
       });
-      const completedAfterSave = nextWeeks.length > 0 && nextWeeks.every((week) => isRunningWeekSavedCompleted(week));
+
+      const completedAfterSave =
+        nextWeeks.length > 0 &&
+        nextWeeks.every((week) => isRunningWeekSavedCompleted(week));
 
       await setDoc(
         doc(db, 'clientTrainingPrograms', user.uid),
         {
           runningWeeks: nextWeeks,
           runningWeeksCount: nextWeeks.length,
-          ...(completedAfterSave ? { runningProgramCompletedAt: nowIso } : {}),
+          ...(completedAfterSave
+            ? {
+                runningProgramCompletedAt: nowIso,
+                runningProgramCompletedForId: trainingProgram.activeRunningProgramId || '',
+              }
+            : {
+                runningProgramCompletedAt: '',
+                runningProgramCompletedForId: '',
+              }),
         },
         { merge: true }
       );
@@ -1850,13 +1888,27 @@ export default function Home() {
               ...prev,
               runningWeeks: nextWeeks,
               runningWeeksCount: nextWeeks.length,
-              ...(completedAfterSave ? { runningProgramCompletedAt: nowIso } : {}),
+              ...(completedAfterSave
+            ? {
+                runningProgramCompletedAt: nowIso,
+                runningProgramCompletedForId: trainingProgram.activeRunningProgramId || '',
+              }
+            : {
+                runningProgramCompletedAt: '',
+                runningProgramCompletedForId: '',
+              }),
             }
           : prev
       );
 
+      setRunningWeekDrafts((prev) => {
+        const next = { ...prev };
+        delete next[weekId];
+        return next;
+      });
+
       if (completedAfterSave) {
-        showToast('כל הכבוד! סיימת את כל תוכנית הריצה. אפשר לצפות בתוכנית המלאה דרך התפריט בכפתור “תוכנית אימון”.');
+        showToast('כל הכבוד! סיימת את כל תוכנית הריצה.');
       } else {
         showToast('העדכון נשמר למאמן');
       }
@@ -2397,10 +2449,15 @@ export default function Home() {
           <Pressable style={styles.sideMenuOverlay} onPress={() => setShowSideMenu(false)}>
             <Pressable style={[styles.sideMenuCard, { width: Math.min(width * 0.78, 300) }]}>
               <View style={styles.sideMenuHeader}>
-                <Pressable onPress={() => setShowSideMenu(false)} style={styles.sideMenuClose}>
+                <Text style={styles.sideMenuTitle}>תפריט</Text>
+
+                <Pressable
+                  onPress={() => setShowSideMenu(false)}
+                  style={styles.sideMenuClose}
+                  hitSlop={10}
+                >
                   <CloseIcon size={22} color="#FFFFFF" />
                 </Pressable>
-                <Text style={styles.sideMenuTitle}>תפריט</Text>
               </View>
 
               {isLoadingTrainingProgram ? (
@@ -2437,9 +2494,6 @@ export default function Home() {
           <View style={styles.modalOverlay}>
             <View style={[styles.timerModalCard, { width: Math.min(width * 0.9, 420) }]}>
               <View style={styles.timerModalHeader}>
-                <Pressable style={styles.modalClose} onPress={() => setShowTimerModal(false)}>
-                  <CloseIcon size={24} color="#FFFFFF" />
-                </Pressable>
                 <Text style={styles.timerModalTitle}>
                   {timerMode === 'rest'
                     ? 'טיימר מנוחה'
@@ -2447,6 +2501,14 @@ export default function Home() {
                       ? 'זמן אימון'
                       : 'בחירת טיימר'}
                 </Text>
+
+                <Pressable
+                  style={styles.modalClose}
+                  onPress={() => setShowTimerModal(false)}
+                  hitSlop={10}
+                >
+                  <CloseIcon size={24} color="#FFFFFF" />
+                </Pressable>
               </View>
 
               {timerMode === 'choice' ? (
@@ -2569,13 +2631,6 @@ export default function Home() {
           <View style={styles.modalOverlay}>
             <View style={[styles.programModalCard, { width: Math.min(width * 0.92, 500) }]}>
               <View style={styles.programHeaderRow}>
-                <Pressable
-                  style={styles.modalClose}
-                  onPress={() => setShowTrainingProgramModal(false)}
-                >
-                  <CloseIcon size={24} color="#FFFFFF" />
-                </Pressable>
-
                 <Text style={styles.programModalTitle}>
                   {selectedProgramView === 'running'
                     ? 'תוכנית הריצה שלך'
@@ -2583,6 +2638,14 @@ export default function Home() {
                       ? 'תוכנית הכוח שלך'
                       : 'בחירת תוכנית אימון'}
                 </Text>
+
+                <Pressable
+                  style={styles.modalClose}
+                  onPress={() => setShowTrainingProgramModal(false)}
+                  hitSlop={10}
+                >
+                  <CloseIcon size={24} color="#FFFFFF" />
+                </Pressable>
               </View>
 
               <View style={styles.modalDivider} />
@@ -2687,6 +2750,13 @@ export default function Home() {
                         const distanceKm = String(week?.distanceKm || '').trim();
                         const pacePerKm = String(week?.pacePerKm || '').trim();
                         const notes = String(week?.notes || '').trim();
+                        const weekId = getRunningWeekId(week, weekIndex);
+                        const draftWeek = runningWeekDrafts[weekId] || {};
+                        const currentClientSucceeded =
+                          draftWeek.clientSucceeded === true || draftWeek.clientSucceeded === false
+                            ? draftWeek.clientSucceeded
+                            : week.clientSucceeded;
+                        const currentClientNotes = String(draftWeek.clientNotes ?? week.clientNotes ?? '');
 
                         if (!distanceKm && !pacePerKm && !notes && !week?.paceType && !week?.manipulationType) return null;
 
@@ -2721,16 +2791,16 @@ export default function Home() {
                             <View style={styles.runningClientFeedbackBox}>
                               <Text style={styles.runningClientFeedbackTitle}>עדכון למאמן על השבוע</Text>
                               <View style={styles.clientWorkoutFeedbackRow}>
-                                <Pressable style={[styles.clientWorkoutFeedbackButton, week.clientSucceeded === true && styles.clientWorkoutFeedbackSuccess]} onPress={() => updateLocalRunningWeek(week.id, { clientSucceeded: true })}>
-                                  <Text style={[styles.clientWorkoutFeedbackText, week.clientSucceeded === true && styles.clientWorkoutFeedbackTextActive]}>הצלחתי</Text>
+                                <Pressable style={[styles.clientWorkoutFeedbackButton, currentClientSucceeded === true && styles.clientWorkoutFeedbackSuccess]} onPress={() => updateLocalRunningWeek(weekId, { clientSucceeded: true })}>
+                                  <Text style={[styles.clientWorkoutFeedbackText, currentClientSucceeded === true && styles.clientWorkoutFeedbackTextActive]}>הצלחתי</Text>
                                 </Pressable>
-                                <Pressable style={[styles.clientWorkoutFeedbackButton, week.clientSucceeded === false && styles.clientWorkoutFeedbackFail]} onPress={() => updateLocalRunningWeek(week.id, { clientSucceeded: false })}>
-                                  <Text style={[styles.clientWorkoutFeedbackText, week.clientSucceeded === false && styles.clientWorkoutFeedbackTextActive]}>לא הצלחתי</Text>
+                                <Pressable style={[styles.clientWorkoutFeedbackButton, currentClientSucceeded === false && styles.clientWorkoutFeedbackFail]} onPress={() => updateLocalRunningWeek(weekId, { clientSucceeded: false })}>
+                                  <Text style={[styles.clientWorkoutFeedbackText, currentClientSucceeded === false && styles.clientWorkoutFeedbackTextActive]}>לא הצלחתי</Text>
                                 </Pressable>
                               </View>
-                              <TextInput style={[styles.inputBox, styles.textInput, styles.clientWorkoutNotesInput]} placeholder="פירוט למאמן" placeholderTextColor="#8F8F96" value={String(week.clientNotes || '')} onChangeText={(value) => updateLocalRunningWeek(week.id, { clientNotes: value })} textAlign="right" multiline />
-                              <Pressable style={[styles.saveRunningFeedbackButton, savingRunningWeekId === week.id && styles.disabledButton]} onPress={() => saveRunningWeekFeedback(week.id)} disabled={savingRunningWeekId === week.id}>
-                                {savingRunningWeekId === week.id ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.saveRunningFeedbackButtonText}>שמירת עדכון שבוע</Text>}
+                              <TextInput style={[styles.inputBox, styles.textInput, styles.clientWorkoutNotesInput]} placeholder="פירוט למאמן" placeholderTextColor="#8F8F96" value={currentClientNotes} onChangeText={(value) => updateLocalRunningWeek(weekId, { clientNotes: value })} textAlign="right" multiline />
+                              <Pressable style={[styles.saveRunningFeedbackButton, savingRunningWeekId === weekId && styles.disabledButton]} onPress={() => saveRunningWeekFeedback(weekId)} disabled={savingRunningWeekId === weekId}>
+                                {savingRunningWeekId === weekId ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.saveRunningFeedbackButtonText}>שמירת עדכון שבוע</Text>}
                               </Pressable>
                             </View>
                           </View>
@@ -3680,7 +3750,7 @@ const styles = StyleSheet.create({
   programExerciseCardDone: {
     borderColor: '#22C55E',
     borderWidth: 2,
-    backgroundColor: '#F0FDF4',
+    backgroundColor: '#17171C',
   },
 
   programExerciseHeader: {
@@ -3920,24 +3990,30 @@ const styles = StyleSheet.create({
 
   completedProgramBox: {
     width: '100%',
-    backgroundColor: '#ECFDF5',
-    borderWidth: 1,
-    borderColor: '#BBF7D0',
+    backgroundColor: '#17171C',
+    borderWidth: 1.5,
+    borderColor: '#FF7A00',
     borderRadius: 18,
     padding: 16,
     gap: 8,
+    shadowColor: '#FF7A00',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    elevation: 4,
   },
   completedProgramTitle: {
-    color: '#166534',
+    color: '#FF9A3D',
     fontSize: 17,
     fontWeight: '900',
     textAlign: 'right',
     writingDirection: 'rtl',
   },
   completedProgramText: {
-    color: '#14532D',
+    color: '#EDEDED',
     fontSize: 14,
     lineHeight: 22,
+    fontWeight: '700',
     textAlign: 'right',
     writingDirection: 'rtl',
   },
@@ -4043,14 +4119,6 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
 
-  sideMenuHeader: {
-    width: '100%',
-    flexDirection: 'row-reverse',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-  },
-
   sideMenuClose: {
     width: 38,
     height: 38,
@@ -4062,6 +4130,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
+  sideMenuHeader: {
+    width: '100%',
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 16,
+    marginBottom: 24,
+  },
+
   sideMenuTitle: {
     flex: 1,
     color: '#FFFFFF',
@@ -4069,6 +4146,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     textAlign: 'right',
     writingDirection: 'rtl',
+    marginRight: 8,
   },
 
   trainingProgramMenuButton: {

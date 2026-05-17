@@ -112,10 +112,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   styles.title,
                   {
                     fontSize: dynamic.titleFontSize,
+                    lineHeight: dynamic.titleFontSize * 1.05,
                   },
                 ]}
               >
-                REPLOG
+                <Text style={styles.titleOrange}>REP</Text>
+                <Text style={styles.titleWhite}>LOG</Text>
               </Text>
 
               {/* <View style={styles.logoGlowBox}>
@@ -277,18 +279,34 @@ const styles = StyleSheet.create({
   logoContainer: {
     alignItems: 'center',
     justifyContent: 'center',
+    transform: [{ skewX: '-10deg' }],
   },
 
   title: {
-    color: COLORS.primary,
-    fontFamily: 'Bilbo',
     includeFontPadding: false,
     textAlign: 'center',
-    lineHeight: 30,
     marginBottom: 0,
+    fontWeight: '900',
+    fontStyle: 'italic',
+    letterSpacing: -1.2,
     textShadowColor: 'rgba(255, 122, 0, 0.35)',
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 8,
+    ...(Platform.OS === 'web'
+      ? ({
+          fontFamily: 'Impact, Arial Black, sans-serif',
+        } as any)
+      : {
+          fontFamily: Platform.OS === 'android' ? 'sans-serif-condensed' : undefined,
+        }),
+  },
+
+  titleOrange: {
+    color: COLORS.primary,
+  },
+
+  titleWhite: {
+    color: COLORS.text,
   },
 
   logoGlowBox: {
@@ -324,7 +342,6 @@ const styles = StyleSheet.create({
     shadowColor: COLORS.shadow,
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.2,
-    // shadowRadius: 12,
     elevation: 8,
   },
 
@@ -345,12 +362,12 @@ const styles = StyleSheet.create({
   navIconCircle: {
     minWidth: 52,
     minHeight: 52,
-    borderRadius: 26,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.cardSecondary,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    borderColor: 'transparent',
+    borderRadius: 0,
   },
 
   icon: {
