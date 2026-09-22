@@ -7,8 +7,6 @@
     "icon": "./assets/images/Replog.png",
     "scheme": "replog",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
-
     "plugins": [
       "@react-native-community/datetimepicker",
       [
@@ -18,7 +16,6 @@
         }
       ]
     ],
-
     "ios": {
       "supportsTablet": true,
       "requireFullScreen": true,
@@ -27,13 +24,11 @@
         "ITSAppUsesNonExemptEncryption": false
       }
     },
-
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/Replog.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true,
       "intentFilters": [
         {
           "action": "VIEW",
@@ -43,7 +38,6 @@
       ],
       "package": "com.hadartaizi.repLog"
     },
-
     "web": {
       "bundler": "metro",
       "output": "static",

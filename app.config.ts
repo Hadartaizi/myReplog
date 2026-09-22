@@ -36,7 +36,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       foregroundImage: './assets/images/Replog.png',
       backgroundColor: '#ffffff',
     },
-    edgeToEdgeEnabled: true,
+    // edgeToEdgeEnabled: true,
     intentFilters: [
       {
         action: 'VIEW',
